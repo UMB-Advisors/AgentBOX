@@ -1,0 +1,27 @@
+# hermesBOX — Phase 6: PRIMARY kiosk session (Xorg + matchbox + cog/WPE).
+# User service. Renders http://127.0.0.1:9119 fullscreen, GPU compositing capped.
+# Enable EXACTLY ONE kiosk unit (cog XOR chromium). Spec: DR-005 · Linear UMB-385.
+[Unit]
+Description=hermesBOX kiosk — cog/WPE dashboard (PRIMARY renderer)
+Documentation=file:///%h/code/tbox/HermesBOX/docs/PRD-v1.0.0.md
+After=hermes-dashboard.service
+Requires=hermes-dashboard.service
+# Mutual exclusion: never run both renderers at once.
+Conflicts=hermesbox-kiosk-chromium.service
+
+[Service]
+Type=simple
+# Own a real console VT so Xorg can take the display.
+TTYPath=/dev/tty1
+PAMName=login
+Environment=HERMESBOX_DASH_URL=http://127.0.0.1:9119/
+Environment=HERMESBOX_DISPLAY=:0
+ExecStart=%h/.local/bin/hermesbox-kiosk-cog.sh
+Restart=always
+RestartSec=3
+# Give the dashboard time to come up before counting restarts as flapping.
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,25 @@
+# hermesBOX — Phase 6: FALLBACK kiosk session (Xorg + matchbox + chromium --kiosk).
+# User service. Installed but NOT enabled — only enable if cog/WPE mis-renders.
+# Requires the chromium snap: sudo snap install chromium. Spec: DR-005 · Linear UMB-385.
+[Unit]
+Description=hermesBOX kiosk — chromium --kiosk dashboard (FALLBACK renderer)
+Documentation=file:///%h/code/tbox/HermesBOX/docs/PRD-v1.0.0.md
+After=hermes-dashboard.service
+Requires=hermes-dashboard.service
+# Mutual exclusion: never run both renderers at once.
+Conflicts=hermesbox-kiosk-cog.service
+
+[Service]
+Type=simple
+TTYPath=/dev/tty1
+PAMName=login
+Environment=HERMESBOX_DASH_URL=http://127.0.0.1:9119/
+Environment=HERMESBOX_DISPLAY=:0
+ExecStart=%h/.local/bin/hermesbox-kiosk-chromium.sh
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Install]
+WantedBy=default.target
