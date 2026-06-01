@@ -1044,6 +1044,7 @@ from gateway.platforms.base import (
     _reply_anchor_for_event,
     merge_pending_message_event,
 )
+from gateway.platforms.ingest_bridge import make_ingest_bridge
 from gateway.restart import (
     DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT,
     GATEWAY_SERVICE_RESTART_EXIT_CODE,
@@ -4244,13 +4245,18 @@ class GatewayRunner:
                 continue
             
             # Set up message + fatal error handlers
-            adapter.set_message_handler(self._handle_message)
+            # Unified Inbox Phase 2: triage channels forward to the n8n ingest
+            # bridge instead of the conversational agent (see
+            # _resolve_message_handler).
+            adapter.set_message_handler(
+                self._resolve_message_handler(platform, platform_config)
+            )
             adapter.set_fatal_error_handler(self._handle_adapter_fatal_error)
             adapter.set_session_store(self.session_store)
             adapter.set_busy_session_handler(self._handle_active_session_busy_message)
             adapter.set_topic_recovery_fn(self._recover_telegram_topic_thread_id)
             adapter._busy_text_mode = self._busy_text_mode
-            
+
             # Try to connect
             logger.info("Connecting to %s...", platform.value)
             self._update_platform_runtime_status(
@@ -5952,7 +5958,12 @@ class GatewayRunner:
                         del self._failed_platforms[platform]
                         continue
 
-                    adapter.set_message_handler(self._handle_message)
+                    # Unified Inbox Phase 2: mirror the startup-site triage-channel
+                    # routing so a reconnect does not silently revert a triage
+                    # channel to the conversational agent.
+                    adapter.set_message_handler(
+                        self._resolve_message_handler(platform, platform_config)
+                    )
                     adapter.set_fatal_error_handler(self._handle_adapter_fatal_error)
                     adapter.set_session_store(self.session_store)
                     adapter.set_busy_session_handler(self._handle_active_session_busy_message)
@@ -6945,6 +6956,57 @@ class GatewayRunner:
                 )
 
         await adapter.send(source.chat_id, content, metadata=metadata)
+
+    def _resolve_message_handler(self, platform, platform_config):
+        """Pick the inbound handler for a platform's adapter.
+
+        Unified Inbox Phase 2: *triage* channels route their inbound messages
+        to the thin ``ingest_bridge`` (forward-to-n8n, returns ``None`` so no
+        conversational auto-reply) instead of the conversational
+        ``_handle_message``.  Every non-triage platform keeps ``_handle_message``
+        unchanged.
+
+        A platform is a triage channel when either:
+          * ``platform_config.extra["triage"]`` is truthy, or
+          * its channel string is in ``$HERMES_TRIAGE_CHANNELS`` (comma list).
+
+        The load-bearing resolution key is ``platform_config.extra["account_id"]``
+        — the integer ``mailbox.accounts`` id for this channel's social account
+        row (migration 046: social rows have a NULL ``email_address`` and are
+        resolved by id).  ``account_ref`` (``extra["account_ref"]``, default the
+        channel string) is a human-readable label only.  The webhook URL comes
+        from ``$N8N_INGEST_WEBHOOK_URL`` (read inside the bridge).
+        """
+        channel = platform.value
+        extra = getattr(platform_config, "extra", None) or {}
+
+        triage_env = os.getenv("HERMES_TRIAGE_CHANNELS", "")
+        env_channels = {c.strip() for c in triage_env.split(",") if c.strip()}
+
+        is_triage = is_truthy_value(extra.get("triage")) or (channel in env_channels)
+        if not is_triage:
+            return self._handle_message
+
+        account_ref = extra.get("account_ref") or channel
+        account_id_raw = extra.get("account_id")
+        try:
+            account_id = int(account_id_raw) if account_id_raw is not None else None
+        except (TypeError, ValueError):
+            logger.warning(
+                "Triage channel '%s' has non-integer account_id %r — ingest will "
+                "fall back to the default account; set extra.account_id to the "
+                "channel's mailbox.accounts id during onboarding.",
+                channel,
+                account_id_raw,
+            )
+            account_id = None
+        logger.info(
+            "Routing '%s' to unified-inbox ingest bridge (account_id=%s account_ref=%s)",
+            channel,
+            account_id,
+            account_ref,
+        )
+        return make_ingest_bridge(account_ref=account_ref, account_id=account_id)
 
     async def _handle_message(self, event: MessageEvent) -> Optional[str]:
         """
