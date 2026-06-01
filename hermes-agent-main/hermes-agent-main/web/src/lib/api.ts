@@ -194,6 +194,13 @@ export async function buildWsAuthParam(): Promise<[string, string]> {
 
 export const api = {
   getStatus: () => fetchJSON<StatusResponse>("/api/status"),
+  /** Most-recent daily digest for the Home landing pane (Phase 3).
+   *
+   * Always 200, even when no digest exists yet — an empty digest carries
+   * ``markdown: null`` so the Home page renders a clean empty state. The
+   * endpoint must never 401 (that would trip the loopback stale-token
+   * reload in {@link fetchJSON}). */
+  getDigest: () => fetchJSON<DigestResponse>("/api/digest/latest"),
   /**
    * Identity probe for the dashboard auth gate (Phase 7).
    *
@@ -504,6 +511,91 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     }),
+
+  // ── Unified Inbox (Phase 1) ────────────────────────────────────────────
+  // These call the on-box mailbox-dashboard REST API (Next.js basePath
+  // ``/dashboard``) through the SAME reverse-proxy the legacy iframe rode
+  // (``web_server.py`` ``/dashboard/{path}``). They are same-origin and
+  // unauthenticated loopback: the ``X-Hermes-Session-Token`` ``fetchJSON``
+  // attaches is ignored by the mailbox API (the Hermes auth gate only
+  // covers ``/api/*``, not ``/dashboard/*``). Do NOT add a parallel fetch
+  // helper — reuse ``fetchJSON`` unchanged. See CONTEXT-phase-1 D-1/D-2.
+
+  /** List drafts joined with their inbox message + account (the inbox queue).
+   * ``status`` is a CSV of valid {@link InboxDraftStatus} values (server
+   * default ``pending``; invalid → 400). ``accountId`` narrows by
+   * ``account_id`` when provided. */
+  inboxListDrafts: (status = "pending", limit = 50, accountId?: number) => {
+    const qs = new URLSearchParams();
+    qs.set("status", status);
+    qs.set("limit", String(limit));
+    if (accountId != null) qs.set("account", String(accountId));
+    return fetchJSON<InboxDraftsResponse>(`/dashboard/api/drafts?${qs.toString()}`);
+  },
+  /** Fresh read of a single draft (no top-level ``account`` object — carry
+   * it from the list row). 404 if the row was archived/deleted. */
+  inboxGetDraft: (id: number) =>
+    fetchJSON<DraftRow>(`/dashboard/api/drafts/${encodeURIComponent(String(id))}`),
+  /** Approve + send. ``pending|edited → approved``; 409 if not in that set. */
+  inboxApproveDraft: (id: number) =>
+    fetchJSON<InboxApproveResult>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(id))}/approve`,
+      { method: "POST" },
+    ),
+  /** Reject (writes a ``draft_feedback`` row). ``reason_code`` required;
+   * ``free_text`` required iff ``reason_code === "other"``. 409 if stale. */
+  inboxRejectDraft: (
+    id: number,
+    body: { reason_code: InboxRejectReasonCode; free_text?: string },
+  ) =>
+    fetchJSON<InboxRejectResult>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(id))}/reject`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  /** Edit the draft body/subject. Flips status to ``edited``. 409 if stale. */
+  inboxEditDraft: (
+    id: number,
+    body: { draft_body: string; draft_subject?: string | null },
+  ) =>
+    fetchJSON<InboxEditResult>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(id))}/edit`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  /** Archive the inbox message (keyed by ``inbox_message_id`` — NOT the
+   * draft id). Removes from the active queue; keeps the draft. */
+  inboxArchiveMessage: (messageId: number) =>
+    fetchJSON<InboxMessageActionResult>(
+      `/dashboard/api/inbox-messages/${encodeURIComponent(String(messageId))}/archive`,
+      { method: "POST" },
+    ),
+  /** Clear unread on the inbox message (keyed by ``inbox_message_id``). */
+  inboxMarkReadMessage: (messageId: number) =>
+    fetchJSON<InboxMessageActionResult>(
+      `/dashboard/api/inbox-messages/${encodeURIComponent(String(messageId))}/mark-read`,
+      { method: "POST" },
+    ),
+  /** Snooze until ``isoUntil`` (a FUTURE ISO-8601 instant with offset/Z, or
+   * the API 400s). Keyed by ``inbox_message_id``. */
+  inboxSnoozeMessage: (messageId: number, isoUntil: string) =>
+    fetchJSON<InboxSnoozeResult>(
+      `/dashboard/api/inbox-messages/${encodeURIComponent(String(messageId))}/snooze`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ until: isoUntil }),
+      },
+    ),
+  /** Connected inboxes — for the account-filter selector. */
+  inboxListAccounts: () =>
+    fetchJSON<InboxAccountsResponse>("/dashboard/api/accounts"),
 };
 
 /** Identity payload returned by ``GET /api/auth/me`` (Phase 7).
@@ -527,6 +619,20 @@ export interface ActionResponse {
   name: string;
   ok: boolean;
   pid: number;
+}
+
+/** Daily digest payload returned by ``GET /api/digest/latest`` (Phase 3).
+ *
+ * All content fields are nullable: when no digest has been produced yet the
+ * endpoint returns 200 with every field null except ``source``. ``markdown``
+ * is the raw digest body; ``generated_at`` is the producer's write time
+ * (ISO 8601). */
+export interface DigestResponse {
+  date: string | null;
+  title: string | null;
+  markdown: string | null;
+  source: string;
+  generated_at: string | null;
 }
 
 /** Per-call overrides for {@link fetchJSON}. */
@@ -1014,4 +1120,164 @@ export interface AgentPluginUpdateResponse {
 export interface PluginProvidersPutRequest {
   memory_provider?: string;
   context_engine?: string;
+}
+
+// ── Unified Inbox types (Phase 1) ───────────────────────────────────────
+// Shapes captured live from the mailbox-dashboard API (migration 045).
+// Numeric ids are ``number``; timestamps are ISO strings; ``cost_usd`` is a
+// string; jsonb arrays are typed ``unknown[]`` unless rendered. See
+// CONTEXT-phase-1 §"API shape".
+
+/** Valid ``drafts.status`` values (live ``DRAFT_STATUSES``). Phase 1 only
+ * surfaces the user-facing subset in tabs; ``awaiting_cloud`` is an internal
+ * transient state. */
+export type InboxDraftStatus =
+  | "pending"
+  | "awaiting_cloud"
+  | "approved"
+  | "rejected"
+  | "edited"
+  | "sent";
+
+/** Live ``REJECT_REASON_CODES`` (mailbox ``lib/types.ts``). ``free_text`` is
+ * required iff the code is ``other``. */
+export type InboxRejectReasonCode =
+  | "wrong_tone"
+  | "factually_inaccurate"
+  | "missing_context"
+  | "should_reply_myself"
+  | "dont_reply"
+  | "other";
+
+/** The joined inbox-message object carried on every {@link DraftRow}. Keyed
+ * by its own ``id`` — message actions (archive/snooze/mark-read) use THIS id,
+ * not the draft id. */
+export interface InboxMessage {
+  id: number;
+  message_id: string;
+  thread_id: string | null;
+  from_addr: string;
+  to_addr: string;
+  subject: string | null;
+  received_at: string;
+  snippet: string | null;
+  body: string | null;
+  classification: string | null;
+  confidence: number | null;
+  classified_at: string | null;
+  model: string | null;
+  created_at: string;
+  draft_id: number | null;
+  archived_at: string | null;
+  deleted_at: string | null;
+  snooze_until: string | null;
+  is_read: boolean;
+  gmail_action_state: string | null;
+}
+
+/** A connected inbox account (account-filter selector). */
+export interface AccountRow {
+  id: number;
+  email_address: string;
+  display_label: string | null;
+  is_default: boolean;
+}
+
+/** Flattened draft + joined message + account + thread history — the single
+ * row type driving both the inbox list and the detail pane. ``account`` is
+ * present ONLY on the list endpoint (``/drafts``), not on ``/drafts/[id]``. */
+export interface DraftRow {
+  id: number;
+  inbox_message_id: number;
+  draft_subject: string | null;
+  draft_body: string;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: string | null;
+  status: InboxDraftStatus;
+  created_at: string;
+  updated_at: string;
+  error_message: string | null;
+  approved_at: string | null;
+  sent_at: string | null;
+  draft_source: string | null;
+  classification_category: string | null;
+  classification_confidence: number | null;
+  rag_context_refs: unknown[];
+  auto_send_blocked: boolean;
+  from_addr: string;
+  to_addr: string;
+  subject: string | null;
+  body_text: string | null;
+  received_at: string;
+  message_id: string;
+  thread_id: string | null;
+  in_reply_to: string | null;
+  references: string | null;
+  original_draft_body: string | null;
+  rag_retrieval_reason: string | null;
+  kb_context_refs: unknown[];
+  last_retry_at: string | null;
+  exemplar_refs: unknown[];
+  sent_gmail_message_id: string | null;
+  send_attempt_at: string | null;
+  action_items: unknown[];
+  scheduling_calendar_unavailable: boolean | null;
+  account_id: number | null;
+  provider_message_id: string | null;
+  /** Post-045 channel discriminator (default ``email``). May be absent on
+   * legacy pre-backfill rows — default to ``email`` defensively. */
+  channel?: string | null;
+  message: InboxMessage;
+  /** Present only on the list endpoint. */
+  account?: AccountRow;
+  /** Prior messages in the thread (jsonb; not rendered structurally). */
+  thread_history: unknown[];
+}
+
+export interface InboxDraftsResponse {
+  drafts: DraftRow[];
+  total: number;
+}
+
+export interface InboxAccountsResponse {
+  accounts: AccountRow[];
+}
+
+/** Result of POST .../approve — the ``transitionToApprovedAndSend`` JSON.
+ * Shape is intentionally loose; the UI only needs success + optional error. */
+export interface InboxApproveResult {
+  success?: boolean;
+  draft?: { id: number; status: InboxDraftStatus; error_message?: string | null };
+  error?: string;
+  [key: string]: unknown;
+}
+
+export interface InboxRejectResult {
+  success: boolean;
+  draft: { id: number; status: InboxDraftStatus };
+}
+
+export interface InboxEditResult {
+  success: boolean;
+  draft: {
+    id: number;
+    status: InboxDraftStatus;
+    draft_body: string;
+    draft_subject: string | null;
+    updated_at: string;
+  };
+}
+
+/** Gmail write-through result for archive/mark-read. Loose by design. */
+export interface InboxMessageActionResult {
+  success?: boolean;
+  [key: string]: unknown;
+}
+
+export interface InboxSnoozeResult {
+  success: boolean;
+  id: number;
+  snooze_until: string;
 }

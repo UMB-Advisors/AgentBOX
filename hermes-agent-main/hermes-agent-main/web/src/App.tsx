@@ -17,35 +17,20 @@ import {
   useNavigate,
 } from "react-router-dom";
 import {
-  Activity,
-  BarChart3,
-  BookOpen,
+  CalendarDays,
   Clock,
-  Code,
-  Cpu,
-  Database,
   Download,
-  Eye,
-  FileText,
-  Globe,
-  Heart,
-  KeyRound,
+  Home as HomeIcon,
+  Inbox,
+  LayoutDashboard,
   Menu,
   MessageSquare,
-  Package,
   PanelLeftClose,
   PanelLeftOpen,
-  Puzzle,
   RotateCw,
   Settings,
-  Shield,
-  Sparkles,
   Star,
-  Terminal,
-  Users,
-  Wrench,
   X,
-  Zap,
 } from "lucide-react";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { SelectionSwitcher } from "@nous-research/ui/ui/components/selection-switcher";
@@ -53,6 +38,7 @@ import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { Typography } from "@nous-research/ui/ui/components/typography/index";
 import { cn } from "@/lib/utils";
 import { Backdrop } from "@/components/Backdrop";
+import ChatDock, { clampChatWidth, CHAT_WIDTH_DEFAULT } from "@/components/ChatDock";
 import { SidebarFooter } from "@/components/SidebarFooter";
 import { SidebarStatusStrip, gatewayLine } from "@/components/SidebarStatusStrip";
 import { useBelowBreakpoint } from "@nous-research/ui/hooks/use-below-breakpoint";
@@ -73,6 +59,10 @@ import ProfilesPage from "@/pages/ProfilesPage";
 import SkillsPage from "@/pages/SkillsPage";
 import PluginsPage from "@/pages/PluginsPage";
 import ChatPage from "@/pages/ChatPage";
+import HomePage from "@/pages/HomePage";
+import CalendarPage from "@/pages/CalendarPage";
+import InboxPage from "@/pages/InboxPage";
+import SettingsHubPage from "@/pages/SettingsHubPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { useI18n } from "@/i18n";
@@ -81,39 +71,32 @@ import { PluginPage, PluginSlot, usePlugins } from "@/plugins";
 import type { PluginManifest } from "@/plugins";
 import { useTheme } from "@/themes";
 import { isDashboardEmbeddedChatEnabled } from "@/lib/dashboard-flags";
-import { api } from "@/lib/api";
 import type { StatusResponse } from "@/lib/api";
-
-function RootRedirect() {
-  return <Navigate to="/sessions" replace />;
-}
 
 function UnknownRouteFallback({ pluginsLoading }: { pluginsLoading: boolean }) {
   if (pluginsLoading) {
     // Render nothing during the plugin-load window — a spinner here would just flash.
     return null;
   }
-  return <Navigate to="/sessions" replace />;
+  return <Navigate to="/" replace />;
 }
-
-const CHAT_NAV_ITEM: NavItem = {
-  path: "/chat",
-  labelKey: "chat",
-  label: "Chat",
-  icon: Terminal,
-};
 
 /**
  * Built-in routes except /chat.  Chat is rendered persistently (outside
- * <Routes>) when embedded — see the persistent chat host block rendered
- * inline near the bottom of this file — so the PTY child, WebSocket,
- * and xterm instance survive when the user visits another tab and comes
- * back.  A `display:none` toggle hides the terminal without unmounting.
- * Routing still owns the URL so /chat deep-links, browser back/forward,
- * and nav highlight keep working.
+ * <Routes>) in the right-hand dock when embedded — see the ChatDock block
+ * near the bottom of App() — so the PTY child, WebSocket, and xterm instance
+ * survive when the user visits another tab. A `display:none` toggle hides it
+ * without unmounting. Routing still owns the URL so /chat deep-links work.
+ *
+ * `/` is Home (the digest landing). The views demoted out of the primary nav
+ * (sessions, analytics, models, logs, skills, plugins, profiles, config, env,
+ * docs) keep their routes here — they're reached via the Settings hub.
  */
 const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
-  "/": RootRedirect,
+  "/": HomePage,
+  "/inbox": InboxPage,
+  "/calendar": CalendarPage,
+  "/settings": SettingsHubPage,
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,
   "/models": ModelsPage,
@@ -135,118 +118,31 @@ function ChatRouteSink() {
   return null;
 }
 
-const BUILTIN_NAV_REST: NavItem[] = [
-  {
-    path: "/sessions",
-    labelKey: "sessions",
-    label: "Sessions",
-    icon: MessageSquare,
-  },
-  {
-    path: "/analytics",
-    labelKey: "analytics",
-    label: "Analytics",
-    icon: BarChart3,
-  },
-  {
-    path: "/models",
-    labelKey: "models",
-    label: "Models",
-    icon: Cpu,
-  },
-  { path: "/logs", labelKey: "logs", label: "Logs", icon: FileText },
-  { path: "/cron", labelKey: "cron", label: "Cron", icon: Clock },
-  { path: "/skills", labelKey: "skills", label: "Skills", icon: Package },
-  { path: "/plugins", labelKey: "plugins", label: "Plugins", icon: Puzzle },
-  { path: "/profiles", labelKey: "profiles", label: "Profiles", icon: Users },
-  { path: "/config", labelKey: "config", label: "Config", icon: Settings },
-  { path: "/env", labelKey: "keys", label: "Keys", icon: KeyRound },
-  {
-    path: "/docs",
-    labelKey: "documentation",
-    label: "Documentation",
-    icon: BookOpen,
-  },
-];
+/**
+ * The simplified primary sidebar: six tabs + Settings. Tasks (/kanban) and
+ * Achievements (/achievements) are plugin-provided, so they're shown only when
+ * their plugin is present (otherwise the link would dead-end). Every other
+ * built-in view and plugin tab is reached through the Settings hub. Labels are
+ * inline here (not i18n) for now — localization is a follow-up.
+ */
+function buildPrimaryNav(manifests: PluginManifest[]): NavItem[] {
+  const hasTab = (path: string) =>
+    manifests.some(
+      (m) => !m.tab.hidden && (m.tab.path === path || m.tab.override === path),
+    );
 
-const ICON_MAP: Record<string, ComponentType<{ className?: string }>> = {
-  Activity,
-  BarChart3,
-  Clock,
-  Cpu,
-  FileText,
-  KeyRound,
-  MessageSquare,
-  Package,
-  Settings,
-  Puzzle,
-  Sparkles,
-  Terminal,
-  Globe,
-  Database,
-  Shield,
-  Users,
-  Wrench,
-  Zap,
-  Heart,
-  Star,
-  Code,
-  Eye,
-};
-
-function resolveIcon(name: string): ComponentType<{ className?: string }> {
-  return ICON_MAP[name] ?? Puzzle;
-}
-
-function buildNavItems(
-  builtIn: NavItem[],
-  manifests: PluginManifest[],
-): NavItem[] {
-  const items = [...builtIn];
-
-  for (const manifest of manifests) {
-    if (manifest.tab.override) continue;
-    if (manifest.tab.hidden) continue;
-
-    const pluginItem: NavItem = {
-      path: manifest.tab.path,
-      label: manifest.label,
-      icon: resolveIcon(manifest.icon),
-    };
-
-    const pos = manifest.tab.position ?? "end";
-    if (pos === "end") {
-      items.push(pluginItem);
-    } else if (pos.startsWith("after:")) {
-      const target = "/" + pos.slice(6);
-      const idx = items.findIndex((i) => i.path === target);
-      items.splice(idx >= 0 ? idx + 1 : items.length, 0, pluginItem);
-    } else if (pos.startsWith("before:")) {
-      const target = "/" + pos.slice(7);
-      const idx = items.findIndex((i) => i.path === target);
-      items.splice(idx >= 0 ? idx : items.length, 0, pluginItem);
-    } else {
-      items.push(pluginItem);
-    }
-  }
-
+  const items: NavItem[] = [
+    { path: "/", label: "Home", icon: HomeIcon },
+    { path: "/inbox", label: "Incoming Messages", icon: Inbox },
+    { path: "/calendar", label: "Calendar", icon: CalendarDays },
+  ];
+  if (hasTab("/kanban"))
+    items.push({ path: "/kanban", label: "Tasks", icon: LayoutDashboard });
+  items.push({ path: "/cron", label: "Scheduled Actions", icon: Clock });
+  if (hasTab("/achievements"))
+    items.push({ path: "/achievements", label: "Achievements", icon: Star });
+  items.push({ path: "/settings", label: "Settings", icon: Settings });
   return items;
-}
-
-/** Split merged nav into built-in sidebar entries vs plugin tabs, preserving plugin order hints. */
-function partitionSidebarNav(
-  builtIn: NavItem[],
-  manifests: PluginManifest[],
-): { coreItems: NavItem[]; pluginItems: NavItem[] } {
-  const merged = buildNavItems(builtIn, manifests);
-  const builtinPaths = new Set(builtIn.map((i) => i.path));
-  const coreItems: NavItem[] = [];
-  const pluginItems: NavItem[] = [];
-  for (const item of merged) {
-    if (builtinPaths.has(item.path)) coreItems.push(item);
-    else pluginItems.push(item);
-  }
-  return { coreItems, pluginItems };
 }
 
 function buildRoutes(
@@ -313,6 +209,8 @@ function buildRoutes(
 }
 
 const SIDEBAR_COLLAPSED_KEY = "hermes-sidebar-collapsed";
+const CHAT_COLLAPSED_KEY = "hermes-chat-collapsed";
+const CHAT_WIDTH_KEY = "hermes-chat-width";
 
 export default function App() {
   const { t } = useI18n();
@@ -343,26 +241,52 @@ export default function App() {
   const tooltipWarmRef = useRef(0);
   const sidebarStatus = useSidebarStatus();
   const isDocsRoute = pathname === "/docs" || pathname === "/docs/";
-  const normalizedPath = pathname.replace(/\/$/, "") || "/";
-  const isChatRoute = normalizedPath === "/chat";
   const embeddedChat = isDashboardEmbeddedChatEnabled();
 
-  // `dashboard.show_token_analytics` gates the Analytics nav item.  The
-  // page itself remains reachable by URL (it renders an explanation when
-  // the flag is off — see AnalyticsPage), but hiding the nav entry avoids
-  // surfacing misleading token/cost numbers in the sidebar.  Default off.
-  const [showTokenAnalytics, setShowTokenAnalytics] = useState(false);
-  useEffect(() => {
-    api
-      .getConfig()
-      .then((cfg) => {
-        const dash = (cfg?.dashboard ?? {}) as {
-          show_token_analytics?: unknown;
-        };
-        setShowTokenAnalytics(dash.show_token_analytics === true);
-      })
-      .catch(() => setShowTokenAnalytics(false));
+  // Right-hand chat dock collapse state (persisted). Defaults expanded — the
+  // dashboard "opens to the chat panel".
+  const [chatCollapsed, setChatCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(CHAT_COLLAPSED_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  const toggleChat = useCallback(() => {
+    setChatCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(CHAT_COLLAPSED_KEY, String(next));
+      } catch {
+        /* localStorage may be unavailable in private browsing */
+      }
+      return next;
+    });
   }, []);
+
+  // Right-hand chat dock width (desktop drag-resize, persisted). Lazy-init from
+  // localStorage, clamped — never trust the raw parse (stale/hand-edited value).
+  const [chatWidth, setChatWidth] = useState(() => {
+    try {
+      const raw = localStorage.getItem(CHAT_WIDTH_KEY);
+      return raw == null ? CHAT_WIDTH_DEFAULT : clampChatWidth(Number(raw));
+    } catch {
+      return CHAT_WIDTH_DEFAULT;
+    }
+  });
+  const onChatWidthChange = useCallback((next: number) => {
+    const clamped = clampChatWidth(next);
+    setChatWidth(clamped);
+    try {
+      localStorage.setItem(CHAT_WIDTH_KEY, String(clamped));
+    } catch {
+      /* localStorage may be unavailable in private browsing */
+    }
+  }, []);
+
+  // Mobile chat drawer open/closed. Transient UI — intentionally NOT persisted.
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const closeMobileChat = useCallback(() => setMobileChatOpen(false), []);
 
   // A plugin can replace the built-in /chat page via `tab.override: "/chat"`
   // in its manifest.  When one does, `buildRoutes` already swaps the route
@@ -394,19 +318,7 @@ export default function App() {
     [embeddedChat],
   );
 
-  const builtinNav = useMemo(() => {
-    const base = embeddedChat
-      ? [CHAT_NAV_ITEM, ...BUILTIN_NAV_REST]
-      : BUILTIN_NAV_REST;
-    return showTokenAnalytics
-      ? base
-      : base.filter((n) => n.path !== "/analytics");
-  }, [embeddedChat, showTokenAnalytics]);
-
-  const sidebarNav = useMemo(
-    () => partitionSidebarNav(builtinNav, manifests),
-    [builtinNav, manifests],
-  );
+  const primaryNav = useMemo(() => buildPrimaryNav(manifests), [manifests]);
   const routes = useMemo(
     () => buildRoutes(builtinRoutes, manifests),
     [builtinRoutes, manifests],
@@ -442,6 +354,34 @@ export default function App() {
     const mql = window.matchMedia("(min-width: 1024px)");
     const onChange = (e: MediaQueryListEvent) => {
       if (e.matches) setMobileOpen(false);
+    };
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
+  // Mobile chat drawer: Esc-to-close + body-scroll-lock while open. Mirrors the
+  // mobile-nav effect above. (Nav and chat drawer aren't openable at once — the
+  // FAB is hidden while the nav is open — so the overflow save/restore is safe.)
+  useEffect(() => {
+    if (!mobileChatOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileChatOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [mobileChatOpen]);
+
+  // Crossing up to desktop closes the mobile chat drawer (it reverts to the
+  // in-flow dock there).
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1024px)");
+    const onChange = (e: MediaQueryListEvent) => {
+      if (e.matches) setMobileChatOpen(false);
     };
     mql.addEventListener("change", onChange);
     return () => mql.removeEventListener("change", onChange);
@@ -485,7 +425,7 @@ export default function App() {
           className="font-bold text-[0.95rem] leading-[0.95] tracking-[0.05em] text-midground"
           style={{ mixBlendMode: "plus-lighter" }}
         >
-          {t.app.brand}
+          AgentBOX
         </Typography>
       </header>
 
@@ -500,6 +440,31 @@ export default function App() {
           )}
         />
       )}
+
+      {/* Mobile chat FAB. Opens the full-screen chat drawer (same ChatPage
+          instance the desktop dock uses). Hidden while the drawer or the
+          mobile nav is open so it doesn't fight either backdrop. */}
+      {embeddedChat &&
+        !chatOverriddenByPlugin &&
+        !mobileChatOpen &&
+        !mobileOpen && (
+          <Button
+            ghost
+            size="icon"
+            onClick={() => setMobileChatOpen(true)}
+            aria-label="Open chat"
+            className={cn(
+              "lg:hidden fixed right-4 z-40",
+              "border border-current/20 bg-background-base/95 backdrop-blur-sm",
+              "text-text-secondary hover:text-midground shadow-lg",
+            )}
+            style={{
+              bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            <MessageSquare className="h-5 w-5" />
+          </Button>
+        )}
 
       <PluginSlot name="header-banner" />
 
@@ -543,9 +508,7 @@ export default function App() {
                   className="font-bold text-[1.125rem] leading-[0.95] tracking-[0.0525rem] text-midground uppercase"
                   style={{ mixBlendMode: "plus-lighter" }}
                 >
-                  Hermes
-                  <br />
-                  Agent
+                  AgentBOX
                 </Typography>
               </div>
 
@@ -581,7 +544,7 @@ export default function App() {
               aria-label={t.app.navigation}
             >
               <ul className="flex flex-col">
-                {sidebarNav.coreItems.map((item) => (
+                {primaryNav.map((item) => (
                   <SidebarNavLink
                     closeMobile={closeMobile}
                     collapsed={isDesktopCollapsed}
@@ -592,38 +555,6 @@ export default function App() {
                   />
                 ))}
               </ul>
-
-              {sidebarNav.pluginItems.length > 0 && (
-                <div
-                  aria-labelledby="hermes-sidebar-plugin-nav-heading"
-                  className="flex flex-col border-t border-current/10 pb-2"
-                  role="group"
-                >
-                  <span
-                    className={cn(
-                      "px-5 pt-2.5 pb-1",
-                      "font-mondwest text-display text-xs tracking-[0.12em] text-text-tertiary",
-                      isDesktopCollapsed && "lg:hidden",
-                    )}
-                    id="hermes-sidebar-plugin-nav-heading"
-                  >
-                    {t.app.pluginNavSection}
-                  </span>
-
-                  <ul className="flex flex-col">
-                    {sidebarNav.pluginItems.map((item) => (
-                      <SidebarNavLink
-                        closeMobile={closeMobile}
-                        collapsed={isDesktopCollapsed}
-                        item={item}
-                        key={item.path}
-                        t={t}
-                        tooltipWarmRef={tooltipWarmRef}
-                      />
-                    ))}
-                  </ul>
-                </div>
-              )}
             </nav>
 
             <SidebarSystemActions
@@ -681,67 +612,69 @@ export default function App() {
           </aside>
 
           <PageHeaderProvider pluginTabs={pluginTabMeta}>
-            <div
-              className={cn(
-                "relative z-2 flex min-w-0 min-h-0 flex-1 flex-col",
-                "px-3 sm:px-6",
-                isChatRoute
-                  ? "pb-0 pt-1 sm:pt-2 lg:pt-4"
-                  : "pt-2 sm:pt-4 lg:pt-6",
-                isDocsRoute && "min-h-0 flex-1",
-              )}
-            >
-              <PluginSlot name="pre-main" />
+            <div className="flex min-w-0 min-h-0 flex-1">
               <div
                 className={cn(
-                  "w-full min-w-0",
-                  !isChatRoute &&
-                    "pb-[calc(2rem+env(safe-area-inset-bottom,0px))] lg:pb-8",
-                  (isDocsRoute || isChatRoute) &&
-                    "min-h-0 flex flex-1 flex-col",
+                  "relative z-2 flex min-w-0 min-h-0 flex-1 flex-col",
+                  "px-3 sm:px-6 pt-2 sm:pt-4 lg:pt-6",
+                  isDocsRoute && "min-h-0 flex-1",
                 )}
               >
-                <Routes>
-                  {routes.map(({ key, path, element }) => (
-                    <Route key={key} path={path} element={element} />
-                  ))}
-                  <Route
-                    path="*"
-                    element={
-                      <UnknownRouteFallback pluginsLoading={pluginsLoading} />
-                    }
-                  />
-                </Routes>
-
-                {embeddedChat &&
-                  !chatOverriddenByPlugin &&
-                  (pluginsLoading ? (
-                    isChatRoute ? (
-                      <div
-                        className="flex min-h-0 min-w-0 flex-1 items-center justify-center"
-                        aria-busy="true"
-                        aria-live="polite"
-                      >
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Spinner />
-                          <span>Loading chat…</span>
-                        </div>
-                      </div>
-                    ) : null
-                  ) : (
-                    <div
-                      data-chat-active={isChatRoute ? "true" : "false"}
-                      className={cn(
-                        "min-h-0 min-w-0",
-                        isChatRoute ? "flex flex-1 flex-col" : "hidden",
-                      )}
-                      aria-hidden={!isChatRoute}
-                    >
-                      <ChatPage isActive={isChatRoute} />
-                    </div>
-                  ))}
+                <PluginSlot name="pre-main" />
+                <div
+                  className={cn(
+                    "w-full min-w-0",
+                    "pb-[calc(2rem+env(safe-area-inset-bottom,0px))] lg:pb-8",
+                    isDocsRoute && "min-h-0 flex flex-1 flex-col",
+                  )}
+                >
+                  <Routes>
+                    {routes.map(({ key, path, element }) => (
+                      <Route key={key} path={path} element={element} />
+                    ))}
+                    <Route
+                      path="*"
+                      element={
+                        <UnknownRouteFallback pluginsLoading={pluginsLoading} />
+                      }
+                    />
+                  </Routes>
+                </div>
+                <PluginSlot name="post-main" />
               </div>
-              <PluginSlot name="post-main" />
+
+              {/* Persistent right-hand chat dock. The single ChatPage instance
+                  stays mounted across route changes and collapse toggles so the
+                  PTY/WebSocket survive. Only rendered when embedded chat is on
+                  (`hermes dashboard --tui`) and no plugin overrides /chat. */}
+              {embeddedChat && !chatOverriddenByPlugin && (
+                <ChatDock
+                  collapsed={chatCollapsed}
+                  onToggle={toggleChat}
+                  width={chatWidth}
+                  onWidthChange={onChatWidthChange}
+                  mobileOpen={mobileChatOpen}
+                  onMobileClose={closeMobileChat}
+                  isMobile={isMobile}
+                >
+                  {pluginsLoading ? (
+                    <div
+                      className="flex min-h-0 min-w-0 flex-1 items-center justify-center"
+                      aria-busy="true"
+                      aria-live="polite"
+                    >
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Spinner />
+                        <span>Loading chat…</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <ChatPage
+                      isActive={isMobile ? mobileChatOpen : !chatCollapsed}
+                    />
+                  )}
+                </ChatDock>
+              )}
             </div>
           </PageHeaderProvider>
         </div>
@@ -775,7 +708,7 @@ function SidebarNavLink({
     >
       <NavLink
         to={path}
-        end={path === "/sessions"}
+        end={path === "/"}
         onClick={closeMobile}
         aria-label={collapsed ? navLabel : undefined}
         onFocus={collapsed ? () => setHovered(true) : undefined}

@@ -688,6 +688,295 @@ async def get_status():
     }
 
 
+# Brief in-process cache so Home loads don't spawn a gbrain CLI (bun + pglite,
+# ~seconds) on every request. Forward-only; refreshed once past the TTL.
+_DIGEST_CACHE: Dict[str, Any] = {"ts": 0.0, "data": None}
+_DIGEST_TTL_SECONDS = 300.0
+
+
+def _gbrain_cli_json(args: List[str], timeout: float = 30.0) -> Any:
+    """Run a gbrain CLI subcommand with ``--json`` and return parsed JSON, else None.
+
+    Resolves bun + the gbrain checkout from env (``GBRAIN_BUN`` / ``GBRAIN_DIR``)
+    with loopback-appliance defaults. The CLI prints one-time migration/log
+    noise to stderr; JSON goes to stdout. Never raises.
+    """
+    bun = os.environ.get("GBRAIN_BUN") or str(Path.home() / ".bun" / "bin" / "bun")
+    gbrain_dir = os.environ.get("GBRAIN_DIR") or str(Path.home() / "gbrain-src")
+    cli = str(Path(gbrain_dir) / "src" / "cli.ts")
+    try:
+        proc = subprocess.run(
+            [bun, "run", cli, *args, "--json"],
+            cwd=gbrain_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    out = (proc.stdout or "").strip()
+    if not out:
+        return None
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        # Tolerate any leading non-JSON noise that slipped onto stdout.
+        start = out.find("[")
+        if start == -1:
+            start = out.find("{")
+        if start > 0:
+            try:
+                return json.loads(out[start:])
+            except json.JSONDecodeError:
+                return None
+        return None
+
+
+def _gbrain_cli_text(args: List[str], timeout: float = 30.0) -> Optional[str]:
+    """Run a gbrain CLI subcommand and return raw stdout text, else None.
+
+    For commands that have no ``--json`` mode (e.g. ``query``). Never raises.
+    """
+    bun = os.environ.get("GBRAIN_BUN") or str(Path.home() / ".bun" / "bin" / "bun")
+    gbrain_dir = os.environ.get("GBRAIN_DIR") or str(Path.home() / "gbrain-src")
+    cli = str(Path(gbrain_dir) / "src" / "cli.ts")
+    try:
+        proc = subprocess.run(
+            [bun, "run", cli, *args],
+            cwd=gbrain_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout or None
+
+
+def _gbrain_query_highlights(prompt: str, limit: int = 5) -> List[str]:
+    """Semantic-search highlights via ``gbrain query`` (no --json mode).
+
+    Parses its text output — result lines look like
+    ``[0.3641] meetings/…-zephyr-kickoff -- <snippet>`` and snippets can wrap
+    onto continuation lines. Returns pre-formatted bullet strings (possibly
+    empty). Never raises.
+    """
+    import re
+
+    out = _gbrain_cli_text(
+        ["query", prompt, "--limit", str(limit), "--detail", "low"]
+    )
+    if not out:
+        return []
+    row_re = re.compile(r"^\[[0-9.]+\]\s+(\S+)\s+--\s+(.*)$")
+    results: List[Dict[str, str]] = []
+    current: Optional[Dict[str, str]] = None
+    for raw in out.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.lower().startswith("no results"):
+            return []
+        m = row_re.match(line)
+        if m:
+            if current:
+                results.append(current)
+            slug, snippet = m.group(1), m.group(2)
+            current = {"label": slug.rsplit("/", 1)[-1], "snippet": snippet}
+        elif current:
+            current["snippet"] += " " + line
+    if current:
+        results.append(current)
+
+    bullets: List[str] = []
+    for r in results[:limit]:
+        snippet = " ".join(r["snippet"].split())
+        if len(snippet) > 160:
+            snippet = snippet[:157].rstrip() + "…"
+        bullets.append(f"  • {r['label']}: {snippet}")
+    return bullets
+
+
+def _format_gbrain_digest(
+    salience: list, anomalies: list, highlights: Optional[List[str]] = None
+) -> Optional[str]:
+    """Render salience + anomaly rows as readable plain text.
+
+    The SPA shows the digest inside a ``<pre>`` (no markdown renderer), so this
+    is plain text — section labels + bullets, not ``#``/``**`` syntax.
+    """
+    lines: List[str] = []
+    if salience:
+        lines.append("RECENT & NOTABLE")
+        for item in salience[:10]:
+            if not isinstance(item, dict):
+                continue
+            title = item.get("title") or item.get("slug") or "untitled"
+            kind = item.get("type")
+            updated = (item.get("updated_at") or "")[:10]
+            meta = " · ".join(p for p in (kind, updated) if p)
+            lines.append(f"  • {title}" + (f"   ({meta})" if meta else ""))
+    if highlights:
+        if lines:
+            lines.append("")
+        lines.append("HIGHLIGHTS")
+        lines.extend(highlights)
+    if anomalies:
+        if lines:
+            lines.append("")
+        lines.append("WHAT STOOD OUT")
+        for a in anomalies[:6]:
+            if isinstance(a, dict):
+                text = (
+                    a.get("explanation")
+                    or a.get("summary")
+                    or a.get("cohort")
+                    or json.dumps(a)
+                )
+            else:
+                text = str(a)
+            lines.append(f"  • {text}")
+    return "\n".join(lines) if lines else None
+
+
+def _read_latest_digest() -> dict:
+    """Build the Home digest live from gbrain: recent salience + anomalies.
+
+    Shells out to the on-box gbrain CLI — ``gbrain salience`` and
+    ``gbrain anomalies``, the ops gbrain itself recommends for
+    "what's notable / current state" (see their ``--help``; semantic search is
+    explicitly the wrong tool here). The result is cached for a few minutes so
+    Home loads don't spawn bun + pglite each time. Never raises: any failure
+    yields the empty shape (``markdown: None``) so :func:`get_latest_digest`
+    always answers 200.
+
+    Blocking — run via ``run_in_executor`` from async code.
+    """
+    from datetime import datetime, timezone
+
+    now = datetime.now(tz=timezone.utc)
+    mono = time.monotonic()
+    cached = _DIGEST_CACHE.get("data")
+    if cached is not None and (mono - _DIGEST_CACHE.get("ts", 0.0)) < _DIGEST_TTL_SECONDS:
+        return cached
+
+    salience = _gbrain_cli_json(["salience", "--days", "14", "--limit", "10"])
+    anomalies = _gbrain_cli_json(["anomalies"])
+    salience = salience if isinstance(salience, list) else []
+    anomalies = anomalies if isinstance(anomalies, list) else []
+
+    query_prompt = os.environ.get(
+        "GBRAIN_DIGEST_QUERY",
+        "most important open items, decisions, risks, and follow-ups",
+    )
+    highlights = _gbrain_query_highlights(query_prompt, limit=5)
+
+    markdown = _format_gbrain_digest(salience, anomalies, highlights)
+    data = {
+        "date": now.date().isoformat(),
+        "title": "Daily Digest",
+        "markdown": markdown,
+        "source": "gbrain",
+        "generated_at": now.isoformat() if markdown else None,
+    }
+    _DIGEST_CACHE["ts"] = mono
+    _DIGEST_CACHE["data"] = data
+    return data
+
+
+@app.get("/api/digest/latest")
+async def get_latest_digest():
+    """Return the most-recent daily digest for the Home landing pane.
+
+    Built live from gbrain — salience + anomalies (see :func:`_read_latest_digest`).
+    Always answers 200 — when no digest exists yet the response carries
+    ``markdown: None`` so the SPA can render a clean empty state rather than
+    treating it as an error (and a 401 here would wrongly trigger the
+    loopback stale-token page reload in ``fetchJSON``).
+    """
+    loop = asyncio.get_running_loop()
+    digest = await loop.run_in_executor(None, _read_latest_digest)
+    return JSONResponse(digest)
+
+
+# ---------------------------------------------------------------------------
+# Incoming Messages — same-origin reverse proxy to the on-box MailBOX approval
+# dashboard (mailbox-dashboard, built with basePath=/dashboard so every route
+# and asset lives under /dashboard/*).
+#
+# Why proxy instead of iframing http://127.0.0.1:3001 directly: the iframe
+# runs in the *browser*, so 127.0.0.1 resolves to wherever the operator is —
+# correct on the kiosk, but over an ``ssh -L 9119:…`` tunnel it hits the
+# operator's OWN localhost:3001 (a different app). Routing through /dashboard/*
+# on the Hermes origin (:9119, which IS tunneled) makes the tab work from
+# anywhere. Loopback only; the dashboard is unauthenticated on the appliance,
+# and the auth middleware above only gates /api/*, so this passes through.
+# ---------------------------------------------------------------------------
+_DASHBOARD_UPSTREAM: str = os.environ.get(
+    "MAILBOX_DASHBOARD_URL", "http://127.0.0.1:3001"
+).rstrip("/")
+
+# Hop-by-hop headers must not be forwarded (RFC 7230 §6.1); content-length is
+# dropped because the response is re-streamed (chunked). content-encoding is
+# kept so the browser still decodes the raw upstream bytes.
+_HOP_BY_HOP = frozenset({
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade", "content-length", "host",
+})
+
+
+@app.api_route(
+    "/dashboard/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+async def _proxy_mailbox_dashboard(path: str, request: Request):
+    """Stream-proxy /dashboard/* to the on-box mailbox-dashboard (:3001)."""
+    import httpx
+    from starlette.responses import StreamingResponse
+
+    upstream_url = f"{_DASHBOARD_UPSTREAM}/dashboard/{path}"
+    fwd_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in _HOP_BY_HOP
+    }
+    body = await request.body()
+    client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=None))
+    try:
+        upstream_req = client.build_request(
+            request.method, upstream_url,
+            params=request.query_params, headers=fwd_headers, content=body,
+        )
+        upstream = await client.send(upstream_req, stream=True)
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        return JSONResponse(
+            status_code=502,
+            content={"detail": f"mailbox-dashboard unreachable: {exc}"},
+        )
+    resp_headers = {
+        k: v for k, v in upstream.headers.items()
+        if k.lower() not in _HOP_BY_HOP
+    }
+
+    async def _body_stream():
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        _body_stream(),
+        status_code=upstream.status_code,
+        headers=resp_headers,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Gateway + update actions (invoked from the Status page).
 #
