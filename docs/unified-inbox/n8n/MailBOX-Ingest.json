@@ -1,0 +1,264 @@
+{
+  "active": true,
+  "connections": {
+    "Ingest Webhook": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Map To Writer",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Map To Writer": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Insert Inbox (HTTP)",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Insert Inbox (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Only If Newly Inserted",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Ack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only If Newly Inserted": {
+      "main": [
+        [
+          {
+            "node": "Run Classify Sub",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "description": null,
+  "id": "deQnhvIe3fFXVHgw",
+  "isArchived": false,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "name": "MailBOX-Ingest",
+  "nodes": [
+    {
+      "id": "96a05d1f-29a9-4f05-b44f-04a8e27cda39",
+      "name": "Ingest Webhook",
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {},
+        "path": "mailbox-ingest",
+        "responseMode": "responseNode"
+      },
+      "position": [
+        0,
+        0
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "webhookId": "6a784d16-8afd-40f0-95bc-aaf46dd485e2"
+    },
+    {
+      "id": "8dbf34c9-b24b-4494-a4fb-014a6049b9d9",
+      "name": "Map To Writer",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cd02d53b-e670-4aae-b787-07f70a801a78",
+              "name": "channel",
+              "type": "string",
+              "value": "={{ $json.body.channel || 'email' }}"
+            },
+            {
+              "id": "487ee18f-6e6c-42b1-9496-4cee3b55f873",
+              "name": "message_id",
+              "type": "string",
+              "value": "={{ $json.body.external_id || '' }}"
+            },
+            {
+              "id": "a67dc223-e073-4f90-92de-91f6481f8ed9",
+              "name": "external_id",
+              "type": "string",
+              "value": "={{ $json.body.external_id || '' }}"
+            },
+            {
+              "id": "7a22be5e-12a9-497b-ba13-6cc1c86bdac3",
+              "name": "account_id",
+              "type": "number",
+              "value": "={{ $json.body.account_id || 0 }}"
+            },
+            {
+              "id": "4bb5aa2f-e9ed-4709-aa40-9a0d25c42212",
+              "name": "thread_id",
+              "type": "string",
+              "value": "={{ $json.body.thread_ref || '' }}"
+            },
+            {
+              "id": "a24671a6-1303-48c3-9a7e-bd05c052fdec",
+              "name": "from_addr",
+              "type": "string",
+              "value": "={{ $json.body.sender || '' }}"
+            },
+            {
+              "id": "d7d75745-11dd-49b1-9419-a886dd66e483",
+              "name": "to_addr",
+              "type": "string",
+              "value": "={{ $json.body.recipient || '' }}"
+            },
+            {
+              "id": "d3953694-26d9-4432-8816-71c39f84081f",
+              "name": "subject",
+              "type": "string",
+              "value": "={{ $json.body.subject || '' }}"
+            },
+            {
+              "id": "efe456dc-0a87-42fd-b4eb-3787844d9cf0",
+              "name": "body",
+              "type": "string",
+              "value": "={{ $json.body.body || '' }}"
+            },
+            {
+              "id": "b1f0c2d3-1111-4a01-9001-aabbccddeeff",
+              "name": "snippet",
+              "type": "string",
+              "value": "={{ ($json.body.body || '').substring(0, 200) }}"
+            },
+            {
+              "id": "c2e1d3f4-2222-4b02-9002-bbccddeeff00",
+              "name": "received_at",
+              "type": "string",
+              "value": "={{ $json.body.received_at || '' }}"
+            },
+            {
+              "id": "d3f2e4a5-3333-4c03-9003-ccddeeff0011",
+              "name": "metadata",
+              "type": "object",
+              "value": "={{ $json.body.metadata || {} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        220,
+        0
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "e4a3f5b6-4444-4d04-9004-ddeeff001122",
+      "name": "Insert Inbox (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/inbox-messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ channel: $json.channel || 'email', external_id: $json.external_id || '', message_id: $json.message_id || '', thread_id: $json.thread_id || '', from_addr: $json.from_addr || '', to_addr: $json.to_addr || '', subject: $json.subject || '', received_at: $json.received_at || '', snippet: $json.snippet || '', body: $json.body || '', metadata: $json.metadata || {} }, ($json.account_id ? { account_id: $json.account_id } : {}))) }}",
+        "options": {
+          "timeout": 5000
+        }
+      }
+    },
+    {
+      "id": "f5b4a6c7-5555-4e05-9005-eeff00112233",
+      "name": "Only If Newly Inserted",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        -80
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a6c5b7d8-6666-4f06-9006-ff0011223344",
+              "leftValue": "={{ $json.created }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "07d6c8e9-7777-4007-9007-001122334455",
+      "name": "Run Classify Sub",
+      "parameters": {
+        "options": {},
+        "workflowId": {
+          "__rl": true,
+          "cachedResultName": "MailBOX-Classify",
+          "mode": "id",
+          "value": "MlbxClsfySub0001"
+        }
+      },
+      "position": [
+        880,
+        -80
+      ],
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2
+    },
+    {
+      "id": "18e7d9f0-8888-4008-9008-112233445566",
+      "name": "Ack Webhook",
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, id: $json.id, message_id: $json.message_id, created: $json.created } }}"
+      },
+      "position": [
+        660,
+        120
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}
