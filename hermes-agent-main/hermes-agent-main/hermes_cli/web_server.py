@@ -76,6 +76,15 @@ except ImportError:
         )
 
 WEB_DIST = Path(os.environ["HERMES_WEB_DIST"]) if "HERMES_WEB_DIST" in os.environ else Path(__file__).parent / "web_dist"
+# Brain Graph: the prebuilt static Understand-Anything demo bundle + the gbrain
+# snapshot (knowledge-graph.json) live here, served same-origin under /graph-app/
+# and iframed by the dashboard's GraphPage. Built/refreshed on the gbrain host
+# (mailbox2) — see docs/brain-graph-tab-prd.v0.1.0.md.
+GRAPH_APP_DIST = (
+    Path(os.environ["HERMES_GRAPH_APP_DIST"])
+    if "HERMES_GRAPH_APP_DIST" in os.environ
+    else Path(__file__).parent / "graph_app"
+)
 _log = logging.getLogger(__name__)
 
 app = FastAPI(title="Hermes Agent", version=__version__)
@@ -4212,6 +4221,40 @@ def mount_spa(application: FastAPI):
         return Response(content=css, media_type="text/css")
 
     application.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
+
+    # Brain Graph: serve the static UA bundle + gbrain snapshot same-origin under
+    # /graph-app/. Registered BEFORE the SPA catch-all below so /{full_path}
+    # doesn't swallow it. html=True makes /graph-app/ resolve to index.html and
+    # /graph-app/knowledge-graph.json serve the snapshot. Not gated by the /api
+    # auth middleware (same as the SPA + the /dashboard inbox proxy); the edge
+    # (Caddy basic-auth) already fronts the whole origin.
+    if GRAPH_APP_DIST.is_dir() and (GRAPH_APP_DIST / "index.html").is_file():
+        application.mount(
+            "/graph-app",
+            StaticFiles(directory=GRAPH_APP_DIST, html=True),
+            name="graph-app",
+        )
+    else:
+        # Bundle not generated yet — return a friendly placeholder so the iframe
+        # shows guidance instead of a blank page or the SPA catch-all.
+        _graph_placeholder = (
+            "<!doctype html><meta charset=utf-8>"
+            "<title>Brain Graph</title>"
+            "<style>html,body{height:100%;margin:0;background:#0a0a0a;color:#9aa0a6;"
+            "font:14px/1.6 ui-monospace,monospace;display:flex;align-items:center;"
+            "justify-content:center;text-align:center}div{max-width:32rem;padding:2rem}"
+            "code{color:#cdd2d6}</style>"
+            "<div><h2>Brain Graph not generated yet</h2>"
+            "<p>Run the gbrain&nbsp;&rarr;&nbsp;Understand-Anything export on the gbrain host, "
+            "then drop the bundle into <code>graph_app/</code> "
+            "(or set <code>HERMES_GRAPH_APP_DIST</code>).</p>"
+            "<p>See <code>docs/brain-graph-tab-prd.v0.1.0.md</code>.</p></div>"
+        )
+
+        @application.get("/graph-app")
+        @application.get("/graph-app/{_sub:path}")
+        async def graph_app_placeholder(_sub: str = ""):
+            return HTMLResponse(_graph_placeholder)
 
     @application.get("/{full_path:path}")
     async def serve_spa(full_path: str, request: Request):

@@ -25,6 +25,7 @@ import {
   LayoutDashboard,
   Menu,
   MessageSquare,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   RotateCw,
@@ -62,6 +63,7 @@ import ChatPage from "@/pages/ChatPage";
 import HomePage from "@/pages/HomePage";
 import CalendarPage from "@/pages/CalendarPage";
 import InboxPage from "@/pages/InboxPage";
+import GraphPage from "@/pages/GraphPage";
 import SettingsHubPage from "@/pages/SettingsHubPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
@@ -102,6 +104,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/models": ModelsPage,
   "/logs": LogsPage,
   "/cron": CronPage,
+  "/graph": GraphPage,
   "/skills": SkillsPage,
   "/plugins": PluginsPage,
   "/profiles": ProfilesPage,
@@ -139,6 +142,7 @@ function buildPrimaryNav(manifests: PluginManifest[]): NavItem[] {
   if (hasTab("/kanban"))
     items.push({ path: "/kanban", label: "Tasks", icon: LayoutDashboard });
   items.push({ path: "/cron", label: "Scheduled Actions", icon: Clock });
+  items.push({ path: "/graph", label: "Brain Graph", icon: Network });
   if (hasTab("/achievements"))
     items.push({ path: "/achievements", label: "Achievements", icon: Star });
   items.push({ path: "/settings", label: "Settings", icon: Settings });
