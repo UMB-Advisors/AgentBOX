@@ -75,7 +75,29 @@ async function main(): Promise<void> {
     console.error("gbrain-graph-export: no gbrain config found (loadConfig() returned null).");
     process.exit(2);
   }
-  const engine = await createEngine(toEngineConfig(config));
+  const engineConfig = toEngineConfig(config);
+  const engine = await createEngine(engineConfig);
+  // PGLite engines are constructed disconnected — open the brain before querying.
+  // PGLite is single-writer: `gbrain serve` may hold the lock, so retry a few
+  // times before giving up (matters for the unattended scheduled refresh).
+  if (typeof engine.connect === "function") {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let connected = false;
+    for (let attempt = 1; attempt <= 5 && !connected; attempt++) {
+      try {
+        await engine.connect(engineConfig);
+        connected = true;
+      } catch (e) {
+        const msg = (e as Error).message ?? "";
+        if (/lock/i.test(msg) && attempt < 5) {
+          console.error(`gbrain-graph-export: PGLite lock busy, retry ${attempt}/4 in 15s…`);
+          await sleep(15000);
+        } else {
+          throw e;
+        }
+      }
+    }
+  }
 
   // ── Nodes ────────────────────────────────────────────────────────────────
   const pages: AnyRec[] = await engine.listPages({ includeDeleted: false, limit: 100000 });
@@ -162,6 +184,9 @@ async function main(): Promise<void> {
   if (typeof engine.close === "function") {
     try { await engine.close(); } catch { /* best effort */ }
   }
+  // PGLite can keep the event loop alive after close; the file is already
+  // written, so exit deterministically (matters for the scheduled refresh).
+  process.exit(0);
 }
 
 main().catch((e) => {
