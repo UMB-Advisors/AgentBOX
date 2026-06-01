@@ -103,7 +103,12 @@ export default function CronPage() {
   const [loading, setLoading] = useState(true);
   const { toast, showToast } = useToast();
   const { t } = useI18n();
-  const { setEnd } = usePageHeader();
+  const { setEnd, setTitle } = usePageHeader();
+
+  // Renamed in the simplified nav: "Cron" → "Scheduled Actions".
+  useEffect(() => {
+    setTitle("Scheduled Actions");
+  }, [setTitle]);
 
   // New job modal state
   const [createModalOpen, setCreateModalOpen] = useState(false);
