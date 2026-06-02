@@ -170,7 +170,14 @@ code { font-size: 0.875rem; }
   --color-destructive: #fb2c36;
   --color-destructive-foreground: #ffffff;
   --color-success: #4ade80;
+  --color-success-foreground: #04210f;
   --color-warning: #ffbd38;
+  --color-warning-foreground: #2a1c00;
+  /* UI Revamp P0 (DESIGN-SYSTEM R-TOKEN-2): info status + status foregrounds.
+     Status hues stay literal (cross-theme meaning) but must always pair with an
+     icon/text per R-A11Y-4; the foregrounds give AA contrast on a status chip. */
+  --color-info: #38bdf8;
+  --color-info-foreground: #04212e;
   --color-border: color-mix(in srgb, var(--midground-base) 15%, transparent);
   --color-input: color-mix(in srgb, var(--midground-base) 15%, transparent);
   --color-ring: var(--midground);
@@ -181,6 +188,16 @@ code { font-size: 0.875rem; }
   --radius-md: calc(var(--theme-radius) - 2px);
   --radius-lg: var(--theme-radius);
   --radius-xl: calc(var(--theme-radius) + 4px);
+
+  /* UI Revamp P0 (DESIGN-SYSTEM §5): theme-safe elevation scale derived from the
+     theme background so it reads in both dark and light-leaning themes. Exposes
+     Tailwind `shadow-e1/e2/e3` — cards=e1, popovers/dropdowns=e2, modals=e3.
+     Replaces ad-hoc per-component shadows (R: elevation-consistent). */
+  --shadow-e1: 0 1px 2px 0 color-mix(in srgb, var(--background-base) 55%, transparent);
+  --shadow-e2: 0 2px 8px -1px color-mix(in srgb, var(--background-base) 60%, transparent),
+               0 1px 2px 0 color-mix(in srgb, var(--background-base) 40%, transparent);
+  --shadow-e3: 0 10px 28px -6px color-mix(in srgb, var(--background-base) 65%, transparent),
+               0 3px 8px 0 color-mix(in srgb, var(--background-base) 45%, transparent);
 }
 
 
@@ -256,5 +273,37 @@ code { font-size: 0.875rem; }
 }
 :root[style*="--theme-asset-bg:"] .theme-default-filler {
   display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* UI Revamp P0 — global accessibility primitives (DESIGN-SYSTEM §4/§6). */
+/* ------------------------------------------------------------------ */
+
+/* R-A11Y-2 — visible keyboard focus on every interactive element. Additive and
+   :focus-visible only (keyboard nav), so mouse interaction is unchanged and a
+   Nous DS component that draws its own ring still wins where it sets one. */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* R-A11Y-3 — honor reduced-motion globally; near-instant rather than removed so
+   state changes still register. Essential motion can opt back in per-component. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
