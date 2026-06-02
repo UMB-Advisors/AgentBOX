@@ -64,6 +64,110 @@ function arg(name: string, fallback?: string): string | undefined {
   return i !== -1 && i + 1 < process.argv.length ? process.argv[i + 1] : fallback;
 }
 
+// ── Content similarity (adapter-side edges) ────────────────────────────────
+// gbrain's seed pages are raw notes with no wikilinks/entities, so it extracts
+// no links. To produce a *connected* graph we derive "related" edges from page
+// content: TF-IDF cosine over each page's text, linking every page to its top-K
+// most similar peers. Deterministic, zero LLM/cost, no gbrain config change.
+
+const STOPWORDS = new Set(
+  ("a an and are as at be but by for from has have he her his in into is it its of on or " +
+    "that the their then there these they this to was were will with you your our we are not " +
+    "can could should would about over under between which who what when where how than them " +
+    "also more most some such only just like via per use used using new one two via i o").split(/\s+/),
+);
+
+function tokenize(text: string): string[] {
+  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(
+    (t) => t.length >= 3 && !STOPWORDS.has(t),
+  );
+}
+
+// All string-ish fields on a page object, concatenated — robust to whatever
+// listPages returns (title/compiled_truth/summary/timeline/type).
+function pageText(p: AnyRec): string {
+  const parts: string[] = [];
+  for (const k of ["title", "compiled_truth", "summary", "timeline", "type", "slug"]) {
+    const v = p[k];
+    if (typeof v === "string" && v) parts.push(v);
+  }
+  return parts.join(" ");
+}
+
+function similarityEdges(
+  pages: AnyRec[],
+  idOf: (p: AnyRec) => string,
+  existingUndirected: Set<string>,
+  topK: number,
+  minSim: number,
+): AnyRec[] {
+  const N = pages.length;
+  if (N < 2) return [];
+
+  // Per-doc term frequencies + document frequencies.
+  const tfs: Array<Map<string, number>> = [];
+  const df = new Map<string, number>();
+  for (const p of pages) {
+    const tf = new Map<string, number>();
+    for (const tok of tokenize(pageText(p))) tf.set(tok, (tf.get(tok) ?? 0) + 1);
+    tfs.push(tf);
+    for (const t of tf.keys()) df.set(t, (df.get(t) ?? 0) + 1);
+  }
+
+  // L2-normalized TF-IDF vectors (sublinear tf, smoothed idf).
+  const vecs: Array<Map<string, number>> = tfs.map((tf) => {
+    const v = new Map<string, number>();
+    let norm = 0;
+    for (const [t, c] of tf) {
+      const idf = Math.log((N + 1) / ((df.get(t) ?? 0) + 1)) + 1;
+      const w = (1 + Math.log(c)) * idf;
+      v.set(t, w);
+      norm += w * w;
+    }
+    norm = Math.sqrt(norm) || 1;
+    for (const [t, w] of v) v.set(t, w / norm);
+    return v;
+  });
+
+  const cos = (a: Map<string, number>, b: Map<string, number>): number => {
+    const [s, l] = a.size < b.size ? [a, b] : [b, a];
+    let dot = 0;
+    for (const [t, w] of s) {
+      const w2 = l.get(t);
+      if (w2) dot += w * w2;
+    }
+    return dot;
+  };
+
+  const out: AnyRec[] = [];
+  const pairSeen = new Set<string>(existingUndirected);
+  for (let i = 0; i < N; i++) {
+    const sims: Array<{ j: number; s: number }> = [];
+    for (let j = 0; j < N; j++) {
+      if (i === j) continue;
+      const s = cos(vecs[i], vecs[j]);
+      if (s >= minSim) sims.push({ j, s });
+    }
+    sims.sort((x, y) => y.s - x.s);
+    for (const { j, s } of sims.slice(0, topK)) {
+      const a = idOf(pages[i]);
+      const b = idOf(pages[j]);
+      if (!a || !b || a === b) continue;
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+      if (pairSeen.has(key)) continue;
+      pairSeen.add(key);
+      out.push({
+        source: a,
+        target: b,
+        type: "related",
+        direction: "bidirectional",
+        weight: Math.min(1, Math.max(0.01, Number(s.toFixed(3)))),
+      });
+    }
+  }
+  return out;
+}
+
 async function main(): Promise<void> {
   const outPath =
     arg("--out") ??
@@ -164,6 +268,28 @@ async function main(): Promise<void> {
     }
   }
 
+  const linkEdgeCount = edges.length;
+
+  // ── Similarity edges ───────────────────────────────────────────────────────
+  // Add content-similarity "related" edges so the graph is connected even when
+  // gbrain extracted no links. Disable with --no-similarity. Tunables via env.
+  let simEdgeCount = 0;
+  if (!process.argv.includes("--no-similarity")) {
+    const topK = Number(process.env.GBRAIN_GRAPH_SIM_TOPK ?? arg("--sim-top-k") ?? 4) || 4;
+    const minSim = Number(process.env.GBRAIN_GRAPH_SIM_MIN ?? arg("--sim-min") ?? 0.06) || 0.06;
+    const idOf = (p: AnyRec) => String(p.id ?? p.page_id ?? "");
+    // Undirected pairs already connected by a real link take precedence.
+    const existingUndirected = new Set<string>();
+    for (const e of edges) {
+      const a = String(e.source);
+      const b = String(e.target);
+      existingUndirected.add(a < b ? `${a}|${b}` : `${b}|${a}`);
+    }
+    const simEdges = similarityEdges(pages, idOf, existingUndirected, topK, minSim);
+    simEdgeCount = simEdges.length;
+    edges.push(...simEdges);
+  }
+
   const graph = {
     project: {
       name: "gbrain",
@@ -179,7 +305,10 @@ async function main(): Promise<void> {
   };
 
   await Bun.write(outPath, JSON.stringify(graph, null, 2));
-  console.error(`gbrain-graph-export: pages=${pages.length} links-scanned edges=${edges.length} → ${outPath}`);
+  console.error(
+    `gbrain-graph-export: pages=${pages.length} link-edges=${linkEdgeCount} ` +
+      `similarity-edges=${simEdgeCount} total-edges=${edges.length} → ${outPath}`,
+  );
 
   if (typeof engine.close === "function") {
     try { await engine.close(); } catch { /* best effort */ }
