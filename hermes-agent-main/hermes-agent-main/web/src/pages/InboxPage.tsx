@@ -351,7 +351,7 @@ function InboxList({
                   {row.classification_category && (
                     <span className="truncate">· {row.classification_category}</span>
                   )}
-                  <span className="ml-auto shrink-0">
+                  <span className="ml-auto shrink-0 tabular-nums">
                     {formatTime(row.received_at)}
                   </span>
                 </div>
@@ -500,7 +500,7 @@ function InboxDetail({
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span>From: {row.from_addr}</span>
             <span>To: {row.to_addr}</span>
-            <span>{formatTime(row.received_at)}</span>
+            <span className="tabular-nums">{formatTime(row.received_at)}</span>
             <span>Account: {accountLabel(row)}</span>
             {row.classification_category && (
               <span>Class: {row.classification_category}</span>
@@ -562,7 +562,7 @@ function InboxDetail({
         {/* Draft */}
         <section className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <Label>Draft reply</Label>
+            <Label htmlFor="inbox-draft-body">Draft reply</Label>
             {!editing && canDecide && (
               <Button
                 ghost
@@ -578,6 +578,7 @@ function InboxDetail({
           {editing ? (
             <div className="flex flex-col gap-2">
               <textarea
+                id="inbox-draft-body"
                 className="min-h-[160px] w-full resize-y border border-border bg-background/40 px-3 py-2 text-sm font-courier leading-relaxed placeholder:text-muted-foreground focus-visible:border-foreground/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/30"
                 value={draftBody}
                 onChange={(e) => setDraftBody(e.target.value)}
@@ -655,6 +656,7 @@ function InboxDetail({
                   </Select>
                 </div>
                 <textarea
+                  aria-label="Rejection note"
                   className="min-h-[60px] w-full resize-y border border-border bg-background/40 px-3 py-2 text-sm font-courier placeholder:text-muted-foreground focus-visible:border-foreground/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/30"
                   placeholder={
                     rejectCode === "other"

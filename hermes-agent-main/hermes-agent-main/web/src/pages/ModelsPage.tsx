@@ -125,7 +125,7 @@ function TokenBar({
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-secondary">
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-secondary tabular-nums">
         {segments.map((s, i) => (
           <span key={i} className="flex items-center gap-1">
             <span className={`inline-block h-1.5 w-1.5 rounded-full ${s.dotColor}`} />
@@ -243,7 +243,7 @@ function UseAsMenu({
         Use as <ChevronDown className="h-3 w-3" />
       </Button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] border border-border bg-card shadow-lg">
+        <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] border border-border bg-card shadow-e2">
           <button
             type="button"
             onClick={() => assign("main", "")}
@@ -345,7 +345,7 @@ function ModelCard({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-text-tertiary text-xs font-mono">
+              <span className="text-text-tertiary text-xs font-mono tabular-nums">
                 #{rank}
               </span>
               <CardTitle className="text-sm font-mono-ui truncate">
@@ -369,12 +369,12 @@ function ModelCard({
                 </Badge>
               )}
               {caps.context_window && caps.context_window > 0 && (
-                <span className="text-xs text-text-secondary">
+                <span className="text-xs text-text-secondary tabular-nums">
                   {formatTokenCount(caps.context_window)} ctx
                 </span>
               )}
               {caps.max_output_tokens && caps.max_output_tokens > 0 && (
-                <span className="text-xs text-text-secondary">
+                <span className="text-xs text-text-secondary tabular-nums">
                   {formatTokenCount(caps.max_output_tokens)} out
                 </span>
               )}
@@ -383,7 +383,7 @@ function ModelCard({
           <div className="flex flex-col items-end gap-1 shrink-0">
             {showTokens ? (
               <div className="text-right">
-                <div className="text-xs font-mono font-semibold">
+                <div className="text-xs font-mono font-semibold tabular-nums">
                   {formatTokens(totalTokens)}
                 </div>
                 <div className="text-xs text-text-tertiary">
@@ -393,7 +393,7 @@ function ModelCard({
             ) : (
               entry.sessions > 0 && (
                 <div className="text-right">
-                  <div className="text-xs font-mono font-semibold">
+                  <div className="text-xs font-mono font-semibold tabular-nums">
                     {entry.sessions}
                   </div>
                   <div className="text-xs text-text-tertiary">
@@ -424,13 +424,13 @@ function ModelCard({
 
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div className="text-center">
-                <div className="font-mono font-semibold">{entry.sessions}</div>
+                <div className="font-mono font-semibold tabular-nums">{entry.sessions}</div>
                 <div className="text-xs text-text-tertiary">
                   {t.models.sessions}
                 </div>
               </div>
               <div className="text-center">
-                <div className="font-mono font-semibold">
+                <div className="font-mono font-semibold tabular-nums">
                   {formatTokens(entry.avg_tokens_per_session)}
                 </div>
                 <div className="text-xs text-text-tertiary">
@@ -438,7 +438,7 @@ function ModelCard({
                 </div>
               </div>
               <div className="text-center">
-                <div className="font-mono font-semibold">
+                <div className="font-mono font-semibold tabular-nums">
                   {entry.api_calls > 0 ? formatTokens(entry.api_calls) : "—"}
                 </div>
                 <div className="text-xs text-text-tertiary">
@@ -449,7 +449,7 @@ function ModelCard({
           </>
         )}
 
-        <div className="flex items-center justify-between text-xs text-text-secondary border-t border-border/30 pt-2">
+        <div className="flex items-center justify-between text-xs text-text-secondary border-t border-border/30 pt-2 tabular-nums">
           <div className="flex items-center gap-3">
             {showTokens && entry.estimated_cost > 0 && (
               <span className="flex items-center gap-0.5">
@@ -524,7 +524,7 @@ function AuxiliaryTasksModal({
       aria-modal="true"
       aria-labelledby="aux-modal-title"
     >
-      <div className={cn(themedBody, "relative w-full max-w-2xl max-h-[80vh] border border-border bg-card shadow-2xl flex flex-col")}>
+      <div className={cn(themedBody, "relative w-full max-w-2xl max-h-[80vh] border border-border bg-card shadow-e3 flex flex-col")}>
         <Button
           ghost
           size="icon"
@@ -951,7 +951,20 @@ export default function ModelsPage() {
       {error && (
         <Card>
           <CardContent className="py-6">
-            <p className="text-sm text-destructive text-center">{error}</p>
+            <div className="flex flex-col items-center gap-3">
+              <p className="text-sm text-destructive text-center">{error}</p>
+              <Button
+                type="button"
+                size="sm"
+                outlined
+                onClick={load}
+                disabled={loading}
+                className="uppercase"
+                prefix={loading ? <Spinner /> : <RefreshCw className="h-3 w-3" />}
+              >
+                {t.common.retry}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

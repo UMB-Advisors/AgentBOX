@@ -212,8 +212,19 @@ export default function LogsPage() {
         </CardHeader>
         <CardContent className="p-0">
           {error && (
-            <div className="bg-destructive/10 border-b border-destructive/20 p-3">
+            <div className="bg-destructive/10 border-b border-destructive/20 p-3 flex items-start justify-between gap-3">
               <p className="text-sm text-destructive">{error}</p>
+              <Button
+                type="button"
+                ghost
+                size="sm"
+                className="shrink-0 text-destructive hover:text-destructive"
+                onClick={fetchLogs}
+                disabled={loading}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                {t.common.retry}
+              </Button>
             </div>
           )}
 
@@ -221,10 +232,17 @@ export default function LogsPage() {
             ref={scrollRef}
             className="max-w-full min-h-[400px] max-h-[calc(100vh-220px)] overflow-auto p-4 font-mono-ui text-xs leading-5 break-words"
           >
-            {lines.length === 0 && !loading && (
-              <p className="text-muted-foreground text-center py-8">
-                {t.logs.noLogLines}
-              </p>
+            {lines.length === 0 && loading && (
+              <div className="flex items-center justify-center gap-2 text-muted-foreground py-8">
+                <Spinner />
+                <span>{t.common.loading}</span>
+              </div>
+            )}
+            {lines.length === 0 && !loading && !error && (
+              <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground py-8">
+                <FileText className="h-6 w-6" />
+                <p className="text-center">{t.logs.noLogLines}</p>
+              </div>
             )}
             {lines.map((line, i) => {
               const cls = classifyLine(line);

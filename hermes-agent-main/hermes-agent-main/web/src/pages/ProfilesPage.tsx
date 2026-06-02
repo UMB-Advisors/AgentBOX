@@ -287,7 +287,7 @@ export default function ProfilesPage() {
           aria-modal="true"
           aria-labelledby="create-profile-title"
         >
-          <div className={cn(themedBody, "relative w-full max-w-md border border-border bg-card shadow-2xl flex flex-col")}>
+          <div className={cn(themedBody, "relative w-full max-w-md border border-border bg-card shadow-e3 flex flex-col")}>
             <Button
               ghost
               size="icon"
@@ -368,7 +368,7 @@ export default function ProfilesPage() {
           className="flex items-center gap-2 text-muted-foreground"
         >
           <Users className="h-4 w-4" />
-          {t.profiles.allProfiles} ({profiles.length})
+          {t.profiles.allProfiles} <span className="tabular-nums">({profiles.length})</span>
         </H2>
 
         {profiles.length === 0 && (
@@ -444,7 +444,7 @@ export default function ProfilesPage() {
                         {p.provider ? ` (${p.provider})` : ""}
                       </span>
                     )}
-                    <span>
+                    <span className="tabular-nums">
                       {t.profiles.skills}: {p.skill_count}
                     </span>
                     <span className="font-mono truncate max-w-[28rem]">

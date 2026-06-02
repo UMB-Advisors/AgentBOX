@@ -13,6 +13,8 @@ import {
   Zap,
   ChevronDown,
   ChevronRight,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { EnvVarInfo } from "@/lib/api";
@@ -396,7 +398,7 @@ function ProviderGroupCard({
             {group.name === "Other" ? t.common.other : group.name}
           </span>
           {hasAnyConfigured && (
-            <Badge tone="success" className="text-xs">
+            <Badge tone="success" className="text-xs tabular-nums">
               {configuredCount} {t.common.set.toLowerCase()}
             </Badge>
           )}
@@ -413,7 +415,7 @@ function ProviderGroupCard({
               {t.env.getKey} <ExternalLink className="h-2.5 w-2.5" />
             </a>
           )}
-          <span className="text-xs text-text-tertiary">
+          <span className="text-xs text-text-tertiary tabular-nums">
             {t.env.keysCount
               .replace("{count}", String(group.entries.length))
               .replace("{s}", group.entries.length !== 1 ? "s" : "")}
@@ -491,17 +493,23 @@ export default function EnvPage() {
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(true); // Show all providers by default
   const { toast, showToast } = useToast();
   const { t } = useI18n();
   const { setAfterTitle } = usePageHeader();
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoadError(null);
     api
       .getEnvVars()
       .then(setVars)
-      .catch(() => {});
+      .catch((err) => setLoadError(String(err)));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // Scroll-to sub-nav in the page header
   const sections = useMemo(() => {
@@ -708,6 +716,20 @@ export default function EnvPage() {
   }, [vars, showAdvanced, t]);
 
   if (!vars) {
+    if (loadError) {
+      return (
+        <div className="flex flex-col items-center justify-center gap-3 py-24">
+          <AlertCircle className="h-6 w-6 text-destructive" />
+          <p className="max-w-md text-center text-sm text-destructive">
+            {loadError}
+          </p>
+          <Button type="button" size="sm" outlined onClick={load}>
+            <RefreshCw className="h-4 w-4" />
+            {t.common.retry}
+          </Button>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center py-24">
         <Spinner className="text-2xl text-primary" />
@@ -771,7 +793,7 @@ export default function EnvPage() {
             <Zap className="h-5 w-5 text-muted-foreground" />
             <CardTitle className="text-base">{t.env.llmProviders}</CardTitle>
           </div>
-          <CardDescription>
+          <CardDescription className="tabular-nums">
             {t.env.providersConfigured
               .replace("{configured}", String(configuredProviders))
               .replace("{total}", String(totalProviders))}
@@ -895,7 +917,7 @@ function EnvCategoryCard({
           )}
         </div>
 
-        <CardDescription>
+        <CardDescription className="tabular-nums">
           {section.setEntries.length} {t.common.of} {section.totalEntries}{" "}
           {t.common.configured}
         </CardDescription>

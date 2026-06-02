@@ -35,6 +35,7 @@ import {
   Shield,
   FileOutput,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { getNestedValue, setNestedValue } from "@/lib/nested";
@@ -118,6 +119,7 @@ export default function ConfigPage() {
   const [yamlLoading, setYamlLoading] = useState(false);
   const [yamlSaving, setYamlSaving] = useState(false);
   const [configPath, setConfigPath] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [confirmReset, setConfirmReset] = useState(false);
   const { toast, showToast } = useToast();
@@ -161,18 +163,17 @@ export default function ConfigPage() {
     return cat.charAt(0).toUpperCase() + cat.slice(1);
   }
 
-  useEffect(() => {
-    api
-      .getConfig()
-      .then(setConfig)
-      .catch(() => {});
-    api
-      .getSchema()
-      .then((resp) => {
+  const loadAll = () => {
+    setLoadError(null);
+    // config + schema gate the page render — surface their failure as a
+    // retryable error state instead of a permanent spinner.
+    Promise.all([
+      api.getConfig().then(setConfig),
+      api.getSchema().then((resp) => {
         setSchema(resp.fields as Record<string, Record<string, unknown>>);
         setCategoryOrder(resp.category_order ?? []);
-      })
-      .catch(() => {});
+      }),
+    ]).catch((e) => setLoadError(String(e)));
     api
       .getDefaults()
       .then(setDefaults)
@@ -181,6 +182,11 @@ export default function ConfigPage() {
       .getStatus()
       .then((resp) => setConfigPath(resp.config_path))
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Set active category when categories load
@@ -346,6 +352,21 @@ export default function ConfigPage() {
     };
     reader.readAsText(file);
   };
+
+  /* ---- Error ---- */
+  if (loadError && (!config || !schema)) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
+        <AlertTriangle className="h-6 w-6 text-destructive" />
+        <p className="text-sm text-text-secondary">
+          Couldn’t load the configuration. {loadError}
+        </p>
+        <Button size="sm" prefix={<RefreshCw />} onClick={loadAll}>
+          {t.common.retry}
+        </Button>
+      </div>
+    );
+  }
 
   /* ---- Loading ---- */
   if (!config || !schema) {
@@ -590,7 +611,7 @@ export default function ConfigPage() {
                       <Search className="h-4 w-4" />
                       {t.config.searchResults}
                     </CardTitle>
-                    <Badge tone="secondary" className="text-xs">
+                    <Badge tone="secondary" className="text-xs tabular-nums">
                       {searchMatchedFields.length}{" "}
                       {t.config.fields.replace(
                         "{s}",
@@ -621,7 +642,7 @@ export default function ConfigPage() {
                       />
                       {prettyCategoryName(activeCategory)}
                     </CardTitle>
-                    <Badge tone="secondary" className="text-xs">
+                    <Badge tone="secondary" className="text-xs tabular-nums">
                       {activeFields.length}{" "}
                       {t.config.fields.replace(
                         "{s}",

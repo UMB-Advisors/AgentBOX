@@ -108,6 +108,7 @@ function SortHeader({
   return (
     <th
       onClick={() => toggle(col)}
+      aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
       className={`cursor-pointer select-none ${className ?? ""}`}
     >
       <span className="inline-flex items-center gap-1.5 rounded px-1 -mx-1 py-0.5 hover:bg-muted/40 transition-colors">
@@ -177,7 +178,7 @@ function TokenBarChart({ daily }: { daily: AnalyticsDailyEntry[] }) {
                 style={{ height: CHART_HEIGHT_PX }}
               >
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 pointer-events-none">
-                  <div className="font-mondwest normal-case bg-card border border-border px-2.5 py-1.5 text-xs text-foreground shadow-lg whitespace-nowrap">
+                  <div className="font-mondwest normal-case bg-card border border-border px-2.5 py-1.5 text-xs text-foreground shadow-lg whitespace-nowrap tabular-nums">
                     <div className="font-medium">{formatDate(d.day)}</div>
                     <div>
                       {t.analytics.input}: {formatTokens(d.input_tokens)}
@@ -257,15 +258,15 @@ function DailyTable({ daily }: { daily: AnalyticsDailyEntry[] }) {
                   <td className="py-2 pr-4 font-medium">
                       {formatDate(d.day)}
                     </td>
-                  <td className="text-right py-2 px-4 text-muted-foreground">
+                  <td className="text-right py-2 px-4 text-muted-foreground tabular-nums">
                       {d.sessions}
                     </td>
-                  <td className="text-right py-2 px-4">
+                  <td className="text-right py-2 px-4 tabular-nums">
                     <span className="text-[#ffe6cb]">
                         {formatTokens(d.input_tokens)}
                       </span>
                   </td>
-                  <td className="text-right py-2 pl-4">
+                  <td className="text-right py-2 pl-4 tabular-nums">
                     <span className="text-emerald-400">
                         {formatTokens(d.output_tokens)}
                       </span>
@@ -315,10 +316,10 @@ function ModelTable({ models }: { models: AnalyticsModelEntry[] }) {
                   <td className="py-2 pr-4">
                     <span className="font-mono-ui text-xs">{m.model}</span>
                   </td>
-                  <td className="text-right py-2 px-4 text-muted-foreground">
+                  <td className="text-right py-2 px-4 text-muted-foreground tabular-nums">
                     {m.sessions}
                   </td>
-                  <td className="text-right py-2 pl-4">
+                  <td className="text-right py-2 pl-4 tabular-nums">
                     <span className="text-[#ffe6cb]">
                       {formatTokens(m.input_tokens)}
                     </span>
@@ -372,14 +373,14 @@ function SkillTable({ skills }: { skills: AnalyticsSkillEntry[] }) {
                   <td className="py-2 pr-4">
                     <span className="font-mono-ui text-xs">{skill.skill}</span>
                   </td>
-                  <td className="text-right py-2 px-4 text-muted-foreground">
+                  <td className="text-right py-2 px-4 text-muted-foreground tabular-nums">
                     {skill.view_count}
                   </td>
-                  <td className="text-right py-2 px-4 text-muted-foreground">
+                  <td className="text-right py-2 px-4 text-muted-foreground tabular-nums">
                     {skill.manage_count}
                   </td>
-                  <td className="text-right py-2 px-4">{skill.total_count}</td>
-                  <td className="text-right py-2 pl-4 text-muted-foreground">
+                  <td className="text-right py-2 px-4 tabular-nums">{skill.total_count}</td>
+                  <td className="text-right py-2 pl-4 text-muted-foreground tabular-nums">
                     {skill.last_used_at ? timeAgo(skill.last_used_at) : "—"}
                   </td>
                 </tr>
@@ -528,7 +529,19 @@ export default function AnalyticsPage() {
       {showTokens && error && (
         <Card>
           <CardContent className="py-6">
-            <p className="text-sm text-destructive text-center">{error}</p>
+            <div className="flex flex-col items-center gap-3">
+              <p className="text-sm text-destructive text-center">{error}</p>
+              <Button
+                type="button"
+                size="sm"
+                outlined
+                onClick={load}
+                disabled={loading}
+              >
+                {loading ? <Spinner /> : <RefreshCw className="h-4 w-4" />}
+                {t.common.refresh}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

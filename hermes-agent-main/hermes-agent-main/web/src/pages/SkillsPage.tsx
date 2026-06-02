@@ -195,7 +195,7 @@ export default function SkillsPage() {
       return;
     }
     setAfterTitle(
-      <span className="whitespace-nowrap text-xs text-muted-foreground">
+      <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
         {t.skills.enabledOf
           .replace("{enabled}", String(enabledCount))
           .replace("{total}", String(skills.length))}
@@ -448,7 +448,7 @@ export default function SkillsPage() {
                                 {ts.description}
                               </p>
                               {ts.enabled && !ts.configured && (
-                                <p className="text-xs text-amber-300 mb-2">
+                                <p className="text-xs text-warning mb-2">
                                   {t.skills.setupNeeded}
                                 </p>
                               )}

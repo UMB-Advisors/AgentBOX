@@ -76,7 +76,7 @@ function HubGroup({ title, items }: { title: string; items: HubItem[] }) {
           <NavLink
             key={path}
             to={path}
-            className="group flex items-center gap-3 rounded px-2 py-2 text-sm text-text-secondary transition-colors hover:bg-midground/5 hover:text-midground"
+            className="group flex items-center gap-3 rounded px-2 py-2 text-sm text-text-secondary transition-colors hover:bg-midground/5 hover:text-midground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-midground"
           >
             <Icon className="h-4 w-4 shrink-0" />
             <span className="flex-1 truncate">{label}</span>

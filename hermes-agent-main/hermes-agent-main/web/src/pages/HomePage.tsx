@@ -74,9 +74,14 @@ export default function HomePage() {
             </Button>
           </div>
           <CardDescription>
-            {hasContent && digest?.date
-              ? `Your most important info for ${digest.date}.`
-              : "Your most important info for today."}
+            {hasContent && digest?.date ? (
+              <>
+                Your most important info for{" "}
+                <span className="tabular-nums">{digest.date}</span>.
+              </>
+            ) : (
+              "Your most important info for today."
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -421,7 +421,7 @@ function PluginRowCard(props: PluginRowCardProps) {
               {t.pluginsPage.sourceBadge}: {row.source}
             </Badge>
 
-            <Badge tone="outline">v{row.version || "—"}</Badge>
+            <Badge tone="outline" className="tabular-nums">v{row.version || "—"}</Badge>
 
             <Badge tone={badgeTone}>{row.runtime_status}</Badge>
 
@@ -522,6 +522,7 @@ function PluginRowCard(props: PluginRowCardProps) {
                 disabled={busy}
                 ghost
                 size="sm"
+                aria-label={t.common.delete}
                 onClick={() => setConfirmRemove(true)}
               >
 

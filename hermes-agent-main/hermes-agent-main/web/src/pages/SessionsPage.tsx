@@ -367,7 +367,7 @@ function SessionRow({
                   </Badge>
                 )}
               </div>
-              <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground tabular-nums">
                 <span className="max-w-[min(100%,12rem)] truncate sm:max-w-[180px]">
                   {(session.model ?? t.common.unknown).split("/").pop()}
                 </span>
@@ -443,7 +443,7 @@ function SessionsPagination({
       className={`flex items-center ${compact ? "gap-1" : "justify-between pt-2"}${className ? ` ${className}` : ""}`}
     >
       {!compact && (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted-foreground tabular-nums">
           {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)}{" "}
           {t.common.of} {total}
         </span>
@@ -459,7 +459,7 @@ function SessionsPagination({
         >
           <ChevronLeft />
         </Button>
-        <span className="px-2 text-xs text-muted-foreground">
+        <span className="px-2 text-xs text-muted-foreground tabular-nums">
           {t.common.page} {page + 1} {t.common.of} {pageCount}
         </span>
         <Button
@@ -792,6 +792,7 @@ export default function SessionsPage() {
                 )}
                 <Input
                   placeholder={t.sessions.searchPlaceholder}
+                  aria-label={t.sessions.searchPlaceholder}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="h-8 py-0 pr-7 pl-8 text-xs leading-none"

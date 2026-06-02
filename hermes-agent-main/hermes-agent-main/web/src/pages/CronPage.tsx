@@ -288,7 +288,7 @@ export default function CronPage() {
           aria-modal="true"
           aria-labelledby="create-cron-title"
         >
-          <div className={cn(themedBody, "relative w-full max-w-lg border border-border bg-card shadow-2xl flex flex-col")}>
+          <div className={cn(themedBody, "relative w-full max-w-lg border border-border bg-card shadow-e3 flex flex-col")}>
             <Button
               ghost
               size="icon"
@@ -406,7 +406,8 @@ export default function CronPage() {
             className="flex items-center gap-2 text-muted-foreground"
           >
             <Clock className="h-4 w-4" />
-            {t.cron.scheduledJobs} ({jobs.length})
+            {t.cron.scheduledJobs}{" "}
+            <span className="tabular-nums">({jobs.length})</span>
           </H2>
 
           <div className="grid gap-1 min-w-[220px]">
@@ -465,11 +466,11 @@ export default function CronPage() {
                     </p>
                   )}
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    <span className="font-mono">{getJobScheduleDisplay(job)}</span>
-                    <span>
+                    <span className="font-mono tabular-nums">{getJobScheduleDisplay(job)}</span>
+                    <span className="tabular-nums">
                       {t.cron.last}: {formatTime(job.last_run_at)}
                     </span>
-                    <span>
+                    <span className="tabular-nums">
                       {t.cron.next}: {formatTime(job.next_run_at)}
                     </span>
                   </div>
