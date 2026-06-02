@@ -38,19 +38,46 @@ const DEFAULT_LAYOUT: ThemeLayout = {
 // Themes
 // ---------------------------------------------------------------------------
 
+// UI revamp — "Evolved Dark (Teal v2)": a modern, teal-forward refresh of the
+// canonical Hermes look. Same DNA (deep teal canvas + cream text) but with a real
+// type pairing (Inter body / Space Grotesk display / JetBrains mono), a vivid teal
+// accent for primary actions / focus / links (teal was previously only the canvas),
+// a teal backdrop glow, and slightly rounder geometry.
+const EVOLVED_TYPOGRAPHY: ThemeTypography = {
+  fontSans: `"Inter", ${SYSTEM_SANS}`,
+  fontMono: `"JetBrains Mono", ${SYSTEM_MONO}`,
+  fontDisplay: `"Space Grotesk", "Inter", ${SYSTEM_SANS}`,
+  fontUrl:
+    "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap",
+  baseSize: "15px",
+  lineHeight: "1.55",
+  letterSpacing: "-0.006em",
+};
+
 export const defaultTheme: DashboardTheme = {
   name: "default",
   label: "Hermes Teal",
-  description: "Classic dark teal — the canonical Hermes look",
+  description: "Evolved dark teal — modern, teal-forward refresh of the canonical Hermes look",
   palette: {
-    background: { hex: "#041c1c", alpha: 1 },
+    background: { hex: "#03201e", alpha: 1 },
     midground: { hex: "#ffe6cb", alpha: 1 },
     foreground: { hex: "#ffffff", alpha: 0 },
-    warmGlow: "rgba(255, 189, 56, 0.35)",
+    warmGlow: "rgba(45, 212, 191, 0.30)",
     noiseOpacity: 1,
   },
-  typography: DEFAULT_TYPOGRAPHY,
-  layout: DEFAULT_LAYOUT,
+  typography: EVOLVED_TYPOGRAPHY,
+  layout: { radius: "0.625rem", density: "comfortable" },
+  // Teal-forward accent: primary CTAs, focus rings, and accent surfaces shift
+  // from cream to a vivid teal so the brand's teal reads in the foreground, not
+  // just the canvas. Body text stays cream (driven by --midground) so contrast is
+  // unaffected; card/secondary/muted keep deriving from midground.
+  colorOverrides: {
+    primary: "#2dd4bf",
+    primaryForeground: "#03201e",
+    accent: "color-mix(in srgb, #2dd4bf 14%, var(--background-base))",
+    accentForeground: "#7ff0e0",
+    ring: "#2dd4bf",
+  },
 };
 
 export const midnightTheme: DashboardTheme = {
