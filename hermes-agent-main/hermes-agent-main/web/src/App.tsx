@@ -20,6 +20,7 @@ import {
   CalendarDays,
   Clock,
   Download,
+  HardDrive,
   Home as HomeIcon,
   Inbox,
   LayoutDashboard,
@@ -64,6 +65,7 @@ import HomePage from "@/pages/HomePage";
 import CalendarPage from "@/pages/CalendarPage";
 import InboxPage from "@/pages/InboxPage";
 import GraphPage from "@/pages/GraphPage";
+import DrivePage from "@/pages/DrivePage";
 import SettingsHubPage from "@/pages/SettingsHubPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
@@ -98,6 +100,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/": HomePage,
   "/inbox": InboxPage,
   "/calendar": CalendarPage,
+  "/drive": DrivePage,
   "/settings": SettingsHubPage,
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,
@@ -138,6 +141,7 @@ function buildPrimaryNav(manifests: PluginManifest[]): NavItem[] {
     { path: "/", label: "Home", icon: HomeIcon },
     { path: "/inbox", label: "Incoming Messages", icon: Inbox },
     { path: "/calendar", label: "Calendar", icon: CalendarDays },
+    { path: "/drive", label: "Drive", icon: HardDrive },
   ];
   if (hasTab("/kanban"))
     items.push({ path: "/kanban", label: "Tasks", icon: LayoutDashboard });
