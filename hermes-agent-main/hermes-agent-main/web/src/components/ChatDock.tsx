@@ -153,7 +153,7 @@ export default function ChatDock({
       <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-current/20 px-2">
         <span
           className={cn(
-            "px-1 font-mondwest text-display text-xs uppercase tracking-[0.12em] text-text-tertiary",
+            "px-1 text-xs font-medium uppercase tracking-[0.14em] text-text-tertiary",
             collapsed && "lg:hidden",
           )}
         >

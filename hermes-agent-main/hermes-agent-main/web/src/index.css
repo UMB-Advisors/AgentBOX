@@ -43,44 +43,55 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Hermes Agent — Nous DS with the LENS_0 (Hermes teal) lens applied   */
-/* statically. Mirrors nousnet-web/(hermes-agent)/layout.tsx so the    */
-/* canonical Hermes palette is the default — teal canvas + cream      */
-/* accent — without relying on leva/gsap at runtime.                  */
+/* AgentBOX — Nous DS with the CARBON lens applied statically as the    */
+/* default. Graphite canvas + near-white ink + a single indigo accent   */
+/* ("brand"). These :root values match `defaultTheme` (Carbon) in        */
+/* themes/presets.ts so there's no flash before ThemeProvider mounts;    */
+/* ThemeProvider rewrites them as inline styles when a user switches.    */
 /* ------------------------------------------------------------------ */
 
 :root {
-  /* LENS_0 — from design-language/src/ui/components/overlays/index.tsx.
-     These are the defaults for the `default` (Hermes Teal) dashboard theme;
-     ThemeProvider rewrites them as inline styles when a user switches themes. */
+  /* CARBON palette — kept in sync with `defaultTheme.palette`.
+     ThemeProvider rewrites these inline when a user switches themes. */
   --foreground: color-mix(in srgb, #ffffff 0%, transparent);
   --foreground-base: #ffffff;
   --foreground-alpha: 0;
-  --midground: color-mix(in srgb, #ffe6cb 100%, transparent);
-  --midground-base: #ffe6cb;
+  --midground: color-mix(in srgb, #ededee 100%, transparent);
+  --midground-base: #ededee;
   --midground-alpha: 1;
-  --background: color-mix(in srgb, #041c1c 100%, transparent);
-  --background-base: #041c1c;
+  --background: color-mix(in srgb, #0c0c0e 100%, transparent);
+  --background-base: #0c0c0e;
   --background-alpha: 1;
 
-  /* Consumed by <Backdrop />; also theme-switchable. */
-  --warm-glow: rgba(255, 189, 56, 0.35);
-  --noise-opacity-mul: 1;
+  /* Consumed by <Backdrop />; also theme-switchable. Faint cool vignette. */
+  --warm-glow: rgba(124, 139, 255, 0.10);
+  --noise-opacity-mul: 0.15;
 
-  /* Typography tokens — rewritten by ThemeProvider. Defaults match the
-     system stack so themes that don't override look native. */
-  --theme-font-sans: system-ui, -apple-system, "Segoe UI", Roboto,
+  /* Single brand/accent hue — drives active nav, focus rings, key
+     highlights. Resolved by `--color-brand` (see @theme inline below).
+     ThemeProvider overwrites `--brand` per theme; themes that omit it fall
+     back to `--midground`. */
+  --brand: #7c8bff;
+
+  /* Typography tokens — rewritten by ThemeProvider. Default to Inter so the
+     pre-mount frame already matches the Carbon default. */
+  --theme-font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
-  --theme-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo,
-    Consolas, monospace;
+  --theme-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono",
+    Menlo, Consolas, monospace;
   --theme-font-display: var(--theme-font-sans);
   --theme-base-size: 15px;
   --theme-line-height: 1.55;
-  --theme-letter-spacing: 0;
+  --theme-letter-spacing: -0.011em;
+
+  /* Retarget the Nous DS Mondwest pixel display font to the modern sans so
+     every `.font-mondwest` call site reads as Carbon without per-file edits.
+     The preserved "Hermes Teal" theme restores 'Mondwest' via its customCSS. */
+  --font-mondwest: var(--theme-font-sans);
 
   /* Layout tokens. */
-  --radius: 0.5rem;
-  --theme-radius: 0.5rem;
+  --radius: 0.625rem;
+  --theme-radius: 0.625rem;
   --theme-spacing-mul: 1;
   --theme-density: comfortable;
 }
@@ -152,6 +163,13 @@ code { font-size: 0.875rem; }
   /* Remap foreground to midground so `text-foreground` / `bg-foreground`
      stay visible — in LENS_0, `--foreground` itself has alpha 0. */
   --color-foreground: var(--midground);
+
+  /* Single brand/accent. Resolves to the theme's `--brand` hue, falling back
+     to the midground so themes that don't set a brand stay monochrome.
+     Tailwind v4 generates `text-brand` / `bg-brand` / `border-brand` /
+     `ring-brand` utilities from this token. */
+  --color-brand: var(--brand, var(--midground));
+  --color-brand-foreground: var(--background-base);
 
   --color-card: color-mix(in srgb, var(--midground-base) 4%, var(--background-base));
   --color-card-foreground: var(--midground);
