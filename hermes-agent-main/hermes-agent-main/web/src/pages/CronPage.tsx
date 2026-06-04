@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
-import { Clock, Pause, Play, Trash2, X, Zap } from "lucide-react";
+import { Clock, Pause, Pencil, Play, Trash2, X, Zap } from "lucide-react";
+import cronstrue from "cronstrue";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
@@ -66,6 +67,55 @@ function getJobScheduleDisplay(job: CronJob): string {
   );
 }
 
+/** The raw schedule expression a user typed (cron expr or "every 30m"),
+ *  used to pre-fill the edit form and as a tooltip on the humanized text. */
+function getJobScheduleRaw(job: CronJob): string {
+  return (
+    asText(job.schedule?.expr) ||
+    asText(job.schedule?.display) ||
+    asText(job.schedule_display)
+  );
+}
+
+function humanizeInterval(text: string): string {
+  const m = text.trim().match(/^every\s+(\d+)\s*([smhd])$/i);
+  if (!m) return text;
+  const n = Number(m[1]);
+  const unit =
+    ({ s: "second", m: "minute", h: "hour", d: "day" } as Record<string, string>)[
+      m[2].toLowerCase()
+    ] ?? "minute";
+  return `Every ${n} ${unit}${n === 1 ? "" : "s"}`;
+}
+
+/** Render a schedule in plain English ("At 10:00 AM, every day") for at-a-glance
+ *  reference. Cron expressions go through cronstrue; intervals/once are handled
+ *  inline. Falls back to the raw display if nothing parses. */
+function humanizeSchedule(job: CronJob): string {
+  const sched = job.schedule ?? {};
+  const kind = asText(sched.kind);
+  const display = asText(sched.display) || asText(job.schedule_display);
+  const expr = (asText(sched.expr) || display).trim();
+
+  if (kind === "interval" || /^every\s/i.test(display)) {
+    return humanizeInterval(display || expr);
+  }
+  if (kind === "once") {
+    return job.next_run_at ? `Once — ${formatTime(job.next_run_at)}` : "Once";
+  }
+  if (expr && /^[\d*/,\-\s]+$/.test(expr) && expr.split(/\s+/).length >= 5) {
+    try {
+      return cronstrue.toString(expr, {
+        verbose: false,
+        throwExceptionOnParseError: true,
+      });
+    } catch {
+      /* not a valid cron expr — fall through to the raw display */
+    }
+  }
+  return getJobScheduleDisplay(job);
+}
+
 function getJobState(job: CronJob): string {
   return asText(job.state) || (job.enabled === false ? "disabled" : "scheduled");
 }
@@ -110,19 +160,45 @@ export default function CronPage() {
     setTitle("Scheduled Actions");
   }, [setTitle]);
 
-  // New job modal state
+  // Create / edit job modal state. `editingKey` is null for a new job, or the
+  // job key being edited; `editingProfile` pins the edit to that job's profile.
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingProfile, setEditingProfile] = useState("default");
   const [prompt, setPrompt] = useState("");
   const [schedule, setSchedule] = useState("");
   const [name, setName] = useState("");
-  const closeCreateModal = useCallback(() => setCreateModalOpen(false), []);
+  const [deliver, setDeliver] = useState("local");
+  const [creating, setCreating] = useState(false);
+  const isEditing = editingKey !== null;
+  const closeCreateModal = useCallback(() => {
+    setCreateModalOpen(false);
+    setEditingKey(null);
+  }, []);
   const createModalRef = useModalBehavior({
     open: createModalOpen,
     onClose: closeCreateModal,
   });
-  const [deliver, setDeliver] = useState("local");
-  const [creating, setCreating] = useState(false);
   const createProfile = selectedProfile === "all" ? "default" : selectedProfile;
+
+  const openCreate = useCallback(() => {
+    setEditingKey(null);
+    setName("");
+    setPrompt("");
+    setSchedule("");
+    setDeliver("local");
+    setCreateModalOpen(true);
+  }, []);
+
+  const openEdit = useCallback((job: CronJob) => {
+    setEditingKey(getJobKey(job));
+    setEditingProfile(getJobProfile(job));
+    setName(getJobName(job));
+    setPrompt(getJobPrompt(job));
+    setSchedule(getJobScheduleRaw(job));
+    setDeliver(asText(job.deliver) || "local");
+    setCreateModalOpen(true);
+  }, []);
 
   const loadJobs = useCallback(() => {
     api
@@ -143,27 +219,43 @@ export default function CronPage() {
     loadJobs();
   }, [loadJobs]);
 
-  const handleCreate = async () => {
+  const handleSubmit = async () => {
     if (!prompt.trim() || !schedule.trim()) {
       showToast(`${t.cron.prompt} & ${t.cron.schedule} required`, "error");
       return;
     }
     setCreating(true);
     try {
-      await api.createCronJob(
-        {
-          prompt: prompt.trim(),
-          schedule: schedule.trim(),
-          name: name.trim() || undefined,
-          deliver,
-        },
-        createProfile,
-      );
-      showToast(t.common.create + " ✓", "success");
+      if (isEditing && editingKey) {
+        const { id } = splitJobKey(editingKey);
+        await api.updateCronJob(
+          id,
+          {
+            prompt: prompt.trim(),
+            schedule: schedule.trim(),
+            name: name.trim(),
+            deliver,
+          },
+          editingProfile,
+        );
+        showToast("Saved ✓", "success");
+      } else {
+        await api.createCronJob(
+          {
+            prompt: prompt.trim(),
+            schedule: schedule.trim(),
+            name: name.trim() || undefined,
+            deliver,
+          },
+          createProfile,
+        );
+        showToast(t.common.create + " ✓", "success");
+      }
       setPrompt("");
       setSchedule("");
       setName("");
       setDeliver("local");
+      setEditingKey(null);
       setCreateModalOpen(false);
       loadJobs();
     } catch (e) {
@@ -236,7 +328,7 @@ export default function CronPage() {
       <Button
         className="uppercase"
         size="sm"
-        onClick={() => setCreateModalOpen(true)}
+        onClick={openCreate}
       >
         {t.common.create}
       </Button>,
@@ -244,7 +336,7 @@ export default function CronPage() {
     return () => {
       setEnd(null);
     };
-  }, [setEnd, t.common.create, loading]);
+  }, [setEnd, t.common.create, loading, openCreate]);
 
   if (loading) {
     return (
@@ -304,7 +396,7 @@ export default function CronPage() {
                 id="create-cron-title"
                 className="font-mondwest text-display text-base tracking-wider"
               >
-                {t.cron.newJob}
+                {isEditing ? "Edit job" : t.cron.newJob}
               </h2>
             </header>
 
@@ -313,8 +405,11 @@ export default function CronPage() {
                 <Label htmlFor="cron-profile">Profile</Label>
                 <Select
                   id="cron-profile"
-                  value={createProfile}
-                  onValueChange={(v) => setSelectedProfile(v)}
+                  value={isEditing ? editingProfile : createProfile}
+                  disabled={isEditing}
+                  onValueChange={(v) => {
+                    if (!isEditing) setSelectedProfile(v);
+                  }}
                 >
                   {profiles.map((profile) => (
                     <SelectOption key={profile.name} value={profile.name}>
@@ -387,11 +482,17 @@ export default function CronPage() {
                 <Button
                   className="uppercase"
                   size="sm"
-                  onClick={handleCreate}
+                  onClick={handleSubmit}
                   disabled={creating}
                   prefix={creating ? <Spinner /> : undefined}
                 >
-                  {creating ? t.common.creating : t.common.create}
+                  {creating
+                    ? isEditing
+                      ? "Saving…"
+                      : t.common.creating
+                    : isEditing
+                      ? "Save"
+                      : t.common.create}
                 </Button>
               </div>
             </div>
@@ -465,7 +566,9 @@ export default function CronPage() {
                     </p>
                   )}
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    <span className="font-mono">{getJobScheduleDisplay(job)}</span>
+                    <span title={getJobScheduleRaw(job)}>
+                      {humanizeSchedule(job)}
+                    </span>
                     <span>
                       {t.cron.last}: {formatTime(job.last_run_at)}
                     </span>
@@ -481,6 +584,16 @@ export default function CronPage() {
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    ghost
+                    size="icon"
+                    title="Edit"
+                    aria-label="Edit"
+                    onClick={() => openEdit(job)}
+                  >
+                    <Pencil />
+                  </Button>
+
                   <Button
                     ghost
                     size="icon"

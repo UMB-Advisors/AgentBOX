@@ -316,6 +316,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(job),
     }),
+  updateCronJob: (
+    id: string,
+    updates: { prompt?: string; schedule?: string; name?: string; deliver?: string },
+    profile = "default",
+  ) =>
+    fetchJSON<CronJob>(`/api/cron/jobs/${encodeURIComponent(id)}?profile=${encodeURIComponent(profile)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates }),
+    }),
   pauseCronJob: (id: string, profile = "default") =>
     fetchJSON<CronJob>(`/api/cron/jobs/${encodeURIComponent(id)}/pause?profile=${encodeURIComponent(profile)}`, { method: "POST" }),
   resumeCronJob: (id: string, profile = "default") =>
