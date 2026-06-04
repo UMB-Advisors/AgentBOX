@@ -19,7 +19,6 @@ import {
 import {
   CalendarDays,
   Clock,
-  Download,
   HardDrive,
   Home as HomeIcon,
   Inbox,
@@ -789,13 +788,6 @@ function SidebarSystemActions({
       label: t.status.restartGateway,
       runningLabel: t.status.restartingGateway,
       spin: true,
-    },
-    {
-      action: "update",
-      icon: Download,
-      label: t.status.updateHermes,
-      runningLabel: t.status.updatingHermes,
-      spin: false,
     },
   ];
 

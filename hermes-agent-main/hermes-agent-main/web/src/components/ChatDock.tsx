@@ -4,7 +4,7 @@ import { Button } from "@nous-research/ui/ui/components/button";
 import { cn } from "@/lib/utils";
 
 export const CHAT_WIDTH_MIN = 320;
-export const CHAT_WIDTH_MAX = 640;
+export const CHAT_WIDTH_MAX = 1200;
 export const CHAT_WIDTH_DEFAULT = 420;
 
 /**
