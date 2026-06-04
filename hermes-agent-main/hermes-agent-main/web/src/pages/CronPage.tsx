@@ -116,6 +116,82 @@ function humanizeSchedule(job: CronJob): string {
   return getJobScheduleDisplay(job);
 }
 
+/** Humanize a raw schedule string (cron expr or "every 30m") in isolation —
+ *  used for the live preview under the schedule input. */
+function humanizeExpr(expr: string): string {
+  const e = expr.trim();
+  if (/^every\s/i.test(e)) return humanizeInterval(e);
+  if (/^[\d*/,\-\s]+$/.test(e) && e.split(/\s+/).length >= 5) {
+    try {
+      return cronstrue.toString(e, { verbose: false, throwExceptionOnParseError: true });
+    } catch {
+      /* fall through */
+    }
+  }
+  return e;
+}
+
+const DOW: Record<string, number> = {
+  sunday: 0, sun: 0, monday: 1, mon: 1, tuesday: 2, tue: 2, tues: 2,
+  wednesday: 3, wed: 3, thursday: 4, thu: 4, thurs: 4, friday: 5, fri: 5,
+  saturday: 6, sat: 6,
+};
+
+/** Parse "10:30 am" / "9am" / "14:00" → {h, m}. */
+function parseClock(s: string): { h: number; m: number } | null {
+  let m = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (m) {
+    let h = Number(m[1]) % 12;
+    if (/pm/i.test(m[3])) h += 12;
+    return { h, m: Number(m[2] ?? 0) };
+  }
+  m = s.match(/\b(\d{1,2}):(\d{2})\b/);
+  if (m) return { h: Number(m[1]), m: Number(m[2]) };
+  return null;
+}
+
+/**
+ * Turn a natural phrase into something the backend cron parser accepts: a cron
+ * expression or an "every Nm/Nh" interval. Returns null if it can't confidently
+ * parse (caller then sends the raw text, which the backend may accept or reject).
+ *
+ * Handles: "every 30m", "every 2 hours", "hourly", "10:00 am everyday",
+ * "every day at 6am", "9:30am on weekdays", "every monday at 9am", bare "6am".
+ */
+function parseNaturalSchedule(raw: string): string | null {
+  const s = raw.trim().toLowerCase();
+  if (!s) return null;
+
+  // Already a cron expression — pass through unchanged.
+  if (/^[\d*/,\-\s]+$/.test(s) && s.split(/\s+/).length >= 5) return raw.trim();
+
+  // Intervals.
+  const iv = s.match(/^every\s+(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours)$/);
+  if (iv) return `every ${Number(iv[1])}${/^h/.test(iv[2]) ? "h" : "m"}`;
+  if (s === "hourly" || /^every\s+hour$/.test(s)) return "0 * * * *";
+
+  const t = parseClock(s);
+
+  // Day-of-week field.
+  let dow = "*";
+  if (/weekday|mon(day)?\s*(-|–|through|to|thru)\s*fri(day)?|mon-fri/.test(s)) dow = "1-5";
+  else if (/weekend/.test(s)) dow = "0,6";
+  else {
+    for (const [name, n] of Object.entries(DOW)) {
+      if (new RegExp(`\\b${name}\\b`).test(s)) { dow = String(n); break; }
+    }
+  }
+
+  const daily = /every\s*day|everyday|daily/.test(s);
+
+  if (t && (daily || dow !== "*")) return `${t.m} ${t.h} * * ${dow}`;
+  // Bare time ("6am", "10:00 am", "at 9pm") → assume every day.
+  if (t && /^\s*(at\s+)?\d{1,2}(:\d{2})?\s*(am|pm)?\s*$/.test(s)) {
+    return `${t.m} ${t.h} * * *`;
+  }
+  return null;
+}
+
 function getJobState(job: CronJob): string {
   return asText(job.state) || (job.enabled === false ? "disabled" : "scheduled");
 }
@@ -224,6 +300,9 @@ export default function CronPage() {
       showToast(`${t.cron.prompt} & ${t.cron.schedule} required`, "error");
       return;
     }
+    // Accept natural language ("10am everyday") by converting to a cron
+    // expression the backend understands; fall back to the raw text otherwise.
+    const scheduleToSend = parseNaturalSchedule(schedule) ?? schedule.trim();
     setCreating(true);
     try {
       if (isEditing && editingKey) {
@@ -232,7 +311,7 @@ export default function CronPage() {
           id,
           {
             prompt: prompt.trim(),
-            schedule: schedule.trim(),
+            schedule: scheduleToSend,
             name: name.trim(),
             deliver,
           },
@@ -243,7 +322,7 @@ export default function CronPage() {
         await api.createCronJob(
           {
             prompt: prompt.trim(),
-            schedule: schedule.trim(),
+            schedule: scheduleToSend,
             name: name.trim() || undefined,
             deliver,
           },
@@ -446,10 +525,20 @@ export default function CronPage() {
                   <Label htmlFor="cron-schedule">{t.cron.schedule}</Label>
                   <Input
                     id="cron-schedule"
-                    placeholder={t.cron.schedulePlaceholder}
+                    placeholder="e.g. 10:00 am everyday, weekdays at 9am, every 30m"
                     value={schedule}
                     onChange={(e) => setSchedule(e.target.value)}
                   />
+                  {schedule.trim() && (
+                    <p className="text-xs text-muted-foreground">
+                      {(() => {
+                        const parsed = parseNaturalSchedule(schedule);
+                        return parsed
+                          ? `→ ${humanizeExpr(parsed)}`
+                          : "Couldn’t parse — will be sent exactly as typed";
+                      })()}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid gap-2">
@@ -510,27 +599,36 @@ export default function CronPage() {
             {t.cron.scheduledJobs} ({jobs.length})
           </H2>
 
-          <div className="grid gap-1 min-w-[220px]">
-            <Label htmlFor="cron-profile-filter">Profile</Label>
-            <Select
-              id="cron-profile-filter"
-              value={selectedProfile}
-              onValueChange={(v) => setSelectedProfile(v)}
-            >
-              <SelectOption value="all">All profiles</SelectOption>
-              {profiles.map((profile) => (
-                <SelectOption key={profile.name} value={profile.name}>
-                  {profileLabel(profile.name)}
-                </SelectOption>
-              ))}
-            </Select>
+          <div className="flex items-end gap-3">
+            <Button size="sm" className="uppercase shrink-0" onClick={openCreate}>
+              Schedule a New Job
+            </Button>
+
+            <div className="grid gap-1 min-w-[180px]">
+              <Label htmlFor="cron-profile-filter">Profile</Label>
+              <Select
+                id="cron-profile-filter"
+                value={selectedProfile}
+                onValueChange={(v) => setSelectedProfile(v)}
+              >
+                <SelectOption value="all">All profiles</SelectOption>
+                {profiles.map((profile) => (
+                  <SelectOption key={profile.name} value={profile.name}>
+                    {profileLabel(profile.name)}
+                  </SelectOption>
+                ))}
+              </Select>
+            </div>
           </div>
         </div>
 
         {jobs.length === 0 && (
           <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              {t.cron.noJobs}
+            <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+              <p className="text-sm text-muted-foreground">{t.cron.noJobs}</p>
+              <Button size="sm" className="uppercase" onClick={openCreate}>
+                Schedule a New Job
+              </Button>
             </CardContent>
           </Card>
         )}
