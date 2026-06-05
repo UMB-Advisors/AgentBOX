@@ -122,6 +122,10 @@ export interface ThemeComponentStyles {
 /** Optional hex overrides keyed by shadcn-compat token name (without the
  *  `--color-` prefix). Any key set here wins over the DS cascade. */
 export interface ThemeColorOverrides {
+  /** Single brand/accent hue. Drives active nav, focus rings, and key
+   *  highlights via the `--color-brand` utility. When unset, `--color-brand`
+   *  falls back to `--midground` so a theme stays mono-on-its-own-palette. */
+  brand?: string;
   card?: string;
   cardForeground?: string;
   popover?: string;

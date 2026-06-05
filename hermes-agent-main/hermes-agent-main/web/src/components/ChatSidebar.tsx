@@ -72,9 +72,27 @@ const STATE_TONE: Record<
 interface ChatSidebarProps {
   channel: string;
   className?: string;
+  /** Inject a slash command into the LIVE PTY chat (ChatPage.sendPtyCommand).
+   * When provided, the model picker routes through this instead of the sidecar
+   * `slash.exec` so the switch hits the real chat agent, not a throwaway
+   * sidecar session. */
+  onModelCommand?: (slashCommand: string) => void;
 }
 
-export function ChatSidebar({ channel, className }: ChatSidebarProps) {
+/** Pull `{model, provider}` out of a `/model <model> --provider <slug>` command
+ * so the badge can update optimistically before the PTY echoes session.info. */
+function parseModelCommand(
+  slashCommand: string,
+): { model?: string; provider?: string } | null {
+  const m = slashCommand.trim().match(/^\/model\s+(\S+)(?:\s+--provider\s+(\S+))?/);
+  if (!m) return null;
+  const out: { model?: string; provider?: string } = {};
+  if (m[1]) out.model = m[1];
+  if (m[2]) out.provider = m[2];
+  return out;
+}
+
+export function ChatSidebar({ channel, className, onModelCommand }: ChatSidebarProps) {
   // `version` bumps on reconnect; gw is derived so we never call setState
   // for it inside an effect (React 19's set-state-in-effect rule). The
   // counter is the dependency on purpose — it's not read in the memo body,
@@ -204,6 +222,17 @@ export function ChatSidebar({ channel, className }: ChatSidebarProps) {
 
       const { type, payload } = frame.params;
 
+      if (type === "session.info") {
+        // The live PTY agent emits this on model/personality/etc. changes.
+        // Reflect it in the badge so a model switch (via the picker → PTY, or a
+        // hand-typed /model) shows the real current model, not a stale one.
+        const p = payload as SessionInfo | undefined;
+        if (p) {
+          setInfo((prev) => ({ ...prev, ...p }));
+        }
+        return;
+      }
+
       if (type === "tool.start") {
         const p = payload as
           | { tool_id?: string; name?: string; context?: string }
@@ -293,6 +322,21 @@ export function ChatSidebar({ channel, className }: ChatSidebarProps) {
   // via PTY, so the sidebar doesn't need to surface output of its own.
   const onModelSubmit = useCallback(
     (slashCommand: string) => {
+      // Prefer the live PTY: slash.exec on the sidecar session only switches a
+      // throwaway session (badge moves, chat doesn't). Injecting into the PTY
+      // hits the real agent — see ChatPage.sendPtyCommand.
+      if (onModelCommand) {
+        onModelCommand(slashCommand);
+        // Optimistic badge update; the PTY also emits session.info (handled in
+        // the event subscriber) which confirms/corrects it.
+        const parsed = parseModelCommand(slashCommand);
+        if (parsed) {
+          setInfo((prev) => ({ ...prev, ...parsed }));
+        }
+        setModelOpen(false);
+        return;
+      }
+
       if (!sessionId) {
         return;
       }
@@ -303,7 +347,7 @@ export function ChatSidebar({ channel, className }: ChatSidebarProps) {
       });
       setModelOpen(false);
     },
-    [gw, sessionId],
+    [gw, sessionId, onModelCommand],
   );
 
   const canPickModel = state === "open" && !!sessionId;

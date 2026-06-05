@@ -76,6 +76,15 @@ except ImportError:
         )
 
 WEB_DIST = Path(os.environ["HERMES_WEB_DIST"]) if "HERMES_WEB_DIST" in os.environ else Path(__file__).parent / "web_dist"
+# Brain Graph: the prebuilt static Understand-Anything demo bundle + the gbrain
+# snapshot (knowledge-graph.json) live here, served same-origin under /graph-app/
+# and iframed by the dashboard's GraphPage. Built/refreshed on the gbrain host
+# (mailbox2) — see docs/brain-graph-tab-prd.v0.1.0.md.
+GRAPH_APP_DIST = (
+    Path(os.environ["HERMES_GRAPH_APP_DIST"])
+    if "HERMES_GRAPH_APP_DIST" in os.environ
+    else Path(__file__).parent / "graph_app"
+)
 _log = logging.getLogger(__name__)
 
 app = FastAPI(title="Hermes Agent", version=__version__)
@@ -330,7 +339,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "dashboard.theme": {
         "type": "select",
         "description": "Web dashboard visual theme",
-        "options": ["default", "midnight", "ember", "mono", "cyberpunk", "rose"],
+        "options": ["default", "hermes", "midnight", "ember", "mono", "cyberpunk", "rose"],
     },
     "display.resume_display": {
         "type": "select",
@@ -901,6 +910,536 @@ async def get_latest_digest():
     loop = asyncio.get_running_loop()
     digest = await loop.run_in_executor(None, _read_latest_digest)
     return JSONResponse(digest)
+
+
+# ── Daily Digest: configurable modules + top-news feed ───────────────────
+#
+# The digest landing renders a set of operator-chosen modules (see
+# DigestSettingsPage). "Top news" pulls from a SERVER-SIDE WHITELIST of
+# RSS/Atom feeds — never arbitrary client-supplied URLs — so the box never
+# fetches an attacker-chosen host (SSRF). Prefs persist to a small JSON file
+# under HERMES_HOME; feeds are fetched + parsed with the stdlib + requests and
+# cached for a few minutes so infinite-scroll paging is cheap.
+
+_NEWS_SOURCES: List[Dict[str, str]] = [
+    {"id": "hn", "label": "Hacker News", "url": "https://hnrss.org/frontpage"},
+    {"id": "ars", "label": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index"},
+    {"id": "verge", "label": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
+    {"id": "techcrunch", "label": "TechCrunch", "url": "https://techcrunch.com/feed/"},
+    {"id": "bbc", "label": "BBC News", "url": "http://feeds.bbci.co.uk/news/rss.xml"},
+    {"id": "nyt", "label": "NYT — Home", "url": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml"},
+    {"id": "guardian", "label": "The Guardian", "url": "https://www.theguardian.com/world/rss"},
+    {"id": "wsj", "label": "WSJ — World", "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml"},
+    {"id": "espn", "label": "ESPN", "url": "https://www.espn.com/espn/rss/news"},
+]
+_NEWS_SOURCE_BY_ID: Dict[str, Dict[str, str]] = {s["id"]: s for s in _NEWS_SOURCES}
+_DEFAULT_NEWS_IDS: List[str] = ["hn", "ars", "verge", "bbc"]
+
+_NEWS_CACHE: Dict[str, Dict[str, Any]] = {}  # source id -> {ts, items}
+_NEWS_TTL_SECONDS = 600.0
+
+_DIGEST_PREFS_FILE = get_hermes_home() / "digest-prefs.json"
+_DEFAULT_DIGEST_PREFS: Dict[str, Any] = {
+    "modules": {
+        "summary": True,
+        "emails": True,
+        "action_items": True,
+        "tasks": True,
+        "calendar": True,
+        "news": True,
+    },
+    "news_sources": _DEFAULT_NEWS_IDS,
+    # Operator-added feeds: [{"id","label","url"}]. URLs are SSRF-validated on
+    # write (see _validate_feed_url) and stored server-side; the client only
+    # ever sends/receives ids + labels for the picker.
+    "custom_sources": [],
+}
+
+
+def _validate_feed_url(url: str) -> str:
+    """Validate a user-supplied feed URL and reject SSRF targets.
+
+    Custom sources let the box fetch operator-chosen URLs, so guard against
+    pointing the fetcher at internal/cloud-metadata endpoints: require http(s),
+    a real host, and reject any host that resolves to a private / loopback /
+    link-local / reserved / multicast / unspecified address. (Best-effort —
+    DNS could rebind between this check and the fetch; acceptable on a
+    single-operator loopback box.)
+    """
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    raw = (url or "").strip()
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("URL must start with http:// or https://")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("URL is missing a host")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"could not resolve host {host!r}") from exc
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise ValueError("URL resolves to a non-public address")
+    return raw
+
+
+def _custom_source_id(url: str) -> str:
+    import hashlib
+
+    return "custom-" + hashlib.sha1(url.encode("utf-8")).hexdigest()[:8]
+
+
+def _custom_source_label(url: str) -> str:
+    from urllib.parse import urlparse
+
+    return urlparse(url).hostname or url
+
+
+def _resolve_sources(prefs: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    """Combined id -> {id,label,url} map of built-in + the prefs' custom feeds."""
+    resolved: Dict[str, Dict[str, str]] = {s["id"]: dict(s) for s in _NEWS_SOURCES}
+    for c in prefs.get("custom_sources", []):
+        if isinstance(c, dict) and c.get("id") and c.get("url"):
+            resolved[c["id"]] = {
+                "id": c["id"],
+                "label": c.get("label") or c["url"],
+                "url": c["url"],
+            }
+    return resolved
+
+
+def _read_digest_prefs() -> Dict[str, Any]:
+    """Load digest prefs, merged over defaults so missing keys are filled."""
+    prefs = json.loads(json.dumps(_DEFAULT_DIGEST_PREFS))
+    try:
+        if _DIGEST_PREFS_FILE.exists():
+            data = json.loads(_DIGEST_PREFS_FILE.read_text("utf-8"))
+            if isinstance(data, dict):
+                mods = data.get("modules")
+                if isinstance(mods, dict):
+                    prefs["modules"].update({k: bool(v) for k, v in mods.items()})
+                cs = data.get("custom_sources")
+                if isinstance(cs, list):
+                    prefs["custom_sources"] = [
+                        {
+                            "id": str(c.get("id")),
+                            "label": str(c.get("label") or c.get("url")),
+                            "url": str(c.get("url")),
+                        }
+                        for c in cs
+                        if isinstance(c, dict) and c.get("id") and c.get("url")
+                    ]
+                srcs = data.get("news_sources")
+                if isinstance(srcs, list):
+                    valid = set(_NEWS_SOURCE_BY_ID) | {
+                        c["id"] for c in prefs["custom_sources"]
+                    }
+                    prefs["news_sources"] = [s for s in srcs if s in valid]
+    except Exception:
+        _log.warning("failed to read digest prefs; using defaults", exc_info=True)
+    return prefs
+
+
+def _write_digest_prefs(prefs: Dict[str, Any]) -> None:
+    _DIGEST_PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _DIGEST_PREFS_FILE.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
+
+
+def _parse_feed(xml_text: str, label: str, sid: str) -> List[Dict[str, Any]]:
+    """Parse an RSS 2.0 or Atom feed into normalized items. Best-effort."""
+    import html as _html
+    import re as _re
+    import xml.etree.ElementTree as ET
+    from datetime import datetime, timezone
+    from email.utils import parsedate_to_datetime
+
+    def _clean(s: Optional[str]) -> str:
+        if not s:
+            return ""
+        s = _re.sub(r"<[^>]+>", " ", s)
+        s = _html.unescape(s)
+        return _re.sub(r"\s+", " ", s).strip()
+
+    def _ts(s: Optional[str]) -> float:
+        if not s:
+            return 0.0
+        try:
+            dt = parsedate_to_datetime(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except Exception:
+            try:
+                return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                return 0.0
+
+    _MEDIA = "{http://search.yahoo.com/mrss/}"
+    _IMG_EXT = _re.compile(r"\.(?:jpe?g|png|webp|gif)(?:\?|$)", _re.I)
+
+    def _img(it: "ET.Element", *html_blobs: Optional[str]) -> str:
+        """Best-effort thumbnail URL for a feed item (Google-News-style cards).
+
+        Checks Media RSS thumbnail/content (incl. media:group), enclosures, a
+        bare <image><url>, then the first <img> in any description/content HTML.
+        """
+        for tag in (_MEDIA + "thumbnail", _MEDIA + "content"):
+            for el in it.findall(tag):
+                url = el.get("url")
+                if not url:
+                    continue
+                if (
+                    tag.endswith("thumbnail")
+                    or el.get("medium") == "image"
+                    or (el.get("type") or "").startswith("image")
+                    or _IMG_EXT.search(url)
+                ):
+                    return url.strip()
+        for grp in it.findall(_MEDIA + "group"):
+            for el in grp.findall(_MEDIA + "thumbnail") + grp.findall(_MEDIA + "content"):
+                url = el.get("url")
+                if url:
+                    return url.strip()
+        for el in it.findall("enclosure") + it.findall(f"{atom}link"):
+            url = el.get("url") or el.get("href")
+            typ = (el.get("type") or "")
+            rel = el.get("rel")
+            if url and (
+                typ.startswith("image")
+                or (rel == "enclosure" and _IMG_EXT.search(url))
+            ):
+                return url.strip()
+        img_el = it.find("image")
+        if img_el is not None:
+            u = img_el.findtext("url")
+            if u:
+                return u.strip()
+        for blob in html_blobs:
+            if not blob:
+                continue
+            m = _re.search(r'<img[^>]+src=["\']([^"\']+)["\']', blob)
+            if m:
+                return _html.unescape(m.group(1)).strip()
+        return ""
+
+    atom = "{http://www.w3.org/2005/Atom}"
+    items: List[Dict[str, Any]] = []
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        return items
+
+    rss_items = root.findall(".//item")
+    if rss_items:
+        content_ns = "{http://purl.org/rss/1.0/modules/content/}encoded"
+        for it in rss_items:
+            pub = it.findtext("pubDate") or it.findtext(
+                "{http://purl.org/dc/elements/1.1/}date"
+            )
+            desc = it.findtext("description")
+            items.append({
+                "title": _clean(it.findtext("title")),
+                "link": (it.findtext("link") or "").strip(),
+                "summary": _clean(desc)[:280],
+                "image": _img(it, desc, it.findtext(content_ns)),
+                "published": pub or "",
+                "published_ts": _ts(pub),
+                "source": label,
+                "source_id": sid,
+            })
+        return items
+
+    for it in root.findall(f"{atom}entry"):
+        link = ""
+        for ln in it.findall(f"{atom}link"):
+            if ln.get("rel") in (None, "alternate") and ln.get("href"):
+                link = ln.get("href")
+                break
+        pub = it.findtext(f"{atom}updated") or it.findtext(f"{atom}published")
+        content = it.findtext(f"{atom}content")
+        summary = it.findtext(f"{atom}summary")
+        items.append({
+            "title": _clean(it.findtext(f"{atom}title")),
+            "link": link,
+            "summary": _clean(summary or content)[:280],
+            "image": _img(it, content, summary),
+            "published": pub or "",
+            "published_ts": _ts(pub),
+            "source": label,
+            "source_id": sid,
+        })
+    return items
+
+
+def _fetch_news_source(source: Dict[str, str], force: bool = False) -> List[Dict[str, Any]]:
+    """Fetch + parse one whitelisted feed, cached. Never raises.
+
+    ``force`` bypasses the TTL cache and re-pulls the feed from source — used by
+    the digest "Refresh feed" button so new articles surface immediately rather
+    than waiting out the cache window.
+    """
+    sid = source["id"]
+    mono = time.monotonic()
+    cached = _NEWS_CACHE.get(sid)
+    if not force and cached and (mono - cached.get("ts", 0.0)) < _NEWS_TTL_SECONDS:
+        return cached["items"]
+    items: List[Dict[str, Any]] = cached["items"] if cached else []
+    try:
+        import requests
+
+        resp = requests.get(
+            source["url"], timeout=6, headers={"User-Agent": "AgentBOX-Digest/1.0"}
+        )
+        if resp.ok:
+            parsed = _parse_feed(resp.text, source["label"], sid)
+            if parsed:
+                items = parsed
+    except Exception:
+        _log.warning("news fetch failed for %s", sid, exc_info=True)
+    _NEWS_CACHE[sid] = {"ts": mono, "items": items}
+    return items
+
+
+def _collect_news(
+    sources: List[Dict[str, str]], force: bool = False
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for src in sources:
+        out.extend(_fetch_news_source(src, force=force))
+    out.sort(key=lambda x: x.get("published_ts", 0.0), reverse=True)
+    return out
+
+
+# Article-page OpenGraph image cache (url -> {ts, image}). Many feeds (e.g.
+# TechCrunch, The Verge, Hacker News) ship no inline image; we scrape the
+# article's og:image so every story can still show a thumbnail. Article URLs
+# come from server-parsed whitelisted/operator feeds (not client input), so
+# there's no SSRF surface here. Cached long since og:image rarely changes.
+_OG_IMAGE_CACHE: Dict[str, Dict[str, Any]] = {}
+_OG_IMAGE_TTL_SECONDS = 6 * 3600.0
+_OG_PATTERNS = [
+    r'<meta[^>]+property=["\']og:image(?::url)?["\'][^>]+content=["\']([^"\']+)["\']',
+    r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image(?::url)?["\']',
+    r'<meta[^>]+name=["\']twitter:image(?::src)?["\'][^>]+content=["\']([^"\']+)["\']',
+]
+
+
+def _og_image(url: str) -> str:
+    """Best-effort og:image / twitter:image for an article URL. Never raises."""
+    if not url or not url.lower().startswith(("http://", "https://")):
+        return ""
+    import html as _html
+    import re as _re
+
+    mono = time.monotonic()
+    cached = _OG_IMAGE_CACHE.get(url)
+    if cached and (mono - cached.get("ts", 0.0)) < _OG_IMAGE_TTL_SECONDS:
+        return cached["image"]
+    image = ""
+    try:
+        import requests
+
+        resp = requests.get(
+            url,
+            timeout=6,
+            stream=True,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+                )
+            },
+        )
+        if resp.ok:
+            # og/twitter tags live in <head>; reading the first ~256KB is plenty.
+            raw = resp.raw.read(262144, decode_content=True) or b""
+            resp.close()
+            head = raw.decode("utf-8", "replace")
+            for pat in _OG_PATTERNS:
+                m = _re.search(pat, head, _re.I)
+                if m:
+                    image = _html.unescape(m.group(1)).strip()
+                    break
+    except Exception:
+        _log.debug("og:image fetch failed for %s", url, exc_info=True)
+    _OG_IMAGE_CACHE[url] = {"ts": mono, "image": image}
+    return image
+
+
+def _enrich_images(items: List[Dict[str, Any]]) -> None:
+    """Fill missing ``image`` fields from article og:image, concurrently."""
+    import concurrent.futures
+
+    todo = [it for it in items if not it.get("image") and it.get("link")]
+    if not todo:
+        return
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        for it, img in zip(
+            todo, pool.map(lambda x: _og_image(x["link"]), todo)
+        ):
+            if img:
+                it["image"] = img
+
+
+@app.get("/api/digest/news/sources")
+async def get_news_sources():
+    """Selectable news feeds: built-in whitelist + operator custom feeds."""
+    prefs = _read_digest_prefs()
+    builtin = [
+        {"id": s["id"], "label": s["label"], "custom": False} for s in _NEWS_SOURCES
+    ]
+    custom = [
+        {"id": c["id"], "label": c["label"], "url": c["url"], "custom": True}
+        for c in prefs.get("custom_sources", [])
+    ]
+    return {"sources": builtin + custom}
+
+
+@app.get("/api/digest/news")
+async def get_news(
+    sources: str = "", offset: int = 0, limit: int = 20, refresh: bool = False
+):
+    """Paginated, date-sorted merge of the selected feeds (built-in + custom).
+
+    ``sources`` is a CSV of source ids (unknown ids ignored); empty → the saved
+    prefs' selection (or defaults). Drives the digest's infinite scroll.
+    ``refresh`` bypasses the per-feed TTL cache (the "Refresh feed" button).
+    """
+    prefs = _read_digest_prefs()
+    resolved = _resolve_sources(prefs)
+    if sources:
+        ids = [s for s in sources.split(",") if s in resolved]
+    else:
+        ids = prefs.get("news_sources") or _DEFAULT_NEWS_IDS
+        ids = [i for i in ids if i in resolved]
+    offset = max(0, offset)
+    limit = max(1, min(limit, 50))
+    src_list = [resolved[i] for i in ids]
+    loop = asyncio.get_running_loop()
+    all_items = await loop.run_in_executor(
+        None, lambda: _collect_news(src_list, force=bool(refresh))
+    )
+    # Copy each item without the internal sort key (don't mutate the cache).
+    page = [
+        {k: v for k, v in it.items() if k != "published_ts"}
+        for it in all_items[offset : offset + limit]
+    ]
+    # Backfill thumbnails from article og:image for feeds without inline images.
+    await loop.run_in_executor(None, _enrich_images, page)
+    return {
+        "items": page,
+        "total": len(all_items),
+        "has_more": offset + limit < len(all_items),
+    }
+
+
+@app.get("/api/digest/prefs")
+async def get_digest_prefs():
+    return _read_digest_prefs()
+
+
+class DigestPrefsBody(BaseModel):
+    modules: Optional[Dict[str, bool]] = None
+    news_sources: Optional[List[str]] = None
+    custom_sources: Optional[List[Dict[str, str]]] = None
+
+
+@app.put("/api/digest/prefs")
+async def put_digest_prefs(body: DigestPrefsBody):
+    prefs = _read_digest_prefs()
+    if body.modules is not None:
+        prefs["modules"].update({k: bool(v) for k, v in body.modules.items()})
+    if body.custom_sources is not None:
+        cleaned: List[Dict[str, str]] = []
+        seen: set = set()
+        for c in body.custom_sources:
+            url = str((c or {}).get("url") or "").strip()
+            if not url:
+                continue
+            try:
+                url = _validate_feed_url(url)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=f"Invalid feed URL: {exc}")
+            cid = str((c or {}).get("id") or "").strip() or _custom_source_id(url)
+            if cid in seen:
+                continue
+            seen.add(cid)
+            label = str((c or {}).get("label") or "").strip() or _custom_source_label(url)
+            cleaned.append({"id": cid, "label": label, "url": url})
+        prefs["custom_sources"] = cleaned
+    # Keep selections valid against the current built-in + custom universe
+    # (a removed custom feed must drop out of news_sources too).
+    valid_ids = set(_NEWS_SOURCE_BY_ID) | {c["id"] for c in prefs["custom_sources"]}
+    if body.news_sources is not None:
+        prefs["news_sources"] = [s for s in body.news_sources if s in valid_ids]
+    else:
+        prefs["news_sources"] = [s for s in prefs["news_sources"] if s in valid_ids]
+    _write_digest_prefs(prefs)
+    return prefs
+
+
+@app.get("/api/digest/calendar")
+async def get_digest_calendar():
+    """Today's calendar events for the digest.
+
+    The dashboard Calendar tab is still a placeholder with no data source wired,
+    so this returns an empty, ``connected: false`` payload the digest renders as
+    a clean "calendar not connected yet" state. Swap in a real provider (Google
+    Calendar, CalDAV, …) here when the Calendar tab is built out.
+
+    NOTE: the Home daily brief no longer uses this — its calendar section comes
+    from ``/api/digest/brief`` (real Google Calendar). Kept for any other caller.
+    """
+    return {"connected": False, "events": []}
+
+
+# ---------------------------------------------------------------------------
+# Daily brief — real Gmail (Top of Mind) + Google Calendar (On Your Calendar).
+# Backed by the operator's google-workspace skill credentials; see
+# google_brief.py. The brief's third section (FYI) is the local Kanban board,
+# fetched separately by the SPA. Cached briefly so each Home load doesn't hit
+# the Google APIs.
+# ---------------------------------------------------------------------------
+_BRIEF_CACHE: Dict[str, Any] = {"ts": 0.0, "data": None}
+_BRIEF_TTL_SECONDS = 60.0
+
+
+@app.get("/api/digest/brief")
+async def get_digest_brief():
+    """Gmail + Google Calendar for the Home daily brief.
+
+    Returns ``{connected, gmail:{messages,error}, calendar:{events,error}}``.
+    Always 200: with no Google token the payload is the disconnected shape so
+    the SPA shows a "Connect Google" state rather than erroring (and a 401 here
+    would wrongly trip the loopback stale-token reload in ``fetchJSON``).
+    """
+    from hermes_cli import google_brief
+
+    mono = time.monotonic()
+    cached = _BRIEF_CACHE.get("data")
+    if cached is not None and (mono - _BRIEF_CACHE.get("ts", 0.0)) < _BRIEF_TTL_SECONDS:
+        return JSONResponse(cached)
+
+    loop = asyncio.get_running_loop()
+    data = await loop.run_in_executor(None, google_brief.build_brief)
+    _BRIEF_CACHE["ts"] = mono
+    _BRIEF_CACHE["data"] = data
+    return JSONResponse(data)
 
 
 # ---------------------------------------------------------------------------
@@ -2912,6 +3451,11 @@ class CronJobCreate(BaseModel):
     schedule: str
     name: str = ""
     deliver: str = "local"
+    # CRM assignment (soft links into the mailbox-dashboard CRM). Optional.
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    employee_id: Optional[int] = None
+    employee_name: Optional[str] = None
 
 
 class CronJobUpdate(BaseModel):
@@ -3037,6 +3581,10 @@ async def create_cron_job(body: CronJobCreate, profile: str = "default"):
             schedule=body.schedule,
             name=body.name,
             deliver=body.deliver,
+            department_id=body.department_id,
+            department_name=body.department_name,
+            employee_id=body.employee_id,
+            employee_name=body.employee_name,
         )
     except Exception as e:
         _log.exception("POST /api/cron/jobs failed")
@@ -4213,6 +4761,40 @@ def mount_spa(application: FastAPI):
 
     application.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
 
+    # Brain Graph: serve the static UA bundle + gbrain snapshot same-origin under
+    # /graph-app/. Registered BEFORE the SPA catch-all below so /{full_path}
+    # doesn't swallow it. html=True makes /graph-app/ resolve to index.html and
+    # /graph-app/knowledge-graph.json serve the snapshot. Not gated by the /api
+    # auth middleware (same as the SPA + the /dashboard inbox proxy); the edge
+    # (Caddy basic-auth) already fronts the whole origin.
+    if GRAPH_APP_DIST.is_dir() and (GRAPH_APP_DIST / "index.html").is_file():
+        application.mount(
+            "/graph-app",
+            StaticFiles(directory=GRAPH_APP_DIST, html=True),
+            name="graph-app",
+        )
+    else:
+        # Bundle not generated yet — return a friendly placeholder so the iframe
+        # shows guidance instead of a blank page or the SPA catch-all.
+        _graph_placeholder = (
+            "<!doctype html><meta charset=utf-8>"
+            "<title>Brain Graph</title>"
+            "<style>html,body{height:100%;margin:0;background:#0a0a0a;color:#9aa0a6;"
+            "font:14px/1.6 ui-monospace,monospace;display:flex;align-items:center;"
+            "justify-content:center;text-align:center}div{max-width:32rem;padding:2rem}"
+            "code{color:#cdd2d6}</style>"
+            "<div><h2>Brain Graph not generated yet</h2>"
+            "<p>Run the gbrain&nbsp;&rarr;&nbsp;Understand-Anything export on the gbrain host, "
+            "then drop the bundle into <code>graph_app/</code> "
+            "(or set <code>HERMES_GRAPH_APP_DIST</code>).</p>"
+            "<p>See <code>docs/brain-graph-tab-prd.v0.1.0.md</code>.</p></div>"
+        )
+
+        @application.get("/graph-app")
+        @application.get("/graph-app/{_sub:path}")
+        async def graph_app_placeholder(_sub: str = ""):
+            return HTMLResponse(_graph_placeholder)
+
     @application.get("/{full_path:path}")
     async def serve_spa(full_path: str, request: Request):
         prefix = _normalise_prefix(request.headers.get("x-forwarded-prefix"))
@@ -4235,8 +4817,10 @@ def mount_spa(application: FastAPI):
 # Built-in dashboard themes — label + description only.  The actual color
 # definitions live in the frontend (web/src/themes/presets.ts).
 _BUILTIN_DASHBOARD_THEMES = [
-    {"name": "default",       "label": "Hermes Teal",         "description": "Classic dark teal — the canonical Hermes look"},
-    {"name": "default-large", "label": "Hermes Teal (Large)", "description": "Hermes Teal with bigger fonts and roomier spacing"},
+    {"name": "default",       "label": "Gmail",               "description": "Light Gmail-style skin — white canvas, Google blue, Roboto"},
+    {"name": "carbon",        "label": "Carbon",              "description": "Modern agent — graphite canvas, near-white ink, indigo accent"},
+    {"name": "default-large", "label": "Carbon (Large)",      "description": "Carbon with bigger fonts and roomier spacing"},
+    {"name": "hermes",        "label": "Hermes Teal",         "description": "Classic dark teal — the original Hermes look"},
     {"name": "midnight",      "label": "Midnight",            "description": "Deep blue-violet with cool accents"},
     {"name": "ember",     "label": "Ember",          "description": "Warm crimson and bronze — forge vibes"},
     {"name": "mono",      "label": "Mono",           "description": "Clean grayscale — minimal and focused"},

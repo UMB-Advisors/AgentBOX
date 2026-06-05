@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
-import { Clock, Pause, Play, Trash2, X, Zap } from "lucide-react";
+import { Clock, Pause, Pencil, Play, Trash2, X, Zap } from "lucide-react";
+import cronstrue from "cronstrue";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
@@ -7,6 +8,8 @@ import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { H2 } from "@nous-research/ui/ui/components/typography/h2";
 import { api } from "@/lib/api";
 import type { CronJob, ProfileInfo } from "@/lib/api";
+import { crmApi } from "@/lib/crm";
+import type { Department, TeamMember } from "@/lib/crm";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { useConfirmDelete } from "@nous-research/ui/hooks/use-confirm-delete";
@@ -66,6 +69,131 @@ function getJobScheduleDisplay(job: CronJob): string {
   );
 }
 
+/** The raw schedule expression a user typed (cron expr or "every 30m"),
+ *  used to pre-fill the edit form and as a tooltip on the humanized text. */
+function getJobScheduleRaw(job: CronJob): string {
+  return (
+    asText(job.schedule?.expr) ||
+    asText(job.schedule?.display) ||
+    asText(job.schedule_display)
+  );
+}
+
+function humanizeInterval(text: string): string {
+  const m = text.trim().match(/^every\s+(\d+)\s*([smhd])$/i);
+  if (!m) return text;
+  const n = Number(m[1]);
+  const unit =
+    ({ s: "second", m: "minute", h: "hour", d: "day" } as Record<string, string>)[
+      m[2].toLowerCase()
+    ] ?? "minute";
+  return `Every ${n} ${unit}${n === 1 ? "" : "s"}`;
+}
+
+/** Render a schedule in plain English ("At 10:00 AM, every day") for at-a-glance
+ *  reference. Cron expressions go through cronstrue; intervals/once are handled
+ *  inline. Falls back to the raw display if nothing parses. */
+function humanizeSchedule(job: CronJob): string {
+  const sched = job.schedule ?? {};
+  const kind = asText(sched.kind);
+  const display = asText(sched.display) || asText(job.schedule_display);
+  const expr = (asText(sched.expr) || display).trim();
+
+  if (kind === "interval" || /^every\s/i.test(display)) {
+    return humanizeInterval(display || expr);
+  }
+  if (kind === "once") {
+    return job.next_run_at ? `Once — ${formatTime(job.next_run_at)}` : "Once";
+  }
+  if (expr && /^[\d*/,\-\s]+$/.test(expr) && expr.split(/\s+/).length >= 5) {
+    try {
+      return cronstrue.toString(expr, {
+        verbose: false,
+        throwExceptionOnParseError: true,
+      });
+    } catch {
+      /* not a valid cron expr — fall through to the raw display */
+    }
+  }
+  return getJobScheduleDisplay(job);
+}
+
+/** Humanize a raw schedule string (cron expr or "every 30m") in isolation —
+ *  used for the live preview under the schedule input. */
+function humanizeExpr(expr: string): string {
+  const e = expr.trim();
+  if (/^every\s/i.test(e)) return humanizeInterval(e);
+  if (/^[\d*/,\-\s]+$/.test(e) && e.split(/\s+/).length >= 5) {
+    try {
+      return cronstrue.toString(e, { verbose: false, throwExceptionOnParseError: true });
+    } catch {
+      /* fall through */
+    }
+  }
+  return e;
+}
+
+const DOW: Record<string, number> = {
+  sunday: 0, sun: 0, monday: 1, mon: 1, tuesday: 2, tue: 2, tues: 2,
+  wednesday: 3, wed: 3, thursday: 4, thu: 4, thurs: 4, friday: 5, fri: 5,
+  saturday: 6, sat: 6,
+};
+
+/** Parse "10:30 am" / "9am" / "14:00" → {h, m}. */
+function parseClock(s: string): { h: number; m: number } | null {
+  let m = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (m) {
+    let h = Number(m[1]) % 12;
+    if (/pm/i.test(m[3])) h += 12;
+    return { h, m: Number(m[2] ?? 0) };
+  }
+  m = s.match(/\b(\d{1,2}):(\d{2})\b/);
+  if (m) return { h: Number(m[1]), m: Number(m[2]) };
+  return null;
+}
+
+/**
+ * Turn a natural phrase into something the backend cron parser accepts: a cron
+ * expression or an "every Nm/Nh" interval. Returns null if it can't confidently
+ * parse (caller then sends the raw text, which the backend may accept or reject).
+ *
+ * Handles: "every 30m", "every 2 hours", "hourly", "10:00 am everyday",
+ * "every day at 6am", "9:30am on weekdays", "every monday at 9am", bare "6am".
+ */
+function parseNaturalSchedule(raw: string): string | null {
+  const s = raw.trim().toLowerCase();
+  if (!s) return null;
+
+  // Already a cron expression — pass through unchanged.
+  if (/^[\d*/,\-\s]+$/.test(s) && s.split(/\s+/).length >= 5) return raw.trim();
+
+  // Intervals.
+  const iv = s.match(/^every\s+(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours)$/);
+  if (iv) return `every ${Number(iv[1])}${/^h/.test(iv[2]) ? "h" : "m"}`;
+  if (s === "hourly" || /^every\s+hour$/.test(s)) return "0 * * * *";
+
+  const t = parseClock(s);
+
+  // Day-of-week field.
+  let dow = "*";
+  if (/weekday|mon(day)?\s*(-|–|through|to|thru)\s*fri(day)?|mon-fri/.test(s)) dow = "1-5";
+  else if (/weekend/.test(s)) dow = "0,6";
+  else {
+    for (const [name, n] of Object.entries(DOW)) {
+      if (new RegExp(`\\b${name}\\b`).test(s)) { dow = String(n); break; }
+    }
+  }
+
+  const daily = /every\s*day|everyday|daily/.test(s);
+
+  if (t && (daily || dow !== "*")) return `${t.m} ${t.h} * * ${dow}`;
+  // Bare time ("6am", "10:00 am", "at 9pm") → assume every day.
+  if (t && /^\s*(at\s+)?\d{1,2}(:\d{2})?\s*(am|pm)?\s*$/.test(s)) {
+    return `${t.m} ${t.h} * * *`;
+  }
+  return null;
+}
+
 function getJobState(job: CronJob): string {
   return asText(job.state) || (job.enabled === false ? "disabled" : "scheduled");
 }
@@ -105,24 +233,61 @@ export default function CronPage() {
   const { t } = useI18n();
   const { setEnd, setTitle } = usePageHeader();
 
-  // Renamed in the simplified nav: "Cron" → "Scheduled Actions".
+  // Renamed in the simplified nav: "Cron" → "Scheduled Actions" → "Agent Jobs".
   useEffect(() => {
-    setTitle("Scheduled Actions");
+    setTitle("Agent Jobs");
   }, [setTitle]);
 
-  // New job modal state
+  // Create / edit job modal state. `editingKey` is null for a new job, or the
+  // job key being edited; `editingProfile` pins the edit to that job's profile.
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingProfile, setEditingProfile] = useState("default");
   const [prompt, setPrompt] = useState("");
   const [schedule, setSchedule] = useState("");
   const [name, setName] = useState("");
-  const closeCreateModal = useCallback(() => setCreateModalOpen(false), []);
+  const [deliver, setDeliver] = useState("local");
+  // CRM assignment. Stored as string select values ("" = none); coerced to
+  // number on submit. Department/Employee lists come from the mailbox-dashboard
+  // CRM (same-origin via the dashboard proxy).
+  const [departmentId, setDepartmentId] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [team, setTeam] = useState<TeamMember[]>([]);
+  const [creating, setCreating] = useState(false);
+  const isEditing = editingKey !== null;
+  const closeCreateModal = useCallback(() => {
+    setCreateModalOpen(false);
+    setEditingKey(null);
+  }, []);
   const createModalRef = useModalBehavior({
     open: createModalOpen,
     onClose: closeCreateModal,
   });
-  const [deliver, setDeliver] = useState("local");
-  const [creating, setCreating] = useState(false);
   const createProfile = selectedProfile === "all" ? "default" : selectedProfile;
+
+  const openCreate = useCallback(() => {
+    setEditingKey(null);
+    setName("");
+    setPrompt("");
+    setSchedule("");
+    setDeliver("local");
+    setDepartmentId("");
+    setEmployeeId("");
+    setCreateModalOpen(true);
+  }, []);
+
+  const openEdit = useCallback((job: CronJob) => {
+    setEditingKey(getJobKey(job));
+    setEditingProfile(getJobProfile(job));
+    setName(getJobName(job));
+    setPrompt(getJobPrompt(job));
+    setSchedule(getJobScheduleRaw(job));
+    setDeliver(asText(job.deliver) || "local");
+    setDepartmentId(job.department_id != null ? String(job.department_id) : "");
+    setEmployeeId(job.employee_id != null ? String(job.employee_id) : "");
+    setCreateModalOpen(true);
+  }, []);
 
   const loadJobs = useCallback(() => {
     api
@@ -139,31 +304,72 @@ export default function CronPage() {
       .catch(() => setProfiles([]));
   }, []);
 
+  // Department + Employee options for assignment. The CRM lives in the
+  // mailbox-dashboard; if it's unreachable the selects just stay empty and the
+  // rest of the page works unchanged.
+  useEffect(() => {
+    crmApi.listDepartments().then(setDepartments).catch(() => setDepartments([]));
+    crmApi.listTeam().then(setTeam).catch(() => setTeam([]));
+  }, []);
+
   useEffect(() => {
     loadJobs();
   }, [loadJobs]);
 
-  const handleCreate = async () => {
+  const handleSubmit = async () => {
     if (!prompt.trim() || !schedule.trim()) {
       showToast(`${t.cron.prompt} & ${t.cron.schedule} required`, "error");
       return;
     }
+    // Accept natural language ("10am everyday") by converting to a cron
+    // expression the backend understands; fall back to the raw text otherwise.
+    const scheduleToSend = parseNaturalSchedule(schedule) ?? schedule.trim();
+    // Resolve the chosen department/employee to ids + denormalized names so the
+    // job card can label them without a CRM round-trip. null clears assignment.
+    const deptIdNum = departmentId ? Number(departmentId) : null;
+    const empIdNum = employeeId ? Number(employeeId) : null;
+    const crmFields = {
+      department_id: deptIdNum,
+      department_name: departments.find((d) => d.id === deptIdNum)?.name ?? null,
+      employee_id: empIdNum,
+      employee_name: team.find((m) => m.id === empIdNum)?.name ?? null,
+    };
     setCreating(true);
     try {
-      await api.createCronJob(
-        {
-          prompt: prompt.trim(),
-          schedule: schedule.trim(),
-          name: name.trim() || undefined,
-          deliver,
-        },
-        createProfile,
-      );
-      showToast(t.common.create + " ✓", "success");
+      if (isEditing && editingKey) {
+        const { id } = splitJobKey(editingKey);
+        await api.updateCronJob(
+          id,
+          {
+            prompt: prompt.trim(),
+            schedule: scheduleToSend,
+            name: name.trim(),
+            deliver,
+            ...crmFields,
+          },
+          editingProfile,
+        );
+        showToast("Saved ✓", "success");
+      } else {
+        await api.createCronJob(
+          {
+            prompt: prompt.trim(),
+            schedule: scheduleToSend,
+            name: name.trim() || undefined,
+            deliver,
+            ...crmFields,
+          },
+          createProfile,
+        );
+        showToast(t.common.create + " ✓", "success");
+      }
       setPrompt("");
       setSchedule("");
       setName("");
       setDeliver("local");
+      setDepartmentId("");
+      setEmployeeId("");
+      setEditingKey(null);
       setCreateModalOpen(false);
       loadJobs();
     } catch (e) {
@@ -236,7 +442,7 @@ export default function CronPage() {
       <Button
         className="uppercase"
         size="sm"
-        onClick={() => setCreateModalOpen(true)}
+        onClick={openCreate}
       >
         {t.common.create}
       </Button>,
@@ -244,7 +450,7 @@ export default function CronPage() {
     return () => {
       setEnd(null);
     };
-  }, [setEnd, t.common.create, loading]);
+  }, [setEnd, t.common.create, loading, openCreate]);
 
   if (loading) {
     return (
@@ -304,7 +510,7 @@ export default function CronPage() {
                 id="create-cron-title"
                 className="font-mondwest text-display text-base tracking-wider"
               >
-                {t.cron.newJob}
+                {isEditing ? "Edit job" : t.cron.newJob}
               </h2>
             </header>
 
@@ -313,8 +519,11 @@ export default function CronPage() {
                 <Label htmlFor="cron-profile">Profile</Label>
                 <Select
                   id="cron-profile"
-                  value={createProfile}
-                  onValueChange={(v) => setSelectedProfile(v)}
+                  value={isEditing ? editingProfile : createProfile}
+                  disabled={isEditing}
+                  onValueChange={(v) => {
+                    if (!isEditing) setSelectedProfile(v);
+                  }}
                 >
                   {profiles.map((profile) => (
                     <SelectOption key={profile.name} value={profile.name}>
@@ -351,10 +560,20 @@ export default function CronPage() {
                   <Label htmlFor="cron-schedule">{t.cron.schedule}</Label>
                   <Input
                     id="cron-schedule"
-                    placeholder={t.cron.schedulePlaceholder}
+                    placeholder="e.g. 10:00 am everyday, weekdays at 9am, every 30m"
                     value={schedule}
                     onChange={(e) => setSchedule(e.target.value)}
                   />
+                  {schedule.trim() && (
+                    <p className="text-xs text-muted-foreground">
+                      {(() => {
+                        const parsed = parseNaturalSchedule(schedule);
+                        return parsed
+                          ? `→ ${humanizeExpr(parsed)}`
+                          : "Couldn’t parse — will be sent exactly as typed";
+                      })()}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid gap-2">
@@ -383,15 +602,56 @@ export default function CronPage() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="cron-department">Department</Label>
+                  <Select
+                    id="cron-department"
+                    value={departmentId}
+                    onValueChange={(v) => setDepartmentId(v)}
+                  >
+                    <SelectOption value="">Unassigned</SelectOption>
+                    {departments.map((d) => (
+                      <SelectOption key={d.id} value={String(d.id)}>
+                        {d.name}
+                      </SelectOption>
+                    ))}
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="cron-employee">Employee</Label>
+                  <Select
+                    id="cron-employee"
+                    value={employeeId}
+                    onValueChange={(v) => setEmployeeId(v)}
+                  >
+                    <SelectOption value="">Unassigned</SelectOption>
+                    {team.map((m) => (
+                      <SelectOption key={m.id} value={String(m.id)}>
+                        {m.name}
+                        {m.title ? ` — ${m.title}` : ""}
+                      </SelectOption>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+
               <div className="flex justify-end">
                 <Button
                   className="uppercase"
                   size="sm"
-                  onClick={handleCreate}
+                  onClick={handleSubmit}
                   disabled={creating}
                   prefix={creating ? <Spinner /> : undefined}
                 >
-                  {creating ? t.common.creating : t.common.create}
+                  {creating
+                    ? isEditing
+                      ? "Saving…"
+                      : t.common.creating
+                    : isEditing
+                      ? "Save"
+                      : t.common.create}
                 </Button>
               </div>
             </div>
@@ -409,27 +669,36 @@ export default function CronPage() {
             {t.cron.scheduledJobs} ({jobs.length})
           </H2>
 
-          <div className="grid gap-1 min-w-[220px]">
-            <Label htmlFor="cron-profile-filter">Profile</Label>
-            <Select
-              id="cron-profile-filter"
-              value={selectedProfile}
-              onValueChange={(v) => setSelectedProfile(v)}
-            >
-              <SelectOption value="all">All profiles</SelectOption>
-              {profiles.map((profile) => (
-                <SelectOption key={profile.name} value={profile.name}>
-                  {profileLabel(profile.name)}
-                </SelectOption>
-              ))}
-            </Select>
+          <div className="flex items-end gap-3">
+            <Button size="sm" className="uppercase shrink-0" onClick={openCreate}>
+              Schedule a New Job
+            </Button>
+
+            <div className="grid gap-1 min-w-[180px]">
+              <Label htmlFor="cron-profile-filter">Profile</Label>
+              <Select
+                id="cron-profile-filter"
+                value={selectedProfile}
+                onValueChange={(v) => setSelectedProfile(v)}
+              >
+                <SelectOption value="all">All profiles</SelectOption>
+                {profiles.map((profile) => (
+                  <SelectOption key={profile.name} value={profile.name}>
+                    {profileLabel(profile.name)}
+                  </SelectOption>
+                ))}
+              </Select>
+            </div>
           </div>
         </div>
 
         {jobs.length === 0 && (
           <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              {t.cron.noJobs}
+            <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+              <p className="text-sm text-muted-foreground">{t.cron.noJobs}</p>
+              <Button size="sm" className="uppercase" onClick={openCreate}>
+                Schedule a New Job
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -442,6 +711,14 @@ export default function CronPage() {
           const deliver = asText(job.deliver);
           const profile = getJobProfile(job);
           const jobKey = getJobKey(job);
+          const deptLabel =
+            asText(job.department_name) ||
+            departments.find((d) => d.id === job.department_id)?.name ||
+            "";
+          const empLabel =
+            asText(job.employee_name) ||
+            team.find((m) => m.id === job.employee_id)?.name ||
+            "";
 
           return (
             <Card key={jobKey}>
@@ -458,6 +735,8 @@ export default function CronPage() {
                     {deliver && deliver !== "local" && (
                       <Badge tone="outline">{deliver}</Badge>
                     )}
+                    {deptLabel && <Badge tone="outline">{deptLabel}</Badge>}
+                    {empLabel && <Badge tone="secondary">{empLabel}</Badge>}
                   </div>
                   {hasName && promptText && (
                     <p className="text-xs text-muted-foreground truncate mb-1">
@@ -465,7 +744,9 @@ export default function CronPage() {
                     </p>
                   )}
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    <span className="font-mono">{getJobScheduleDisplay(job)}</span>
+                    <span title={getJobScheduleRaw(job)}>
+                      {humanizeSchedule(job)}
+                    </span>
                     <span>
                       {t.cron.last}: {formatTime(job.last_run_at)}
                     </span>
@@ -481,6 +762,16 @@ export default function CronPage() {
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    ghost
+                    size="icon"
+                    title="Edit"
+                    aria-label="Edit"
+                    onClick={() => openEdit(job)}
+                  >
+                    <Pencil />
+                  </Button>
+
                   <Button
                     ghost
                     size="icon"

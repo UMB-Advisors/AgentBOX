@@ -87,6 +87,9 @@ function layoutVars(layout: ThemeLayout): Record<string, string> {
 
 /** Map a color-overrides key (camelCase) to its `--color-*` CSS var. */
 const OVERRIDE_KEY_TO_VAR: Record<keyof ThemeColorOverrides, string> = {
+  // `--brand` is the raw hue; `--color-brand` (defined in index.css) resolves
+  // to it, or falls back to `--midground` when a theme leaves brand unset.
+  brand: "--brand",
   card: "--color-card",
   cardForeground: "--color-card-foreground",
   popover: "--color-popover",

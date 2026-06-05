@@ -201,6 +201,35 @@ export const api = {
    * endpoint must never 401 (that would trip the loopback stale-token
    * reload in {@link fetchJSON}). */
   getDigest: () => fetchJSON<DigestResponse>("/api/digest/latest"),
+  /** Daily Digest: which modules + news sources to surface (persisted). */
+  getDigestPrefs: () => fetchJSON<DigestPrefs>("/api/digest/prefs"),
+  setDigestPrefs: (body: {
+    modules?: Record<string, boolean>;
+    news_sources?: string[];
+    custom_sources?: Array<{ id?: string; label?: string; url: string }>;
+  }) =>
+    fetchJSON<DigestPrefs>("/api/digest/prefs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  /** Whitelisted news feeds the digest can pull from. */
+  getNewsSources: () =>
+    fetchJSON<{ sources: NewsSource[] }>("/api/digest/news/sources"),
+  /** Paginated, date-sorted merge of the selected feeds (digest infinite scroll). */
+  getNews: (sources: string[], offset = 0, limit = 20, refresh = false) => {
+    const qs = new URLSearchParams();
+    if (sources.length) qs.set("sources", sources.join(","));
+    qs.set("offset", String(offset));
+    qs.set("limit", String(limit));
+    if (refresh) qs.set("refresh", "1");
+    return fetchJSON<NewsResponse>(`/api/digest/news?${qs.toString()}`);
+  },
+  /** Kanban board (digest Tasks module). */
+  getKanbanBoard: () => fetchJSON<KanbanBoard>("/api/plugins/kanban/board"),
+  /** Today's calendar events for the digest (placeholder until calendar wired). */
+  getDigestCalendar: () => fetchJSON<DigestCalendar>("/api/digest/calendar"),
+  getDigestBrief: () => fetchJSON<DigestBrief>("/api/digest/brief"),
   /**
    * Identity probe for the dashboard auth gate (Phase 7).
    *
@@ -310,11 +339,42 @@ export const api = {
   // Cron jobs
   getCronJobs: (profile = "all") =>
     fetchJSON<CronJob[]>(`/api/cron/jobs?profile=${encodeURIComponent(profile)}`),
-  createCronJob: (job: { prompt: string; schedule: string; name?: string; deliver?: string }, profile = "default") =>
+  createCronJob: (
+    job: {
+      prompt: string;
+      schedule: string;
+      name?: string;
+      deliver?: string;
+      department_id?: number | null;
+      department_name?: string | null;
+      employee_id?: number | null;
+      employee_name?: string | null;
+    },
+    profile = "default",
+  ) =>
     fetchJSON<CronJob>(`/api/cron/jobs?profile=${encodeURIComponent(profile)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(job),
+    }),
+  updateCronJob: (
+    id: string,
+    updates: {
+      prompt?: string;
+      schedule?: string;
+      name?: string;
+      deliver?: string;
+      department_id?: number | null;
+      department_name?: string | null;
+      employee_id?: number | null;
+      employee_name?: string | null;
+    },
+    profile = "default",
+  ) =>
+    fetchJSON<CronJob>(`/api/cron/jobs/${encodeURIComponent(id)}?profile=${encodeURIComponent(profile)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates }),
     }),
   pauseCronJob: (id: string, profile = "default") =>
     fetchJSON<CronJob>(`/api/cron/jobs/${encodeURIComponent(id)}/pause?profile=${encodeURIComponent(profile)}`, { method: "POST" }),
@@ -596,6 +656,79 @@ export const api = {
   /** Connected inboxes — for the account-filter selector. */
   inboxListAccounts: () =>
     fetchJSON<InboxAccountsResponse>("/dashboard/api/accounts"),
+
+  // ── Review-panel data (mailbox-dashboard /dashboard/api/drafts/[id]/*) ──
+
+  /** Replace the full action-items array (the route does a whole-array replace). */
+  inboxSaveActionItems: (draftId: number, items: ActionItem[]) =>
+    fetchJSON<{ success: boolean; draft: { action_items: ActionItem[] } }>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/action-items`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_items: items }),
+      },
+    ),
+  /** Push one action item (``{index}``) or all (``{all:true}``) to Google Tasks. */
+  inboxPushActionItems: (
+    draftId: number,
+    payload: { index: number } | { all: true },
+  ) =>
+    fetchJSON<{
+      action_items?: ActionItem[];
+      results?: Array<{ ok: boolean; error?: string }>;
+      error?: string;
+    }>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/action-items/push`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    ),
+  /** RAG attribution — resolves rag/kb context refs to source messages. */
+  inboxGetRagRefs: (draftId: number) =>
+    fetchJSON<RagRefsResponse>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/rag-refs`,
+    ),
+  /** Per-sender acceptance stats over a 30d window. */
+  inboxGetSenderHistory: (draftId: number) =>
+    fetchJSON<{ history: SenderHistory | null; reason?: string }>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/sender-history`,
+    ),
+  /** Cross-account intelligence — same counterparty in your other inboxes. */
+  inboxGetCrossAccount: (draftId: number) =>
+    fetchJSON<{ rows: CrossAccountRow[]; reason?: string }>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/cross-account`,
+    ),
+  /** Operator classification override (relabel only — no re-draft). */
+  inboxReclassify: (draftId: number, category: string, reason?: string) =>
+    fetchJSON<{ success: boolean; draft: unknown }>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/classification`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category, reason }),
+      },
+    ),
+  /** Retry a failed (errored) draft. */
+  inboxRetryDraft: (draftId: number) =>
+    fetchJSON<{ success?: boolean; [k: string]: unknown }>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/retry`,
+      { method: "POST" },
+    ),
+  /** Undo a rejection — restore the draft to a decidable state. */
+  inboxUndoReject: (draftId: number) =>
+    fetchJSON<{ success?: boolean; [k: string]: unknown }>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/undo-reject`,
+      { method: "POST" },
+    ),
+  /** Clear a stuck send-attempt marker so the draft can be re-decided. */
+  inboxClearSendAttempt: (draftId: number) =>
+    fetchJSON<{ success?: boolean; [k: string]: unknown }>(
+      `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/clear-send-attempt`,
+      { method: "POST" },
+    ),
 };
 
 /** Identity payload returned by ``GET /api/auth/me`` (Phase 7).
@@ -633,6 +766,109 @@ export interface DigestResponse {
   markdown: string | null;
   source: string;
   generated_at: string | null;
+}
+
+export interface CustomNewsSource {
+  id: string;
+  label: string;
+  url: string;
+}
+
+/** Operator-chosen digest modules + news sources (persisted server-side). */
+export interface DigestPrefs {
+  modules: {
+    summary: boolean;
+    emails: boolean;
+    action_items: boolean;
+    tasks: boolean;
+    calendar: boolean;
+    news: boolean;
+  } & Record<string, boolean>;
+  news_sources: string[];
+  custom_sources: CustomNewsSource[];
+}
+
+/** Kanban board shape (digest Tasks module). Loose — only a few fields read. */
+export interface KanbanTask {
+  id: string;
+  title?: string;
+  status?: string;
+  assignee?: string;
+  profile?: string;
+  owner?: string;
+  [k: string]: unknown;
+}
+export interface KanbanBoard {
+  columns: Array<{ name: string; tasks: KanbanTask[] }>;
+}
+
+export interface CalendarEvent {
+  id?: string;
+  title?: string;
+  start?: string;
+  end?: string;
+  location?: string;
+}
+export interface DigestCalendar {
+  connected: boolean;
+  events: CalendarEvent[];
+}
+
+/** Daily brief, real-data sources (`GET /api/digest/brief`).
+ *
+ *  Top of Mind = Gmail unread/primary; On Your Calendar = Google Calendar
+ *  today. Both come from the operator's google-workspace credentials. When
+ *  Google isn't connected, `connected` is false and both lists are empty (the
+ *  UI shows a "Connect Google" prompt). The brief's third section, FYI, is the
+ *  local Kanban board — fetched separately via `getKanbanBoard`. */
+export interface BriefEmail {
+  id: string;
+  subject: string;
+  from: string;
+  snippet: string;
+  date: string;
+  unread: boolean;
+  link: string;
+}
+export interface BriefEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  all_day: boolean;
+  location: string;
+  link: string;
+}
+export interface DigestBrief {
+  connected: boolean;
+  gmail: { messages: BriefEmail[]; error: string | null };
+  calendar: { events: BriefEvent[]; error: string | null };
+}
+
+export interface NewsSource {
+  id: string;
+  label: string;
+  /** True for operator-added feeds (vs the built-in whitelist). */
+  custom?: boolean;
+  /** Present for custom feeds. */
+  url?: string;
+}
+
+export interface NewsItem {
+  title: string;
+  link: string;
+  summary: string;
+  published: string;
+  source: string;
+  source_id: string;
+  /** Best-effort thumbnail URL (Media RSS / enclosure / inline <img>); "" when none. */
+  image?: string;
+}
+
+export interface NewsResponse {
+  items: NewsItem[];
+  total: number;
+  has_more: boolean;
 }
 
 /** Per-call overrides for {@link fetchJSON}. */
@@ -872,6 +1108,11 @@ export interface CronJob {
   last_run_at?: string | null;
   next_run_at?: string | null;
   last_error?: string | null;
+  // CRM assignment (soft links into the mailbox-dashboard CRM).
+  department_id?: number | null;
+  department_name?: string | null;
+  employee_id?: number | null;
+  employee_name?: string | null;
 }
 
 export interface SkillInfo {
@@ -1232,8 +1473,196 @@ export interface DraftRow {
   message: InboxMessage;
   /** Present only on the list endpoint. */
   account?: AccountRow;
-  /** Prior messages in the thread (jsonb; not rendered structurally). */
-  thread_history: unknown[];
+  /** Prior messages in the thread (inbound + outbound), oldest-first. Built
+   * server-side by ``getThreadHistory`` (mailbox-dashboard). */
+  thread_history: ThreadHistoryMessage[];
+}
+
+/** One prior message in a draft's conversation thread. Shape mirrors the
+ * mailbox-dashboard ``ThreadMessage`` union (inbound from ``inbox_messages``,
+ * outbound from ``sent_history``), flattened for transport. */
+export interface ThreadHistoryMessage {
+  /** Source-table row id; string for inbound, number for outbound — display only. */
+  id: number | string;
+  direction: "inbound" | "outbound";
+  from_addr: string | null;
+  to_addr: string | null;
+  subject: string | null;
+  body: string | null;
+  /** ISO-ish timestamp (``received_at`` / ``sent_at``). */
+  at: string;
+}
+
+// ── Review-panel types (mirror mailbox-dashboard lib/types.ts) ────────────
+
+export const INBOX_ACTION_ITEM_TYPES = [
+  "commitment",
+  "request",
+  "deadline",
+  "meeting",
+] as const;
+export type InboxActionItemType = (typeof INBOX_ACTION_ITEM_TYPES)[number];
+
+export const INBOX_ACTION_ITEM_SOURCES = ["inbound", "outbound"] as const;
+export type InboxActionItemSource = (typeof INBOX_ACTION_ITEM_SOURCES)[number];
+
+/** Structured action item on a draft (jsonb array; whole-array replace). */
+export interface ActionItem {
+  text: string;
+  type: InboxActionItemType;
+  due_at: string | null;
+  source: InboxActionItemSource;
+  confidence: number;
+  task_external_id?: string | null;
+  task_external_url?: string | null;
+  task_pushed_at?: string | null;
+}
+
+/** Canonical classification categories (mirror lib/classification/prompt.ts). */
+export const INBOX_CATEGORIES = [
+  "inquiry",
+  "reorder",
+  "scheduling",
+  "follow_up",
+  "internal",
+  "spam_marketing",
+  "escalate",
+  "unknown",
+] as const;
+export type InboxCategory = (typeof INBOX_CATEGORIES)[number];
+
+export interface EmailSourceRef {
+  source: "email";
+  point_id: string;
+  message_id: string;
+  sender: string;
+  recipient: string;
+  subject: string | null;
+  body_excerpt: string;
+  sent_at: string;
+  direction: "inbound" | "outbound";
+  classification_category: string | null;
+}
+
+export interface KbSourceRef {
+  source: "kb";
+  point_id: string;
+  doc_id: number;
+  doc_title: string;
+  chunk_index: number;
+  mime_type: string;
+  excerpt: string;
+  uploaded_at: string;
+}
+
+export type SourceRef = EmailSourceRef | KbSourceRef;
+
+export interface RagRefsResponse {
+  reason: string;
+  refs: SourceRef[];
+  qdrant_error?: string;
+  unresolved_point_ids?: string[];
+  kb_qdrant_error?: string;
+  kb_unresolved_point_ids?: string[];
+}
+
+export interface SenderHistory {
+  sender: string;
+  lookback_days: number;
+  total_emails: number;
+  drafts_approved: number;
+  drafts_rejected: number;
+  drafts_edited: number;
+  drafts_sent: number;
+  drafts_pending: number;
+  mean_confidence: number | null;
+  top_reject_reason: InboxRejectReasonCode | null;
+}
+
+export interface CrossAccountRow {
+  account_id: number;
+  account_email: string;
+  account_label: string | null;
+  total_emails: number;
+  drafts_sent: number;
+  last_seen_at: string | null;
+}
+
+/** One frame from the redraft SSE stream. */
+export type RedraftStreamEvent =
+  | { type: "token"; delta: string }
+  | { type: "done"; [k: string]: unknown }
+  | { type: "error"; code?: string; detail?: string };
+
+/** POST a redraft turn and yield {@link RedraftStreamEvent}s as they stream.
+ * Mirrors mailbox ``streamRedraft`` (SSE ``event:/data:`` framing) against the
+ * mailbox-dashboard ``/dashboard/api/internal/draft-redraft`` endpoint. */
+export async function* streamInboxRedraft(
+  body: { draft_id: number; current_body: string; instruction: string },
+  signal?: AbortSignal,
+): AsyncGenerator<RedraftStreamEvent, void, unknown> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const token = window.__HERMES_SESSION_TOKEN__;
+  if (token) setSessionHeader(headers, token);
+  const res = await fetch(`${BASE}/dashboard/api/internal/draft-redraft`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    credentials: "include",
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const j = (await res.json()) as { error?: string };
+      if (j?.error) detail = j.error;
+    } catch {
+      /* non-JSON body — keep status detail */
+    }
+    yield { type: "error", code: "upstream_malformed", detail };
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const flush = function* (frame: string): Generator<RedraftStreamEvent> {
+    const ev = parseRedraftFrame(frame);
+    if (ev) yield ev;
+  };
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep = buffer.indexOf("\n\n");
+      while (sep !== -1) {
+        yield* flush(buffer.slice(0, sep));
+        buffer = buffer.slice(sep + 2);
+        sep = buffer.indexOf("\n\n");
+      }
+    }
+    const tail = buffer.trim();
+    if (tail) yield* flush(tail);
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function parseRedraftFrame(frame: string): RedraftStreamEvent | null {
+  let eventType = "";
+  const dataLines: string[] = [];
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event:")) eventType = line.slice(6).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+  }
+  if (!eventType || dataLines.length === 0) return null;
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(dataLines.join("\n"));
+  } catch {
+    return null;
+  }
+  return { type: eventType, ...payload } as RedraftStreamEvent;
 }
 
 export interface InboxDraftsResponse {

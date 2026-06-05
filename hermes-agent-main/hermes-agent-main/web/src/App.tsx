@@ -19,17 +19,20 @@ import {
 import {
   CalendarDays,
   Clock,
-  Download,
+  Contact,
+  HardDrive,
   Home as HomeIcon,
   Inbox,
   LayoutDashboard,
   Menu,
   MessageSquare,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   RotateCw,
   Settings,
   Star,
+  Users,
   X,
 } from "lucide-react";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -62,7 +65,13 @@ import ChatPage from "@/pages/ChatPage";
 import HomePage from "@/pages/HomePage";
 import CalendarPage from "@/pages/CalendarPage";
 import InboxPage from "@/pages/InboxPage";
+import GraphPage from "@/pages/GraphPage";
+import DrivePage from "@/pages/DrivePage";
+import TeamPage from "@/pages/TeamPage";
+import ContactsPage from "@/pages/ContactsPage";
+import BusinessesPage from "@/pages/BusinessesPage";
 import SettingsHubPage from "@/pages/SettingsHubPage";
+import DigestSettingsPage from "@/pages/DigestSettingsPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { useI18n } from "@/i18n";
@@ -96,12 +105,18 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/": HomePage,
   "/inbox": InboxPage,
   "/calendar": CalendarPage,
+  "/drive": DrivePage,
+  "/team": TeamPage,
+  "/contacts": ContactsPage,
+  "/businesses": BusinessesPage,
   "/settings": SettingsHubPage,
+  "/settings/digest": DigestSettingsPage,
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,
   "/models": ModelsPage,
   "/logs": LogsPage,
   "/cron": CronPage,
+  "/graph": GraphPage,
   "/skills": SkillsPage,
   "/plugins": PluginsPage,
   "/profiles": ProfilesPage,
@@ -135,10 +150,14 @@ function buildPrimaryNav(manifests: PluginManifest[]): NavItem[] {
     { path: "/", label: "Home", icon: HomeIcon },
     { path: "/inbox", label: "Incoming Messages", icon: Inbox },
     { path: "/calendar", label: "Calendar", icon: CalendarDays },
+    { path: "/drive", label: "Drive", icon: HardDrive },
+    { path: "/team", label: "Team", icon: Users },
+    { path: "/contacts", label: "Contacts", icon: Contact },
   ];
   if (hasTab("/kanban"))
     items.push({ path: "/kanban", label: "Tasks", icon: LayoutDashboard });
-  items.push({ path: "/cron", label: "Scheduled Actions", icon: Clock });
+  items.push({ path: "/cron", label: "Agent Jobs", icon: Clock });
+  items.push({ path: "/graph", label: "Brain Graph", icon: Network });
   if (hasTab("/achievements"))
     items.push({ path: "/achievements", label: "Achievements", icon: Star });
   items.push({ path: "/settings", label: "Settings", icon: Settings });
@@ -421,12 +440,15 @@ export default function App() {
           <Menu />
         </Button>
 
-        <Typography
-          className="font-bold text-[0.95rem] leading-[0.95] tracking-[0.05em] text-midground"
-          style={{ mixBlendMode: "plus-lighter" }}
-        >
-          AgentBOX
-        </Typography>
+        <span className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className="h-4 w-4 shrink-0 rounded-[5px] bg-brand shadow-[0_0_14px_-2px_var(--color-brand)]"
+          />
+          <Typography className="font-semibold text-[0.95rem] leading-none tracking-tight text-midground">
+            AgentBOX
+          </Typography>
+        </span>
       </header>
 
       {mobileOpen && (
@@ -504,9 +526,13 @@ export default function App() {
               >
                 <PluginSlot name="header-left" />
 
+                <span
+                  aria-hidden
+                  className="h-[18px] w-[18px] shrink-0 rounded-[5px] bg-brand shadow-[0_0_14px_-2px_var(--color-brand)]"
+                />
+
                 <Typography
-                  className="font-bold text-[1.125rem] leading-[0.95] tracking-[0.0525rem] text-midground uppercase"
-                  style={{ mixBlendMode: "plus-lighter" }}
+                  className="font-semibold text-[1.0625rem] leading-none tracking-tight text-midground"
                 >
                   AgentBOX
                 </Typography>
@@ -715,23 +741,20 @@ function SidebarNavLink({
         onBlur={collapsed ? () => setHovered(false) : undefined}
         className={({ isActive }) =>
           cn(
-            "group/nav relative flex items-center gap-3",
-            "px-5 py-2.5",
-            "font-mondwest text-display uppercase text-sm tracking-[0.12em]",
+            "group/nav relative mx-2 flex items-center gap-3 rounded-[var(--radius-md)]",
+            "px-3 py-2",
+            "text-sm font-medium tracking-tight",
             "whitespace-nowrap transition-colors cursor-pointer",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-midground",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand",
             isActive
-              ? "text-midground"
-              : "text-text-secondary hover:text-midground",
+              ? "text-brand bg-[color-mix(in_srgb,var(--color-brand)_13%,transparent)]"
+              : "text-text-secondary hover:text-midground hover:bg-[color-mix(in_srgb,var(--midground)_6%,transparent)]",
           )
         }
-        style={{
-          clipPath: "var(--component-tab-clip-path)",
-        }}
       >
         {({ isActive }) => (
           <>
-            <Icon className="h-3.5 w-3.5 shrink-0" />
+            <Icon className="h-4 w-4 shrink-0" />
 
             <span
               className={cn(
@@ -742,16 +765,10 @@ function SidebarNavLink({
               {navLabel}
             </span>
 
-            <span
-              aria-hidden
-              className="absolute inset-y-0.5 left-1.5 right-1.5 bg-midground opacity-0 pointer-events-none transition-opacity duration-200 group-hover/nav:opacity-5"
-            />
-
             {isActive && (
               <span
                 aria-hidden
-                className="absolute left-0 top-0 bottom-0 w-px bg-midground"
-                style={{ mixBlendMode: "plus-lighter" }}
+                className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-brand"
               />
             )}
           </>
@@ -784,13 +801,6 @@ function SidebarSystemActions({
       runningLabel: t.status.restartingGateway,
       spin: true,
     },
-    {
-      action: "update",
-      icon: Download,
-      label: t.status.updateHermes,
-      runningLabel: t.status.updatingHermes,
-      spin: false,
-    },
   ];
 
   const handleClick = (action: SystemAction) => {
@@ -810,8 +820,8 @@ function SidebarSystemActions({
     >
       <span
         className={cn(
-          "px-5 pt-0.5 pb-0.5",
-          "font-mondwest text-display text-xs tracking-[0.12em] text-text-tertiary",
+          "px-5 pt-2 pb-1",
+          "text-[0.7rem] font-medium uppercase tracking-[0.14em] text-text-tertiary",
           collapsed && "lg:hidden",
         )}
       >
@@ -872,14 +882,14 @@ function SystemActionButton({
         onBlur={collapsed ? () => setHovered(false) : undefined}
         type="button"
         className={cn(
-          "group/action relative flex w-full items-center gap-3",
-          "px-5 py-2.5",
-          "font-mondwest text-display text-xs tracking-[0.1em]",
+          "group/action relative mx-2 flex w-full items-center gap-3 rounded-[var(--radius-md)]",
+          "px-3 py-2",
+          "text-sm font-medium tracking-tight",
           "whitespace-nowrap transition-colors cursor-pointer",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-midground",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand",
           busy
             ? "text-midground"
-            : "text-text-secondary hover:text-midground",
+            : "text-text-secondary hover:text-midground hover:bg-[color-mix(in_srgb,var(--midground)_6%,transparent)]",
           "disabled:text-text-disabled disabled:cursor-not-allowed",
         )}
       >
@@ -890,7 +900,7 @@ function SystemActionButton({
         ) : (
           <Icon
             className={cn(
-              "h-3.5 w-3.5 shrink-0",
+              "h-4 w-4 shrink-0",
               isActionRunning && !spin && "animate-pulse",
             )}
           />
@@ -903,16 +913,10 @@ function SystemActionButton({
           {displayLabel}
         </span>
 
-        <span
-          aria-hidden
-          className="absolute inset-y-0.5 left-1.5 right-1.5 bg-midground opacity-0 pointer-events-none transition-opacity duration-200 group-hover/action:opacity-5"
-        />
-
         {busy && (
           <span
             aria-hidden
-            className="absolute left-0 top-0 bottom-0 w-px bg-midground"
-            style={{ mixBlendMode: "plus-lighter" }}
+            className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-midground"
           />
         )}
       </button>
@@ -1028,9 +1032,9 @@ function SidebarTooltip({ anchor, label, warmRef }: SidebarTooltipProps) {
     <span
       className={cn(
         "fixed z-[100] pointer-events-none",
-        "px-2 py-1",
-        "bg-background-base/95 border border-current/20 backdrop-blur-sm shadow-lg",
-        "font-mondwest text-display text-xs tracking-[0.1em] text-midground uppercase",
+        "px-2.5 py-1 rounded-[var(--radius-md)]",
+        "bg-background-base/95 border border-border backdrop-blur-sm shadow-lg",
+        "text-xs font-medium tracking-tight text-midground",
       )}
       style={{
         top: rect.top + rect.height / 2,

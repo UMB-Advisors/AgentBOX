@@ -32,6 +32,8 @@ import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { useTheme } from "@/themes";
+import type { DashboardTheme } from "@/themes";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
@@ -62,17 +64,93 @@ function generateChannelId(): string {
   return `chat-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
 }
 
-// Colors for the terminal body.  Matches the dashboard's dark teal canvas
-// with cream foreground — we intentionally don't pick monokai or a loud
-// theme, because the TUI's skin engine already paints the content; the
-// terminal chrome just needs to sit quietly inside the dashboard.
-const TERMINAL_THEME = {
-  background: "#0d2626",
-  foreground: "#f0e6d2",
-  cursor: "#f0e6d2",
-  cursorAccent: "#0d2626",
-  selectionBackground: "#f0e6d244",
-};
+interface TermColors {
+  background: string;
+  foreground: string;
+  cursor: string;
+  cursorAccent: string;
+  selectionBackground: string;
+  // 16-color ANSI ramp (optional). Set only for LIGHT terminals so the
+  // dark-native TUI's bright ANSI colors stay legible; dark terminals fall
+  // through to xterm's built-in defaults, which already read well on a dark
+  // canvas (and match the prior look).
+  black?: string;
+  red?: string;
+  green?: string;
+  yellow?: string;
+  blue?: string;
+  magenta?: string;
+  cyan?: string;
+  white?: string;
+  brightBlack?: string;
+  brightRed?: string;
+  brightGreen?: string;
+  brightYellow?: string;
+  brightBlue?: string;
+  brightMagenta?: string;
+  brightCyan?: string;
+  brightWhite?: string;
+}
+
+// Perceived luminance (Rec. 601 luma, 0..1) of a #rrggbb hex — accurate enough
+// to decide whether the active theme's terminal canvas is light or dark.
+function hexLuminance(hex: string): number {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return 0; // unparseable → treat as dark (preserves prior behavior)
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+// GitHub-Light-inspired ANSI ramp for LIGHT terminals. The load-bearing move is
+// mapping `white`/`brightWhite` — which dark-native TUIs use for primary text,
+// assuming a black canvas — to dark ink so that text stays readable on a pale
+// background, and darkening the saturated hues (cyan/yellow/green/blue) that
+// otherwise wash out. Hermes's ASCII banner renders in cyan; the dark teal here
+// keeps it crisp on Gmail's #f6f8fc.
+const LIGHT_ANSI = {
+  black: "#1f2328",
+  red: "#cf222e",
+  green: "#116329",
+  yellow: "#7d4e00",
+  blue: "#0969da",
+  magenta: "#8250df",
+  cyan: "#1b7c83",
+  white: "#6e7781",
+  brightBlack: "#57606a",
+  brightRed: "#a40e26",
+  brightGreen: "#1a7f37",
+  brightYellow: "#633c01",
+  brightBlue: "#0550ae",
+  brightMagenta: "#8250df",
+  brightCyan: "#1b7c83",
+  brightWhite: "#24292f",
+} as const;
+
+// Derive the terminal body colors from the ACTIVE dashboard theme so the chat
+// pane matches the rest of the dashboard (light on Gmail, dark on Carbon, …)
+// instead of the old hardcoded teal. Reads the theme OBJECT's palette directly
+// — authoritative and synchronous — rather than getComputedStyle, which can
+// win the stale Nous-DS `:root` default before ThemeProvider applies its inline
+// vars (that race left the terminal stuck dark).
+function termColorsFromTheme(theme: DashboardTheme): TermColors {
+  const bg = theme.palette.background.hex || "#0c0c0e";
+  const fg = theme.palette.midground.hex || "#ededee";
+  const sel = /^#[0-9a-fA-F]{6}$/.test(fg) ? `${fg}33` : "rgba(127,127,127,0.25)";
+  const base: TermColors = {
+    background: bg,
+    foreground: fg,
+    cursor: fg,
+    cursorAccent: bg,
+    selectionBackground: sel,
+  };
+  // On a light canvas the TUI's bright ANSI defaults (built for a black bg)
+  // wash out — overlay a darker, higher-contrast ramp so the agent's output
+  // stays legible. Dark canvases keep xterm's defaults.
+  return hexLuminance(bg) > 0.6 ? { ...base, ...LIGHT_ANSI } : base;
+}
 
 /**
  * CSS width for xterm font tiers.
@@ -131,6 +209,18 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   );
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Keep the terminal chrome in sync with the active dashboard theme.
+  const { theme } = useTheme();
+  const termColors = useMemo(() => termColorsFromTheme(theme), [theme]);
+  // Latest colors for the terminal-creation effect (which must NOT recreate the
+  // terminal on theme change — it reads this ref instead of depending on it).
+  const termColorsRef = useRef(termColors);
+  termColorsRef.current = termColors;
+
+  // Repaint the live terminal whenever the theme changes.
+  useEffect(() => {
+    if (termRef.current) termRef.current.options.theme = termColors;
+  }, [termColors]);
   // Raw state for the mobile side-sheet + a derived value that force-
   // closes whenever the chat tab isn't active.  The *derived* value is
   // what side-effects (body-scroll lock, keydown listener, portal render)
@@ -273,6 +363,24 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     termRef.current?.focus();
   };
 
+  // Inject a slash command into the LIVE PTY (the real chat agent), as if the
+  // user typed it. The ChatSidebar model picker used to fire `slash.exec` on its
+  // own throwaway sidecar session — which switched a model nobody was talking to
+  // and left the actual PTY agent unchanged (the model badge moved, the chat did
+  // not). Routing through the PTY makes the switch hit the real session. Same
+  // burst-then-Return timing as handleCopyLast so Ink tokenizes per-keypress
+  // instead of treating it as a paste.
+  const sendPtyCommand = (slashCommand: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(slashCommand);
+    setTimeout(() => {
+      const s = wsRef.current;
+      if (s && s.readyState === WebSocket.OPEN) s.send("\r");
+    }, 100);
+    termRef.current?.focus();
+  };
+
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -312,7 +420,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       // Browser-embedded chat runs the TUI in inline mode. Keep transcript
       // history in xterm.js so the browser wheel can scroll it directly.
       scrollback: 5000,
-      theme: TERMINAL_THEME,
+      theme: termColorsRef.current,
     });
     termRef.current = term;
 
@@ -803,7 +911,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               "border-t border-current/10",
             )}
           >
-            <ChatSidebar channel={channel} />
+            <ChatSidebar channel={channel} onModelCommand={sendPtyCommand} />
           </div>
         </div>
       </>,
@@ -828,8 +936,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
             "p-2 sm:p-3",
           )}
           style={{
-            backgroundColor: TERMINAL_THEME.background,
-            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
+            backgroundColor: termColors.background,
+            boxShadow: "0 1px 4px rgba(0, 0, 0, 0.12)",
           }}
         >
           <div
@@ -852,7 +960,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               "bottom-2 right-2 px-2 py-1 text-xs sm:bottom-3 sm:right-3 sm:px-2.5 sm:py-1.5",
               "lg:bottom-4 lg:right-4",
             )}
-            style={{ color: TERMINAL_THEME.foreground }}
+            style={{ color: termColors.foreground }}
           >
             <span className="inline-flex items-center gap-1.5">
               <Copy className="h-3 w-3 shrink-0" />
@@ -871,7 +979,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
             className="flex min-h-0 shrink-0 flex-col overflow-hidden lg:h-full lg:w-80"
           >
             <div className="min-h-0 flex-1 overflow-hidden">
-              <ChatSidebar channel={channel} />
+              <ChatSidebar channel={channel} onModelCommand={sendPtyCommand} />
             </div>
           </div>
         )}

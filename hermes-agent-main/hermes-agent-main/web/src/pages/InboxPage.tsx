@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   Check,
@@ -7,6 +7,7 @@ import {
   MailOpen,
   Pencil,
   RefreshCw,
+  Wand2,
   X,
 } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
@@ -20,11 +21,22 @@ import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { api } from "@/lib/api";
 import type {
   AccountRow,
+  ActionItem,
   DraftRow,
+  InboxCategory,
   InboxDraftStatus,
   InboxRejectReasonCode,
+  ThreadHistoryMessage,
 } from "@/lib/api";
 import { usePageHeader } from "@/contexts/usePageHeader";
+import { RoutingBadge } from "@/components/inbox/RoutingBadge";
+import { EditDiff } from "@/components/inbox/EditDiff";
+import { ActionItemsPanel } from "@/components/inbox/ActionItemsPanel";
+import { SourcesUsedPanel } from "@/components/inbox/SourcesUsedPanel";
+import { SenderHistoryPanel } from "@/components/inbox/SenderHistoryPanel";
+import { CrossAccountPanel } from "@/components/inbox/CrossAccountPanel";
+import { ClassificationOverride } from "@/components/inbox/ClassificationOverride";
+import { RedraftPanel } from "@/components/inbox/RedraftPanel";
 
 // ── Static config ───────────────────────────────────────────────────────
 
@@ -92,6 +104,26 @@ function formatTime(iso?: string | null): string {
  * fall back to the flattened ``body_text``). */
 function sourceBody(row: DraftRow): string {
   return row.message?.body || row.body_text || "";
+}
+
+/** Prior thread messages, oldest-first. Defensive against legacy rows where
+ * ``thread_history`` may be absent or a non-array. */
+function threadHistoryOf(row: DraftRow): ThreadHistoryMessage[] {
+  return Array.isArray(row.thread_history) ? row.thread_history : [];
+}
+
+/** True when focus is in an editable control — keyboard shortcuts must not
+ * hijack typing (j/k/a/e/x are all plausible characters in a draft edit). */
+function isTypingTarget(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  return (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    el.isContentEditable
+  );
 }
 
 // ── Page ────────────────────────────────────────────────────────────────
@@ -175,6 +207,27 @@ export default function InboxPage() {
     () => visibleRows.find((r) => r.id === selectedDraftId) ?? null,
     [visibleRows, selectedDraftId],
   );
+
+  // Keyboard list navigation: j = next, k = previous (Gmail/vim convention).
+  // Action shortcuts (a/e/x) live in InboxDetail where the handlers are.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget()) return;
+      if (e.key !== "j" && e.key !== "k") return;
+      if (visibleRows.length === 0) return;
+      e.preventDefault();
+      const idx = visibleRows.findIndex((r) => r.id === selectedDraftId);
+      const next =
+        idx === -1
+          ? 0
+          : e.key === "j"
+            ? Math.min(idx + 1, visibleRows.length - 1)
+            : Math.max(idx - 1, 0);
+      setSelectedDraftId(visibleRows[next].id);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visibleRows, selectedDraftId]);
 
   return (
     <div className="flex h-[calc(100dvh-7rem)] flex-col gap-4">
@@ -385,6 +438,8 @@ function InboxDetail({
   const [rejecting, setRejecting] = useState(false);
   const [rejectCode, setRejectCode] = useState<InboxRejectReasonCode>("wrong_tone");
   const [rejectText, setRejectText] = useState("");
+  // Redraft-with-prompt panel (P3) open state.
+  const [redraftOpen, setRedraftOpen] = useState(false);
   // In-flight guard
   const [busy, setBusy] = useState(false);
 
@@ -394,8 +449,20 @@ function InboxDetail({
     setRejecting(false);
     setRejectCode("wrong_tone");
     setRejectText("");
+    setRedraftOpen(false);
     setDraftBody(row?.draft_body ?? "");
   }, [row?.id, row?.draft_body]);
+
+  // Action keyboard shortcuts (a/e/x/Escape). The handlers are defined after
+  // the early return, so the listener reads them through a ref updated each
+  // render — keeps the effect unconditional (rules-of-hooks safe) while the
+  // callbacks stay current.
+  const kbRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => kbRef.current(e);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
 
   // Treat a 409 (stale) or 404 (gone) consistently: surface + refetch.
   const handleError = useCallback(
@@ -484,6 +551,64 @@ function InboxDetail({
     runDraftAction(() => api.inboxSnoozeMessage(messageId, iso), "Snoozed");
   };
 
+  const onReclassify = (category: InboxCategory) =>
+    runDraftAction(
+      () => api.inboxReclassify(draftId, category),
+      `Reclassified → ${category}`,
+    );
+
+  const onRetry = () =>
+    runDraftAction(() => api.inboxRetryDraft(draftId), "Retrying…");
+  const onUndoReject = () =>
+    runDraftAction(() => api.inboxUndoReject(draftId), "Restored to queue");
+  const onClearSendAttempt = () =>
+    runDraftAction(
+      () => api.inboxClearSendAttempt(draftId),
+      "Cleared send attempt",
+    );
+
+  // Redraft "Apply to editor" — seed the inline editor with the rewrite for a
+  // final human pass (no auto-send), mirroring the old QueueClient flow.
+  const onApplyRedraft = (body: string) => {
+    setRedraftOpen(false);
+    setDraftBody(body);
+    setEditing(true);
+  };
+
+  const tokens =
+    row.input_tokens != null && row.output_tokens != null
+      ? `${row.input_tokens}↗ / ${row.output_tokens}↙ tokens`
+      : null;
+
+  // a = approve, e = edit, x = reject, Escape = cancel the open sub-mode.
+  kbRef.current = (e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Escape") {
+      if (editing) {
+        setEditing(false);
+        setDraftBody(row.draft_body);
+      } else if (rejecting) {
+        setRejecting(false);
+        setRejectText("");
+      } else if (redraftOpen) {
+        setRedraftOpen(false);
+      }
+      return;
+    }
+    if (isTypingTarget() || busy || editing || rejecting) return;
+    if (!canDecide) return;
+    if (e.key === "a") {
+      e.preventDefault();
+      onApprove();
+    } else if (e.key === "e") {
+      e.preventDefault();
+      setEditing(true);
+    } else if (e.key === "x") {
+      e.preventDefault();
+      setRejecting(true);
+    }
+  };
+
   return (
     <Card className="flex min-h-0 flex-col overflow-hidden">
       <CardContent className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
@@ -504,6 +629,35 @@ function InboxDetail({
             <span>Account: {accountLabel(row)}</span>
             {row.classification_category && (
               <span>Class: {row.classification_category}</span>
+            )}
+          </div>
+          {/* Routing transparency + relabel + provenance badges. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <RoutingBadge
+              draftSource={row.draft_source}
+              model={row.model}
+              confidence={row.classification_confidence}
+            />
+            {canDecide && row.classification_category && (
+              <ClassificationOverride
+                value={row.classification_category}
+                onChange={onReclassify}
+                disabled={busy}
+              />
+            )}
+            {row.status === "edited" && <Badge tone="warning">edited</Badge>}
+            {row.account && (
+              <span
+                className="rounded-sm border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                title={row.account.email_address}
+              >
+                via {row.account.display_label || row.account.email_address}
+              </span>
+            )}
+            {tokens && (
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {tokens}
+              </span>
             )}
           </div>
         </div>
@@ -559,6 +713,12 @@ function InboxDetail({
           </pre>
         </section>
 
+        {/* Conversation history — prior messages on this thread (inbound +
+            outbound), oldest-first. Data already arrives on the draft row
+            (``thread_history``); each message is collapsed by default so the
+            section stays scannable. */}
+        <ThreadHistory messages={threadHistoryOf(row)} />
+
         {/* Draft */}
         <section className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
@@ -601,15 +761,56 @@ function InboxDetail({
               </div>
             </div>
           ) : (
-            <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words border border-border bg-background/40 p-3 text-sm leading-relaxed">
-              {row.draft_body || "(empty draft)"}
-            </pre>
+            <>
+              <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words border border-border bg-background/40 p-3 text-sm leading-relaxed">
+                {row.draft_body || "(empty draft)"}
+              </pre>
+              {/* Redraft-with-prompt — local rewrite seeded into the editor. */}
+              {canDecide && !redraftOpen && (
+                <button
+                  type="button"
+                  onClick={() => setRedraftOpen(true)}
+                  className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-sm border border-primary/40 bg-primary/5 px-2.5 py-1 text-sm text-primary transition-colors hover:bg-primary/10"
+                >
+                  <Wand2 className="h-3.5 w-3.5" aria-hidden /> Redraft with prompt
+                </button>
+              )}
+              {canDecide && redraftOpen && (
+                <RedraftPanel
+                  key={row.id}
+                  draftId={draftId}
+                  currentBody={row.draft_body}
+                  onApply={onApplyRedraft}
+                  onClose={() => setRedraftOpen(false)}
+                />
+              )}
+              {/* Operator edit diff (LLM-original vs edited). */}
+              {row.status === "edited" && row.original_draft_body && (
+                <EditDiff
+                  original={row.original_draft_body}
+                  current={row.draft_body}
+                />
+              )}
+            </>
           )}
 
           {row.error_message && (
             <p className="text-xs text-destructive">{row.error_message}</p>
           )}
         </section>
+
+        {/* Intelligence panels — action items, RAG sources, sender history,
+            cross-account. key={row.id} remounts each on draft switch so their
+            local/lazy state resets without an effect. */}
+        <ActionItemsPanel
+          key={`ai-${row.id}`}
+          draftId={draftId}
+          initialItems={(row.action_items ?? []) as ActionItem[]}
+          readOnly={!canDecide}
+        />
+        <SourcesUsedPanel key={`src-${row.id}`} draftId={draftId} />
+        <SenderHistoryPanel key={`snd-${row.id}`} draftId={draftId} />
+        <CrossAccountPanel key={`xacct-${row.id}`} draftId={draftId} />
 
         {/* Decision controls */}
         {canDecide && !editing && (
@@ -690,7 +891,86 @@ function InboxDetail({
             )}
           </section>
         )}
+
+        {/* Recovery actions for non-decidable states (read-only views). */}
+        {!canDecide && !editing && (
+          <section className="flex flex-wrap items-center gap-1 border-t border-border pt-3">
+            {row.status === "rejected" && (
+              <Button size="sm" disabled={busy} onClick={onUndoReject}>
+                Undo reject
+              </Button>
+            )}
+            {row.error_message && (
+              <Button size="sm" disabled={busy} onClick={onRetry}>
+                Retry draft
+              </Button>
+            )}
+            {row.send_attempt_at &&
+              (row.status === "approved" || row.status === "sent") && (
+                <Button
+                  ghost
+                  size="sm"
+                  disabled={busy}
+                  onClick={onClearSendAttempt}
+                >
+                  Clear send attempt
+                </Button>
+              )}
+            {busy && <Spinner className="text-primary" />}
+          </section>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+// ── Conversation history ──────────────────────────────────────────────────
+
+/** Prior messages on the thread (oldest-first). Each message is a collapsible
+ * row: summary (direction · sender · subject · time) always visible, body on
+ * expand. Renders nothing when there's no history. */
+function ThreadHistory({ messages }: { messages: ThreadHistoryMessage[] }) {
+  if (messages.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-1">
+      <Label>
+        Conversation history ({messages.length} prior)
+      </Label>
+      <ul className="flex flex-col gap-1">
+        {messages.map((m) => (
+          <li key={`${m.direction}-${m.id}`}>
+            <ThreadHistoryRow message={m} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ThreadHistoryRow({ message }: { message: ThreadHistoryMessage }) {
+  const inbound = message.direction === "inbound";
+  return (
+    <details className="group border border-border bg-background/30">
+      <summary className="flex cursor-pointer list-none select-none items-center gap-2 px-2 py-1.5 text-[11px] hover:bg-muted/20">
+        <Badge tone={inbound ? "outline" : "secondary"}>
+          {message.direction}
+        </Badge>
+        <span className="shrink-0 truncate font-mono text-muted-foreground">
+          {message.from_addr ?? "—"}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {message.subject ?? "—"}
+        </span>
+        <span className="ml-auto shrink-0 text-muted-foreground">
+          {formatTime(message.at)}
+        </span>
+      </summary>
+      {message.body && (
+        <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words border-t border-border bg-background/40 p-3 text-xs leading-relaxed text-muted-foreground">
+          {message.body}
+        </pre>
+      )}
+    </details>
   );
 }
