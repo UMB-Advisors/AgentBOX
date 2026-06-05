@@ -322,6 +322,20 @@ TOOLSETS = {
         "includes": []
     },
 
+    "shopify": {
+        "description": (
+            "Shopify Admin blog tools — create blog posts (drafts by default), "
+            "resolve blog ids, and delete posts. Gated on SHOPIFY_SHOP + "
+            "SHOPIFY_ACCESS_TOKEN env vars."
+        ),
+        "tools": [
+            "create_shopify_blog_post",
+            "resolve_shopify_blog_id",
+            "delete_shopify_blog_post",
+        ],
+        "includes": []
+    },
+
 
     # Scenario-specific toolsets
     
