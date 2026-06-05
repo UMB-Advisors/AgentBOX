@@ -19,6 +19,7 @@ import {
 import {
   CalendarDays,
   Clock,
+  Contact,
   HardDrive,
   Home as HomeIcon,
   Inbox,
@@ -31,6 +32,7 @@ import {
   RotateCw,
   Settings,
   Star,
+  Users,
   X,
 } from "lucide-react";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -65,6 +67,8 @@ import CalendarPage from "@/pages/CalendarPage";
 import InboxPage from "@/pages/InboxPage";
 import GraphPage from "@/pages/GraphPage";
 import DrivePage from "@/pages/DrivePage";
+import TeamPage from "@/pages/TeamPage";
+import ContactsPage from "@/pages/ContactsPage";
 import SettingsHubPage from "@/pages/SettingsHubPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
@@ -100,6 +104,8 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/inbox": InboxPage,
   "/calendar": CalendarPage,
   "/drive": DrivePage,
+  "/team": TeamPage,
+  "/contacts": ContactsPage,
   "/settings": SettingsHubPage,
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,
@@ -141,6 +147,8 @@ function buildPrimaryNav(manifests: PluginManifest[]): NavItem[] {
     { path: "/inbox", label: "Incoming Messages", icon: Inbox },
     { path: "/calendar", label: "Calendar", icon: CalendarDays },
     { path: "/drive", label: "Drive", icon: HardDrive },
+    { path: "/team", label: "Team", icon: Users },
+    { path: "/contacts", label: "Contacts", icon: Contact },
   ];
   if (hasTab("/kanban"))
     items.push({ path: "/kanban", label: "Tasks", icon: LayoutDashboard });
