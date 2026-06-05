@@ -1,0 +1,123 @@
+// Tailscale ACL — full policy file consumed by Tailscale admin UI / API.
+//
+// Authored: Phase 2 plan 02 (2026-05-17). Merged against live tailnet
+// pre-audit snapshot infra/acl/pre-audit-2026-05-16.txt on 2026-05-17.
+// Amended: 2026-05-31 — added intra-mailbox grant for cross-box dashboard embed
+//          (D-ACL-05). Additive only; kill switches #1/#2 preserved.
+//
+// SYNTAX: grants-mode (matches live tailnet). Do NOT mix with legacy `acls:`.
+//
+// Merge decisions (recorded for findings doc):
+//   1. Live `{src:[*], dst:[*], ip:[*]}` narrowed to src:[autogroup:member]
+//      per D-ACL-02 — tagged devices (incl. tag:fleet-worker) no longer inherit
+//      tailnet-wide access. This is kill switch #2 armed on the policy side.
+//   2. tag:fleet-worker + tagOwners introduced. Phones get tagged in Phase 3
+//      (NET-03); this policy is ready to accept the tag.
+//   3. fleet-worker → tag:mailbox:8090 grant added; nothing else reachable.
+//   4. Existing `ssh` and `nodeAttrs` blocks preserved verbatim.
+//   5. [2026-05-31, D-ACL-05] tag:mailbox → tag:mailbox:8090 grant added so the
+//      two mailbox appliances can reach each other's dashboard. Required for the
+//      mailbox2 kiosk to embed mailbox1's dashboard as a tab (iframe over the
+//      tailnet). Before this, both boxes carry tag:mailbox but neither is an
+//      autogroup:member, so decision-1's wildcard did NOT cover box↔box traffic
+//      and they were mutually invisible in each other's netmap. Scoped to the
+//      single dashboard port — no broader box↔box access is granted. Does NOT
+//      widen tag:fleet-worker (still 8090-only, kill switch #2 intact).
+//      NOTE: 8090 assumed to be mailbox1's dashboard port (matches this policy's
+//      established mailbox service port). If the dashboard listens elsewhere,
+//      update the port in BOTH the grant below and the D-ACL-05 test.
+//
+// Mirror file: infra/acl/fleet-worker.jsonc (Phase-3-reusable fragment, NET-01).
+// Apply log:   infra/acl/apply-log-{ISO-timestamp}.md
+// Rollback:    bash scripts/acl-rollback.sh infra/acl/pre-audit-2026-05-16.txt
+{
+    "tagOwners": {
+        "tag:mailbox":      ["autogroup:admin"],
+        "tag:fleet-worker": ["autogroup:admin"],
+    },
+
+    "grants": [
+        // === Members keep tailnet-wide access (narrowed from src:[*] per D-ACL-02) ===
+        // tag:fleet-worker is intentionally NOT a member of autogroup:member, so it
+        // does not inherit this grant. SCOPED FROM *:* by Phase 2 audit per D-ACL-02.
+        {
+            "src": ["autogroup:member"],
+            "dst": ["*"],
+            "ip":  ["*"],
+        },
+
+        // === Phase 2 fleet-worker rule — kill switch #2 ===
+        // tag:fleet-worker → tag:mailbox:8090 EXACTLY. Nothing else.
+        {
+            "src": ["tag:fleet-worker"],
+            "dst": ["tag:mailbox"],
+            "ip":  ["tcp:8090"],
+        },
+
+        // === D-ACL-05 (2026-05-31) intra-mailbox dashboard embed ===
+        // tag:mailbox → tag:mailbox on the dashboard port ONLY. Lets mailbox2's
+        // kiosk fetch mailbox1's dashboard (and vice-versa) for the embedded tab.
+        // Symmetric within the tag; no other box↔box port is opened.
+        {
+            "src": ["tag:mailbox"],
+            "dst": ["tag:mailbox"],
+            "ip":  ["tcp:8090"],
+        },
+    ],
+
+    "ssh": [
+        // Allow tailnet members to SSH into their own devices.
+        {
+            "action": "check",
+            "src":    ["autogroup:member"],
+            "dst":    ["autogroup:self"],
+            "users":  ["autogroup:nonroot", "root"],
+        },
+        // Allow tailnet members to SSH into the MailBox appliance as bob.
+        {
+            "action": "accept",
+            "src":    ["autogroup:member"],
+            "dst":    ["tag:mailbox"],
+            "users":  ["bob", "mailbox"],
+        },
+    ],
+
+    "nodeAttrs": [
+        {
+            // Funnel policy — preserved verbatim from pre-audit.
+            "target": ["autogroup:member"],
+            "attr":   ["funnel"],
+        },
+    ],
+
+    "tests": [
+        // Fail-closed validator: rejects policy at save time if fleet-worker can
+        // reach anything other than tag:mailbox:8090.
+        {
+            "src":    "tag:fleet-worker",
+            "accept": ["tag:mailbox:8090"],
+            "deny": [
+                "tag:mailbox:22",
+                "tag:mailbox:80",
+                "tag:mailbox:443",
+                "tag:mailbox:3001",
+                "tag:mailbox:5678",
+            ],
+        },
+        // D-ACL-05 fail-closed validator: the mailbox appliances may reach each
+        // other ONLY on the dashboard port (8090). Any other box↔box port must
+        // stay denied — catches an accidental widening of the intra-mailbox grant.
+        {
+            "src":    "tag:mailbox",
+            "accept": ["tag:mailbox:8090"],
+            "deny": [
+                "tag:mailbox:22",
+                "tag:mailbox:80",
+                "tag:mailbox:443",
+                "tag:mailbox:3001",
+                "tag:mailbox:5678",
+                "tag:mailbox:9119",
+            ],
+        },
+    ],
+}

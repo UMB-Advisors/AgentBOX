@@ -52,12 +52,15 @@ ssh "$REMOTE" "mkdir -p '$RDIR/_backup_redeploy_$TS' \
 echo "==> Syncing web_dist -> $REMOTE"
 rsync -az --delete "$CLI/web_dist/" "$REMOTE:$RDIR/web_dist/"
 
-echo "==> Restoring custom web_server.py (syntax-checked) -> $REMOTE"
+echo "==> Restoring custom backend (web_server.py + google_brief.py, syntax-checked) -> $REMOTE"
 scp -q "$CLI/web_server.py" "$REMOTE:/tmp/web_server.deploy.py"
+scp -q "$CLI/google_brief.py" "$REMOTE:/tmp/google_brief.deploy.py"
 ssh "$REMOTE" "set -e
-  '$RDIR/../venv/bin/python3' -m py_compile /tmp/web_server.deploy.py
+  '$RDIR/../venv/bin/python3' -m py_compile /tmp/web_server.deploy.py /tmp/google_brief.deploy.py
   cp -a '$RDIR/web_server.py' '$RDIR/web_server.py.stock-$TS' 2>/dev/null || true
+  cp -a '$RDIR/google_brief.py' '$RDIR/google_brief.py.stock-$TS' 2>/dev/null || true
   mv /tmp/web_server.deploy.py '$RDIR/web_server.py'
+  mv /tmp/google_brief.deploy.py '$RDIR/google_brief.py'
   systemctl --user restart '$UNIT'
   sleep 3
   systemctl --user is-active '$UNIT'"
