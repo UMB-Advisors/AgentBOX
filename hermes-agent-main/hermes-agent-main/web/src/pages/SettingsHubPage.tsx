@@ -11,6 +11,7 @@ import {
   Package,
   Puzzle,
   Settings,
+  Sparkles,
   Users,
   ChevronRight,
 } from "lucide-react";
@@ -34,8 +35,13 @@ interface HubItem {
  * Settings hub — everything demoted out of the simplified primary nav lives
  * here. Routes are unchanged (deep-links still work); this is just the landing
  * that surfaces them. Primary nav owns Home, Incoming Messages, Calendar,
- * Tasks, Scheduled Actions, Achievements.
+ * Tasks, Agent Jobs, Achievements.
  */
+
+// Home/landing configuration.
+const HOME_ITEMS: HubItem[] = [
+  { path: "/settings/digest", label: "Daily Digest", icon: Sparkles },
+];
 
 // The operator's org: businesses + their departments (people live in the Team tab).
 const ORG_ITEMS: HubItem[] = [
@@ -115,6 +121,7 @@ export default function SettingsHubPage() {
         Configuration and secondary views. Primary tabs live in the sidebar.
       </CardDescription>
       <div className="flex flex-col gap-4">
+        <HubGroup title="Home" items={HOME_ITEMS} />
         <HubGroup title="Organization" items={ORG_ITEMS} />
         <HubGroup title="Agent" items={AGENT_ITEMS} />
         <HubGroup title="System" items={SYSTEM_ITEMS} />
