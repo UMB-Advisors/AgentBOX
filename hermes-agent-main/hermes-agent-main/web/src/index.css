@@ -56,33 +56,34 @@
   --foreground: color-mix(in srgb, #ffffff 0%, transparent);
   --foreground-base: #ffffff;
   --foreground-alpha: 0;
-  --midground: color-mix(in srgb, #ededee 100%, transparent);
-  --midground-base: #ededee;
+  --midground: color-mix(in srgb, #202124 100%, transparent);
+  --midground-base: #202124;
   --midground-alpha: 1;
-  --background: color-mix(in srgb, #0c0c0e 100%, transparent);
-  --background-base: #0c0c0e;
+  --background: color-mix(in srgb, #f6f8fc 100%, transparent);
+  --background-base: #f6f8fc;
   --background-alpha: 1;
 
-  /* Consumed by <Backdrop />; also theme-switchable. Faint cool vignette. */
-  --warm-glow: rgba(124, 139, 255, 0.10);
-  --noise-opacity-mul: 0.15;
+  /* Consumed by <Backdrop />; also theme-switchable. Faint cool wash. */
+  --warm-glow: rgba(11, 87, 208, 0.05);
+  --noise-opacity-mul: 0;
 
   /* Single brand/accent hue — drives active nav, focus rings, key
      highlights. Resolved by `--color-brand` (see @theme inline below).
      ThemeProvider overwrites `--brand` per theme; themes that omit it fall
      back to `--midground`. */
-  --brand: #7c8bff;
+  --brand: #0b57d0;
 
-  /* Typography tokens — rewritten by ThemeProvider. Default to Inter so the
-     pre-mount frame already matches the Carbon default. */
-  --theme-font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
+  /* Typography tokens — rewritten by ThemeProvider. Default to Roboto so the
+     pre-mount frame already matches the Gmail default. */
+  --theme-font-sans: "Roboto", system-ui, -apple-system, "Segoe UI",
     "Helvetica Neue", Arial, sans-serif;
-  --theme-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono",
+  --theme-font-mono: "Roboto Mono", ui-monospace, "SF Mono", "Cascadia Mono",
     Menlo, Consolas, monospace;
-  --theme-font-display: var(--theme-font-sans);
-  --theme-base-size: 15px;
-  --theme-line-height: 1.55;
-  --theme-letter-spacing: -0.011em;
+  --theme-font-display: "Google Sans", "Google Sans Text", "Product Sans",
+    var(--theme-font-sans);
+  --theme-base-size: 17px;
+  --theme-line-height: 1.6;
+  --theme-letter-spacing: 0;
 
   /* Retarget the Nous DS Mondwest pixel display font to the modern sans so
      every `.font-mondwest` call site reads as Carbon without per-file edits.
@@ -90,10 +91,10 @@
   --font-mondwest: var(--theme-font-sans);
 
   /* Layout tokens. */
-  --radius: 0.625rem;
-  --theme-radius: 0.625rem;
-  --theme-spacing-mul: 1;
-  --theme-density: comfortable;
+  --radius: 1rem;
+  --theme-radius: 1rem;
+  --theme-spacing-mul: 1.2;
+  --theme-density: spacious;
 }
 
 /* Theme tokens cascade into the document root so every descendant inherits
@@ -274,5 +275,21 @@ code { font-size: 0.875rem; }
 }
 :root[style*="--theme-asset-bg:"] .theme-default-filler {
   display: none;
+}
+
+/* Embedded chat terminal: theme the xterm canvas to match the dashboard.
+   xterm's bundled CSS hardcodes `.xterm-viewport { background-color: #000 }`,
+   and its DOM renderer (used when the chat dock is narrower than the WebGL
+   threshold) themes only the text, never the viewport background — so the
+   terminal showed as a black box on the light Gmail theme regardless of the
+   JS `theme.background` we pass. Pin the scroll container + screen to the
+   active theme's canvas. `--background-base` is exactly the value
+   `termColorsFromTheme` reads (themes/context.tsx writes it from
+   `palette.background.hex`), so this follows light/dark automatically. The
+   two-class selector already out-specifies xterm.css; `!important` guards
+   against any future inline write (which would carry the same value anyway). */
+.hermes-chat-xterm-host .xterm-viewport,
+.hermes-chat-xterm-host .xterm-screen {
+  background-color: var(--background-base) !important;
 }
 

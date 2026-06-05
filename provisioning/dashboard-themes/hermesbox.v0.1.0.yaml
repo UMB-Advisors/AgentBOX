@@ -1,0 +1,68 @@
+# HermesBOX kiosk theme — Obsidian + Gold
+# Drop-in dashboard theme for the hermes-agent web dashboard (:9119).
+# Deploy: copy to ~/.hermes/dashboard-themes/ on the kiosk box, then activate
+#   curl -X PUT http://127.0.0.1:9119/api/dashboard/theme \
+#        -H 'content-type: application/json' -d '{"name":"hermesbox"}'
+# Tuned for at-a-glance reading on the appliance display: warm-cream body text
+# on near-black, gold accents on the interactive chrome, larger base size.
+name: hermesbox
+label: HermesBOX
+description: Dark obsidian kiosk theme with Hermes gold accents, tuned for the appliance display.
+
+# 3-layer palette: cream midground = readable body/chrome on near-black canvas.
+palette:
+  background:
+    hex: "#0A0E13"
+    alpha: 1.0
+  midground:
+    hex: "#E9E3D2"
+    alpha: 1.0
+  foreground:
+    hex: "#FFFFFF"
+    alpha: 0.0
+  warmGlow: "rgba(255, 199, 55, 0.18)"
+  noiseOpacity: 0.5
+
+typography:
+  fontSans: '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif'
+  fontMono: '"JetBrains Mono", ui-monospace, "SFMono-Regular", monospace'
+  fontDisplay: '"Inter", system-ui, sans-serif'
+  # Loaded from Google Fonts on theme apply. The box has network; if a fetch
+  # blips the stack falls back to system-ui, so the kiosk never renders fontless.
+  fontUrl: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+  baseSize: "16px"
+  lineHeight: "1.6"
+  letterSpacing: "0.005em"
+
+layout:
+  radius: "0.75rem"
+  density: comfortable
+
+# standard = 1600px centered column. Switch to `tiled` if you want the dashboard
+# to use the full width of the 1080p panel.
+layoutVariant: standard
+
+componentStyles:
+  card:
+    background: "linear-gradient(180deg, rgba(20,26,34,0.86), rgba(10,14,19,0.92))"
+    boxShadow: "inset 0 0 0 1px rgba(255,199,55,0.14)"
+  header:
+    background: "linear-gradient(180deg, rgba(16,21,28,0.96), rgba(10,14,19,0.90))"
+    boxShadow: "0 1px 0 0 rgba(255,199,55,0.18)"
+
+colorOverrides:
+  primary: "#FFC73A"
+  primaryForeground: "#0A0E13"
+  accent: "#FFB347"
+  accentForeground: "#0A0E13"
+  ring: "#FFC73A"
+  border: "rgba(255, 199, 55, 0.16)"
+  muted: "#161C24"
+  mutedForeground: "#9AA3AD"
+  success: "#3FB984"
+  warning: "#F2B53A"
+  destructive: "#FF5C6C"
+
+customCSS: |
+  /* Gold hairline under the top bar for a finished kiosk look. */
+  header { border-bottom: 1px solid rgba(255, 199, 55, 0.20); }

@@ -122,14 +122,24 @@ export default function ChatDock({
   return (
     <aside
       aria-label="Chat"
-      style={asideStyle}
+      // `bg-background-base` is not a real Tailwind token here, so it painted
+      // nothing and the dark app root showed through (breaking the light theme).
+      // Paint with the actual palette var instead — light on Gmail, dark on Carbon.
+      style={{ ...asideStyle, backgroundColor: "var(--background-base)" }}
       className={cn(
         // Mobile: fixed full-screen translate-x drawer.
         "fixed inset-0 z-[45] flex flex-col",
         "transition-transform duration-200 ease-out",
         mobileOpen ? "translate-x-0" : "translate-x-full pointer-events-none",
-        // Desktop: in-flow column, reset the mobile fixed/transform/z chrome.
-        "lg:static lg:inset-auto lg:z-auto lg:translate-x-0 lg:pointer-events-auto",
+        // Desktop: in-flow column, reset the mobile fixed/transform chrome.
+        // Must be `relative z-2` (NOT static/z-auto): the global Backdrop paints
+        // a `fixed inset-0 z-1` layer with `mix-blend-mode: difference`. A static
+        // dock stacks BELOW that layer, so the backdrop blends `|dock − bg|` over
+        // it — on the light theme (dock bg == backdrop bg == --background-base)
+        // that difference is ~0 = black, blackening the entire dock. The main
+        // content column sits at `relative z-2` for the same reason; match it so
+        // the dock paints its true themed colors above the difference layer.
+        "lg:relative lg:inset-auto lg:z-2 lg:translate-x-0 lg:pointer-events-auto",
         "lg:flex lg:shrink-0",
         "border-l border-current/20 bg-background-base/95",
         collapsed && "lg:w-10",

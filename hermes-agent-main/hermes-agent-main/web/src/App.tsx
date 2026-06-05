@@ -71,6 +71,7 @@ import TeamPage from "@/pages/TeamPage";
 import ContactsPage from "@/pages/ContactsPage";
 import BusinessesPage from "@/pages/BusinessesPage";
 import SettingsHubPage from "@/pages/SettingsHubPage";
+import DigestSettingsPage from "@/pages/DigestSettingsPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { useI18n } from "@/i18n";
@@ -109,6 +110,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/contacts": ContactsPage,
   "/businesses": BusinessesPage,
   "/settings": SettingsHubPage,
+  "/settings/digest": DigestSettingsPage,
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,
   "/models": ModelsPage,
@@ -154,7 +156,7 @@ function buildPrimaryNav(manifests: PluginManifest[]): NavItem[] {
   ];
   if (hasTab("/kanban"))
     items.push({ path: "/kanban", label: "Tasks", icon: LayoutDashboard });
-  items.push({ path: "/cron", label: "Scheduled Actions", icon: Clock });
+  items.push({ path: "/cron", label: "Agent Jobs", icon: Clock });
   items.push({ path: "/graph", label: "Brain Graph", icon: Network });
   if (hasTab("/achievements"))
     items.push({ path: "/achievements", label: "Achievements", icon: Star });
