@@ -69,6 +69,7 @@ import GraphPage from "@/pages/GraphPage";
 import DrivePage from "@/pages/DrivePage";
 import TeamPage from "@/pages/TeamPage";
 import ContactsPage from "@/pages/ContactsPage";
+import BusinessesPage from "@/pages/BusinessesPage";
 import SettingsHubPage from "@/pages/SettingsHubPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
@@ -106,6 +107,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/drive": DrivePage,
   "/team": TeamPage,
   "/contacts": ContactsPage,
+  "/businesses": BusinessesPage,
   "/settings": SettingsHubPage,
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,

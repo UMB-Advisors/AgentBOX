@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import {
   BarChart3,
   BookOpen,
+  Building2,
   Cpu,
   FileText,
   KeyRound,
@@ -35,6 +36,11 @@ interface HubItem {
  * that surfaces them. Primary nav owns Home, Incoming Messages, Calendar,
  * Tasks, Scheduled Actions, Achievements.
  */
+
+// The operator's org: businesses + their departments (people live in the Team tab).
+const ORG_ITEMS: HubItem[] = [
+  { path: "/businesses", label: "Businesses & Departments", icon: Building2 },
+];
 
 // Built-in views moved under Settings. Routes still mounted in App.tsx.
 const AGENT_ITEMS: HubItem[] = [
@@ -109,6 +115,7 @@ export default function SettingsHubPage() {
         Configuration and secondary views. Primary tabs live in the sidebar.
       </CardDescription>
       <div className="flex flex-col gap-4">
+        <HubGroup title="Organization" items={ORG_ITEMS} />
         <HubGroup title="Agent" items={AGENT_ITEMS} />
         <HubGroup title="System" items={SYSTEM_ITEMS} />
         <HubGroup title="Plugins" items={pluginItems} />

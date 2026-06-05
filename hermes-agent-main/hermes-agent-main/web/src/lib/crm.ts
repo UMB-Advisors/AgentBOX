@@ -8,9 +8,18 @@ const CRM_BASE = "/dashboard/api/crm";
 
 export type TeamKind = "human" | "agent";
 
+export interface Business {
+  id: number;
+  name: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Department {
   id: number;
   name: string;
+  business_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -88,13 +97,34 @@ export type ContactInput = {
 };
 
 export const crmApi = {
+  // Businesses
+  listBusinesses: () =>
+    crm<{ businesses: Business[] }>("/businesses").then((r) => r.businesses),
+  createBusiness: (name: string, description = "") =>
+    crm<{ business: Business }>("/businesses", {
+      method: "POST",
+      body: JSON.stringify({ name, description }),
+    }).then((r) => r.business),
+  updateBusiness: (id: number, patch: { name?: string; description?: string }) =>
+    crm<{ business: Business }>(`/businesses/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }).then((r) => r.business),
+  deleteBusiness: (id: number) =>
+    crm<{ deleted: boolean }>(`/businesses/${id}`, { method: "DELETE" }),
+
   // Departments
   listDepartments: () =>
     crm<{ departments: Department[] }>("/departments").then((r) => r.departments),
-  createDepartment: (name: string) =>
+  createDepartment: (name: string, businessId?: number | null) =>
     crm<{ department: Department }>("/departments", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, business_id: businessId ?? null }),
+    }).then((r) => r.department),
+  updateDepartment: (id: number, patch: { name?: string; business_id?: number | null }) =>
+    crm<{ department: Department }>(`/departments/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
     }).then((r) => r.department),
   deleteDepartment: (id: number) =>
     crm<{ deleted: boolean }>(`/departments/${id}`, { method: "DELETE" }),
