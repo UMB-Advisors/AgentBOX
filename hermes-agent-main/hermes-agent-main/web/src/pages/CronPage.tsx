@@ -8,6 +8,8 @@ import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { H2 } from "@nous-research/ui/ui/components/typography/h2";
 import { api } from "@/lib/api";
 import type { CronJob, ProfileInfo } from "@/lib/api";
+import { crmApi } from "@/lib/crm";
+import type { Department, TeamMember } from "@/lib/crm";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { useConfirmDelete } from "@nous-research/ui/hooks/use-confirm-delete";
@@ -231,9 +233,9 @@ export default function CronPage() {
   const { t } = useI18n();
   const { setEnd, setTitle } = usePageHeader();
 
-  // Renamed in the simplified nav: "Cron" → "Scheduled Actions".
+  // Renamed in the simplified nav: "Cron" → "Scheduled Actions" → "Agent Jobs".
   useEffect(() => {
-    setTitle("Scheduled Actions");
+    setTitle("Agent Jobs");
   }, [setTitle]);
 
   // Create / edit job modal state. `editingKey` is null for a new job, or the
@@ -245,6 +247,13 @@ export default function CronPage() {
   const [schedule, setSchedule] = useState("");
   const [name, setName] = useState("");
   const [deliver, setDeliver] = useState("local");
+  // CRM assignment. Stored as string select values ("" = none); coerced to
+  // number on submit. Department/Employee lists come from the mailbox-dashboard
+  // CRM (same-origin via the dashboard proxy).
+  const [departmentId, setDepartmentId] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [team, setTeam] = useState<TeamMember[]>([]);
   const [creating, setCreating] = useState(false);
   const isEditing = editingKey !== null;
   const closeCreateModal = useCallback(() => {
@@ -263,6 +272,8 @@ export default function CronPage() {
     setPrompt("");
     setSchedule("");
     setDeliver("local");
+    setDepartmentId("");
+    setEmployeeId("");
     setCreateModalOpen(true);
   }, []);
 
@@ -273,6 +284,8 @@ export default function CronPage() {
     setPrompt(getJobPrompt(job));
     setSchedule(getJobScheduleRaw(job));
     setDeliver(asText(job.deliver) || "local");
+    setDepartmentId(job.department_id != null ? String(job.department_id) : "");
+    setEmployeeId(job.employee_id != null ? String(job.employee_id) : "");
     setCreateModalOpen(true);
   }, []);
 
@@ -291,6 +304,14 @@ export default function CronPage() {
       .catch(() => setProfiles([]));
   }, []);
 
+  // Department + Employee options for assignment. The CRM lives in the
+  // mailbox-dashboard; if it's unreachable the selects just stay empty and the
+  // rest of the page works unchanged.
+  useEffect(() => {
+    crmApi.listDepartments().then(setDepartments).catch(() => setDepartments([]));
+    crmApi.listTeam().then(setTeam).catch(() => setTeam([]));
+  }, []);
+
   useEffect(() => {
     loadJobs();
   }, [loadJobs]);
@@ -303,6 +324,16 @@ export default function CronPage() {
     // Accept natural language ("10am everyday") by converting to a cron
     // expression the backend understands; fall back to the raw text otherwise.
     const scheduleToSend = parseNaturalSchedule(schedule) ?? schedule.trim();
+    // Resolve the chosen department/employee to ids + denormalized names so the
+    // job card can label them without a CRM round-trip. null clears assignment.
+    const deptIdNum = departmentId ? Number(departmentId) : null;
+    const empIdNum = employeeId ? Number(employeeId) : null;
+    const crmFields = {
+      department_id: deptIdNum,
+      department_name: departments.find((d) => d.id === deptIdNum)?.name ?? null,
+      employee_id: empIdNum,
+      employee_name: team.find((m) => m.id === empIdNum)?.name ?? null,
+    };
     setCreating(true);
     try {
       if (isEditing && editingKey) {
@@ -314,6 +345,7 @@ export default function CronPage() {
             schedule: scheduleToSend,
             name: name.trim(),
             deliver,
+            ...crmFields,
           },
           editingProfile,
         );
@@ -325,6 +357,7 @@ export default function CronPage() {
             schedule: scheduleToSend,
             name: name.trim() || undefined,
             deliver,
+            ...crmFields,
           },
           createProfile,
         );
@@ -334,6 +367,8 @@ export default function CronPage() {
       setSchedule("");
       setName("");
       setDeliver("local");
+      setDepartmentId("");
+      setEmployeeId("");
       setEditingKey(null);
       setCreateModalOpen(false);
       loadJobs();
@@ -567,6 +602,41 @@ export default function CronPage() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="cron-department">Department</Label>
+                  <Select
+                    id="cron-department"
+                    value={departmentId}
+                    onValueChange={(v) => setDepartmentId(v)}
+                  >
+                    <SelectOption value="">Unassigned</SelectOption>
+                    {departments.map((d) => (
+                      <SelectOption key={d.id} value={String(d.id)}>
+                        {d.name}
+                      </SelectOption>
+                    ))}
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="cron-employee">Employee</Label>
+                  <Select
+                    id="cron-employee"
+                    value={employeeId}
+                    onValueChange={(v) => setEmployeeId(v)}
+                  >
+                    <SelectOption value="">Unassigned</SelectOption>
+                    {team.map((m) => (
+                      <SelectOption key={m.id} value={String(m.id)}>
+                        {m.name}
+                        {m.title ? ` — ${m.title}` : ""}
+                      </SelectOption>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+
               <div className="flex justify-end">
                 <Button
                   className="uppercase"
@@ -641,6 +711,14 @@ export default function CronPage() {
           const deliver = asText(job.deliver);
           const profile = getJobProfile(job);
           const jobKey = getJobKey(job);
+          const deptLabel =
+            asText(job.department_name) ||
+            departments.find((d) => d.id === job.department_id)?.name ||
+            "";
+          const empLabel =
+            asText(job.employee_name) ||
+            team.find((m) => m.id === job.employee_id)?.name ||
+            "";
 
           return (
             <Card key={jobKey}>
@@ -657,6 +735,8 @@ export default function CronPage() {
                     {deliver && deliver !== "local" && (
                       <Badge tone="outline">{deliver}</Badge>
                     )}
+                    {deptLabel && <Badge tone="outline">{deptLabel}</Badge>}
+                    {empLabel && <Badge tone="secondary">{empLabel}</Badge>}
                   </div>
                   {hasName && promptText && (
                     <p className="text-xs text-muted-foreground truncate mb-1">

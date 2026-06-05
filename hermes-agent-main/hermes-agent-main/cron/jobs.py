@@ -528,6 +528,35 @@ def _normalize_profile(profile: Optional[str]) -> Optional[str]:
     return normalized
 
 
+def _normalize_crm_id(value: Any) -> Optional[int]:
+    """Coerce an optional CRM record id (department / team member) to int or None.
+
+    The Department/Employee link points at rows in the mailbox-dashboard CRM
+    (Postgres, migration 047/048). It is a soft reference — the cron store and
+    the CRM are separate services, so a dangling id just renders blank rather
+    than erroring.
+    """
+    if value is None or value == "" or value is False:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_crm_name(value: Any) -> Optional[str]:
+    """Coerce an optional denormalized CRM display name to a trimmed str or None.
+
+    The name is stored alongside the id so the job card and any cron-side
+    consumer (which has no CRM access) can show a human label without a
+    cross-service lookup.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def create_job(
     prompt: Optional[str],
     schedule: str,
@@ -545,6 +574,10 @@ def create_job(
     enabled_toolsets: Optional[List[str]] = None,
     workdir: Optional[str] = None,
     profile: Optional[str] = None,
+    department_id: Optional[int] = None,
+    department_name: Optional[str] = None,
+    employee_id: Optional[int] = None,
+    employee_name: Optional[str] = None,
     no_agent: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -629,6 +662,10 @@ def create_job(
     normalized_toolsets = normalized_toolsets or None
     normalized_workdir = _normalize_workdir(workdir)
     normalized_profile = _normalize_profile(profile)
+    normalized_department_id = _normalize_crm_id(department_id)
+    normalized_department_name = _normalize_crm_name(department_name)
+    normalized_employee_id = _normalize_crm_id(employee_id)
+    normalized_employee_name = _normalize_crm_name(employee_name)
     normalized_no_agent = bool(no_agent)
 
     # no_agent jobs are meaningless without a script — the script IS the job.
@@ -684,6 +721,13 @@ def create_job(
         "enabled_toolsets": normalized_toolsets,
         "workdir": normalized_workdir,
         "profile": normalized_profile,
+        # CRM assignment (soft links into the mailbox-dashboard CRM). ids are the
+        # canonical link; names are denormalized for label display without a
+        # cross-service lookup.
+        "department_id": normalized_department_id,
+        "department_name": normalized_department_name,
+        "employee_id": normalized_employee_id,
+        "employee_name": normalized_employee_name,
     }
 
     jobs = load_jobs()
@@ -781,6 +825,15 @@ def update_job(job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]
                 updates["profile"] = None
             else:
                 updates["profile"] = _normalize_profile(_profile)
+
+        # Normalize CRM assignment fields if present. ids coerce to int|None,
+        # names to trimmed str|None — sending null/"" clears the assignment.
+        for _id_field in ("department_id", "employee_id"):
+            if _id_field in updates:
+                updates[_id_field] = _normalize_crm_id(updates[_id_field])
+        for _name_field in ("department_name", "employee_name"):
+            if _name_field in updates:
+                updates[_name_field] = _normalize_crm_name(updates[_name_field])
 
         updated = _apply_skill_fields({**job, **updates})
         schedule_changed = "schedule" in updates
