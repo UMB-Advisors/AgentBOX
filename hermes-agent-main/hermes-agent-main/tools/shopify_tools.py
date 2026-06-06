@@ -31,15 +31,38 @@ logger = logging.getLogger(__name__)
 API_VERSION = "2026-04"
 
 
-def _get_config():
-    """Return (shop, token) from env vars at call time. Raises if unset."""
+def _resolve_creds():
+    """Return (shop, token) or None.
+
+    Prefers a store connected via the dashboard Settings -> Shopify flow
+    (hermes_cli.shopify_accounts), falling back to the SHOPIFY_SHOP /
+    SHOPIFY_ACCESS_TOKEN env vars. The import is lazy + guarded so the toolset
+    still works in trees where shopify_accounts is absent.
+    """
+    try:
+        from hermes_cli import shopify_accounts
+        pair = shopify_accounts.resolve_credentials()
+        if pair:
+            return pair
+    except Exception:  # noqa: BLE001 - degrade to env fallback
+        pass
     shop = os.getenv("SHOPIFY_SHOP", "").strip()
     token = os.getenv("SHOPIFY_ACCESS_TOKEN", "").strip()
-    if not shop or not token:
+    if shop and token:
+        return shop, token
+    return None
+
+
+def _get_config():
+    """Return (shop, token) at call time. Raises if neither a connected store
+    nor the env vars are available."""
+    creds = _resolve_creds()
+    if not creds:
         raise RuntimeError(
-            "Shopify not configured: set SHOPIFY_SHOP and SHOPIFY_ACCESS_TOKEN."
+            "Shopify not configured: connect a store in Settings -> Shopify, or "
+            "set SHOPIFY_SHOP and SHOPIFY_ACCESS_TOKEN."
         )
-    return shop, token
+    return creds
 
 
 # ---------------------------------------------------------------------------
@@ -192,8 +215,9 @@ def _handle_delete_blog_post(args: dict, **kw) -> str:
 
 
 def _check_shopify_available() -> bool:
-    """Tools are only available when SHOPIFY_SHOP + SHOPIFY_ACCESS_TOKEN are set."""
-    return bool(os.getenv("SHOPIFY_SHOP") and os.getenv("SHOPIFY_ACCESS_TOKEN"))
+    """Tools are available when a store is connected via the dashboard OR the
+    SHOPIFY_SHOP + SHOPIFY_ACCESS_TOKEN env vars are set."""
+    return _resolve_creds() is not None
 
 
 # ---------------------------------------------------------------------------
