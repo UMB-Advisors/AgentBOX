@@ -35,6 +35,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -94,7 +95,29 @@ def index_path() -> Path:
 
 
 def _gbrain_bin() -> str:
-    return os.getenv("GBRAIN_BIN", "gbrain")
+    """Resolve the gbrain executable. Honors ``GBRAIN_BIN``, else PATH, else the
+    default bun install dir (``~/.bun/bin``) used on the agent box."""
+    explicit = os.getenv("GBRAIN_BIN")
+    if explicit:
+        return explicit
+    found = shutil.which("gbrain")
+    if found:
+        return found
+    cand = Path.home() / ".bun" / "bin" / "gbrain"
+    if cand.exists():
+        return str(cand)
+    return "gbrain"
+
+
+def _gbrain_env() -> Dict[str, str]:
+    """Subprocess env with the bun bin dir prepended to PATH so gbrain's
+    ``#!/usr/bin/env bun`` shebang resolves under a non-login PATH (the cron /
+    agent context, where ``~/.bun/bin`` is not on PATH by default)."""
+    env = os.environ.copy()
+    bun_bin = str(Path.home() / ".bun" / "bin")
+    if os.path.isdir(bun_bin) and bun_bin not in env.get("PATH", "").split(os.pathsep):
+        env["PATH"] = bun_bin + os.pathsep + env.get("PATH", "")
+    return env
 
 
 def _ensure_dirs() -> None:
@@ -277,6 +300,7 @@ def gbrain_capture(file_path: Path) -> Dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=120,
+            env=_gbrain_env(),
         )
     except FileNotFoundError:
         return {"ok": False, "error": f"gbrain binary {binname!r} not found"}
