@@ -1,0 +1,18 @@
+[Unit]
+Description=hermesBOX — hermes web dashboard (:9119, loopback only)
+Documentation=https://github.com/NousResearch/hermes-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HERMES_HOME=%h/.hermes
+Environment=HERMES_DASHBOARD_TUI=1
+Environment=HERMES_ACCEPT_HOOKS=1
+ExecStart=%h/.local/bin/hermes dashboard --host 127.0.0.1 --port 9119 --no-open --skip-build --tui
+ExecStop=%h/.local/bin/hermes dashboard --stop
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
