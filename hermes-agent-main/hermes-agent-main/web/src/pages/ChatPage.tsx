@@ -26,7 +26,7 @@ import { Button } from "@nous-research/ui/ui/components/button";
 import { Typography } from "@nous-research/ui/ui/components/typography/index";
 import { HERMES_BASE_PATH, buildWsAuthParam } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Copy, PanelRight, X } from "lucide-react";
+import { Copy, PanelRight, PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
@@ -209,6 +209,31 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   );
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Desktop-only: collapse the MODEL/TOOLS side panel so the terminal gets the
+  // full dock width. Persisted so the choice sticks across reloads. Mobile uses
+  // the slide-over sheet instead, so this only gates the lg+ inline sidebar.
+  const [sidebarHidden, setSidebarHidden] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem("hermes-chat-sidebar-hidden") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleSidebar = useCallback(() => {
+    setSidebarHidden((hidden) => {
+      const next = !hidden;
+      try {
+        window.localStorage.setItem(
+          "hermes-chat-sidebar-hidden",
+          next ? "1" : "0",
+        );
+      } catch {
+        /* localStorage can throw in private mode — in-memory state still works */
+      }
+      return next;
+    });
+  }, []);
   // Keep the terminal chrome in sync with the active dashboard theme.
   const { theme } = useTheme();
   const termColors = useMemo(() => termColorsFromTheme(theme), [theme]);
@@ -945,6 +970,38 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
             className="hermes-chat-xterm-host min-h-0 min-w-0 flex-1"
           />
 
+          {/* Desktop sidebar toggle. Sits in the terminal pane's top-right so
+              it stays reachable even when the MODEL/TOOLS panel is hidden (and
+              the terminal is full-width). Hidden on mobile, which uses the
+              header sheet button instead. */}
+          <Button
+            ghost
+            onClick={toggleSidebar}
+            title={
+              sidebarHidden ? "Show model & tools" : "Hide model & tools"
+            }
+            aria-label={
+              sidebarHidden
+                ? "Show model and tools panel"
+                : "Hide model and tools panel"
+            }
+            aria-pressed={!sidebarHidden}
+            className={cn(
+              "absolute z-10 top-2 right-2 sm:top-3 sm:right-3 lg:top-4 lg:right-4",
+              "hidden lg:inline-flex items-center justify-center",
+              "rounded border border-current/30 bg-black/10 backdrop-blur-sm",
+              "p-1.5 opacity-70 hover:opacity-100 hover:border-current/60",
+              "transition-opacity duration-150",
+            )}
+            style={{ color: termColors.foreground }}
+          >
+            {sidebarHidden ? (
+              <PanelRightOpen className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <PanelRightClose className="h-3.5 w-3.5 shrink-0" />
+            )}
+          </Button>
+
           <Button
             ghost
             onClick={handleCopyLast}
@@ -971,7 +1028,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
           </Button>
         </div>
 
-        {!narrow && (
+        {!narrow && !sidebarHidden && (
           <div
             id="chat-side-panel"
             role="complementary"

@@ -48,6 +48,7 @@ import { useBelowBreakpoint } from "@nous-research/ui/hooks/use-below-breakpoint
 import { useSidebarStatus } from "@/hooks/useSidebarStatus";
 import { AuthWidget } from "@/components/AuthWidget";
 import { PageHeaderProvider } from "@/contexts/PageHeaderProvider";
+import { AccountViewProvider } from "@/contexts/AccountViewProvider";
 import { useSystemActions } from "@/contexts/useSystemActions";
 import type { SystemAction } from "@/contexts/system-actions-context";
 import ConfigPage from "@/pages/ConfigPage";
@@ -72,6 +73,8 @@ import ContactsPage from "@/pages/ContactsPage";
 import BusinessesPage from "@/pages/BusinessesPage";
 import SettingsHubPage from "@/pages/SettingsHubPage";
 import DigestSettingsPage from "@/pages/DigestSettingsPage";
+import SettingsGooglePage from "@/pages/SettingsGooglePage";
+import SettingsShopifyPage from "@/pages/SettingsShopifyPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { useI18n } from "@/i18n";
@@ -111,6 +114,8 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/businesses": BusinessesPage,
   "/settings": SettingsHubPage,
   "/settings/digest": DigestSettingsPage,
+  "/settings/google": SettingsGooglePage,
+  "/settings/shopify": SettingsShopifyPage,
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,
   "/models": ModelsPage,
@@ -407,6 +412,7 @@ export default function App() {
   }, []);
 
   return (
+    <AccountViewProvider>
     <div
       data-layout-variant={layoutVariant}
       className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-black text-text-primary antialiased"
@@ -708,6 +714,7 @@ export default function App() {
 
       <PluginSlot name="overlay" />
     </div>
+    </AccountViewProvider>
   );
 }
 

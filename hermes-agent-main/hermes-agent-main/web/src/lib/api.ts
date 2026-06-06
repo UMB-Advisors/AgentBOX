@@ -229,7 +229,13 @@ export const api = {
   getKanbanBoard: () => fetchJSON<KanbanBoard>("/api/plugins/kanban/board"),
   /** Today's calendar events for the digest (placeholder until calendar wired). */
   getDigestCalendar: () => fetchJSON<DigestCalendar>("/api/digest/calendar"),
-  getDigestBrief: () => fetchJSON<DigestBrief>("/api/digest/brief"),
+  getDigestBrief: (account?: string) =>
+    fetchJSON<DigestBrief>(
+      "/api/digest/brief" +
+        (account && account !== "combined"
+          ? `?account=${encodeURIComponent(account)}`
+          : ""),
+    ),
   /**
    * Identity probe for the dashboard auth gate (Phase 7).
    *
@@ -729,7 +735,129 @@ export const api = {
       `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/clear-send-attempt`,
       { method: "POST" },
     ),
+
+  // ── Google accounts (multi-account connect) ────────────────────────────
+  /** List connected Google accounts + whether an OAuth client is installed
+   * on the box. ``client_configured === false`` means the operator hasn't
+   * dropped in a Google Cloud OAuth client yet, so connecting is impossible. */
+  listGoogleAccounts: () =>
+    fetchJSON<GoogleAccountsResponse>("/api/google/accounts"),
+  /** Disconnect a Google account by email. */
+  removeGoogleAccount: (email: string) =>
+    fetchJSON<{ removed: boolean }>(
+      `/api/google/accounts/${encodeURIComponent(email)}`,
+      { method: "DELETE" },
+    ),
+  /** Upcoming Google Calendar events for the Calendar tab. ``account`` omitted
+   * or "combined" aggregates every connected account; ``days`` defaults to 7
+   * server-side. */
+  getGoogleCalendar: (
+    account?: string,
+    daysOrRange?: number | { start: string; end: string },
+  ) => {
+    const qs = new URLSearchParams();
+    if (account && account !== "combined") qs.set("account", account);
+    if (typeof daysOrRange === "number") {
+      qs.set("days", String(daysOrRange));
+    } else if (daysOrRange) {
+      qs.set("start", daysOrRange.start);
+      qs.set("end", daysOrRange.end);
+    }
+    const suffix = qs.toString();
+    return fetchJSON<GoogleCalendarResponse>(
+      "/api/google/calendar" + (suffix ? `?${suffix}` : ""),
+    );
+  },
+  /** Create an event on a connected account's primary calendar. */
+  createGoogleCalendarEvent: (input: GoogleCalEventInput) =>
+    fetchJSON<GoogleCalEventMutation>("/api/google/calendar/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  /** Update an existing event (patch) on a connected account's calendar. */
+  updateGoogleCalendarEvent: (id: string, input: GoogleCalEventInput) =>
+    fetchJSON<GoogleCalEventMutation>(
+      `/api/google/calendar/events/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    ),
+  /** Delete an event from a connected account's calendar. */
+  deleteGoogleCalendarEvent: (id: string, account?: string) =>
+    fetchJSON<{ error: string | null }>(
+      `/api/google/calendar/events/${encodeURIComponent(id)}` +
+        (account && account !== "combined"
+          ? `?account=${encodeURIComponent(account)}`
+          : ""),
+      { method: "DELETE" },
+    ),
+  /** Recent Google Drive files for the Drive tab. ``account`` omitted or
+   * "combined" aggregates every connected account; ``q`` is an optional name
+   * search. */
+  getGoogleDrive: (account?: string, q?: string) => {
+    const qs = new URLSearchParams();
+    if (account && account !== "combined") qs.set("account", account);
+    if (q) qs.set("q", q);
+    const suffix = qs.toString();
+    return fetchJSON<GoogleDriveResponse>(
+      "/api/google/drive" + (suffix ? `?${suffix}` : ""),
+    );
+  },
+
+  /** Import Google Contacts (People API) from one or all connected accounts
+   * into the CRM (source='google', deduped by external_id). POST, no body. */
+  importGoogleContacts: (account?: string) =>
+    fetchJSON<GoogleImportResult>(
+      "/api/google/contacts/import" +
+        (account && account !== "combined"
+          ? `?account=${encodeURIComponent(account)}`
+          : ""),
+      { method: "POST" },
+    ),
+
+  // ── Shopify stores (multi-store connect) ───────────────────────────────
+  /** List connected Shopify stores + whether the OAuth app is installed on
+   * the box. ``client_configured === false`` means the operator hasn't set
+   * SHOPIFY_APP_CLIENT_ID/SECRET yet, so connecting is impossible. Never
+   * includes access tokens. */
+  listShopifyAccounts: () =>
+    fetchJSON<ShopifyAccountsResponse>("/api/shopify/accounts"),
+  /** Disconnect a Shopify store by shop domain. */
+  removeShopifyAccount: (shop: string) =>
+    fetchJSON<{ removed: boolean }>(
+      `/api/shopify/accounts/${encodeURIComponent(shop)}`,
+      { method: "DELETE" },
+    ),
 };
+
+export interface GoogleImportResult {
+  connected: boolean;
+  accounts: string[];
+  selected: string;
+  imported: number;
+  updated: number;
+  fetched: number;
+  by_account: Record<string, number>;
+  error: string | null;
+}
+
+/** Full-page nav target that kicks off the Google OAuth flow. This is a
+ * browser redirect to Google — navigate the whole window to it (do NOT
+ * ``fetch()`` it). The server 303-redirects back to ``/settings/google``. */
+export function googleAuthStartUrl(): string {
+  return `${HERMES_BASE_PATH}/api/google/auth/start`;
+}
+
+/** Full-page nav target that kicks off the Shopify OAuth flow for a specific
+ * ``*.myshopify.com`` store. This is a browser redirect to Shopify — navigate
+ * the whole window to it (do NOT ``fetch()`` it). The server 303-redirects
+ * back to ``/settings/shopify``. */
+export function shopifyAuthStartUrl(shop: string): string {
+  return `${HERMES_BASE_PATH}/api/shopify/auth/start?shop=${encodeURIComponent(shop)}`;
+}
 
 /** Identity payload returned by ``GET /api/auth/me`` (Phase 7).
  *
@@ -752,6 +880,37 @@ export interface ActionResponse {
   name: string;
   ok: boolean;
   pid: number;
+}
+
+/** A connected Google account as returned by ``GET /api/google/accounts``. */
+export interface GoogleAccount {
+  email: string;
+  scopes: string[];
+  connected_at: string | null;
+  primary: boolean;
+}
+
+/** Response shape for ``GET /api/google/accounts``. ``client_configured`` is
+ * ``false`` when no Google Cloud OAuth client is installed on the box. */
+export interface GoogleAccountsResponse {
+  client_configured: boolean;
+  accounts: GoogleAccount[];
+}
+
+/** A connected Shopify store as returned by ``GET /api/shopify/accounts``.
+ * Never includes the access token. */
+export interface ShopifyAccount {
+  shop_domain: string;
+  scope: string;
+  connected_at: string | null;
+}
+
+/** Response shape for ``GET /api/shopify/accounts``. ``client_configured`` is
+ * ``false`` when no Shopify OAuth app (SHOPIFY_APP_CLIENT_ID/SECRET) is set
+ * on the box. */
+export interface ShopifyAccountsResponse {
+  client_configured: boolean;
+  accounts: ShopifyAccount[];
 }
 
 /** Daily digest payload returned by ``GET /api/digest/latest`` (Phase 3).
@@ -829,6 +988,8 @@ export interface BriefEmail {
   date: string;
   unread: boolean;
   link: string;
+  /** Source account email this message came from (combined view tagging). */
+  account: string;
 }
 export interface BriefEvent {
   id: string;
@@ -838,11 +999,86 @@ export interface BriefEvent {
   all_day: boolean;
   location: string;
   link: string;
+  /** Source account email this event came from (combined view tagging). */
+  account: string;
 }
 export interface DigestBrief {
   connected: boolean;
+  /** Every connected Google account email. */
+  accounts: string[];
+  /** "combined" or the email of the active view. */
+  selected: string;
   gmail: { messages: BriefEmail[]; error: string | null };
   calendar: { events: BriefEvent[]; error: string | null };
+}
+
+/** A Google Calendar event for the Calendar tab (`GET /api/google/calendar`).
+ *  ``start``/``end`` are ISO datetimes for timed events or "YYYY-MM-DD" for
+ *  all-day ones. ``link`` opens the event in Google Calendar. */
+export interface GoogleCalEvent {
+  id: string;
+  /** Source account email this event came from (combined view tagging). */
+  account: string;
+  title: string;
+  start: string;
+  end: string;
+  all_day: boolean;
+  location: string;
+  description: string;
+  link: string;
+}
+/** Payload for creating / updating a calendar event. ``account`` chooses which
+ *  connected account's primary calendar to write to (blank = primary). Timed
+ *  events send RFC3339 ``start``/``end`` with offset; all-day events send
+ *  ``YYYY-MM-DD`` with an exclusive ``end``. */
+export interface GoogleCalEventInput {
+  account?: string;
+  title: string;
+  start: string;
+  end: string;
+  all_day: boolean;
+  location?: string;
+  description?: string;
+  timezone?: string;
+}
+export interface GoogleCalEventMutation {
+  event?: GoogleCalEvent;
+  error: string | null;
+}
+export interface GoogleCalendarResponse {
+  connected: boolean;
+  /** Every connected Google account email. */
+  accounts: string[];
+  /** "combined" or the email of the active view. */
+  selected: string;
+  /** Events sorted by ``start`` ascending. */
+  events: GoogleCalEvent[];
+  error: string | null;
+}
+
+/** A Google Drive file for the Drive tab (`GET /api/google/drive`).
+ *  ``webViewLink`` opens the file in Drive. */
+export interface GoogleDriveFile {
+  id: string;
+  /** Source account email this file came from (combined view tagging). */
+  account: string;
+  name: string;
+  mimeType: string;
+  modifiedTime: string;
+  iconLink: string;
+  webViewLink: string;
+  owners: string[];
+  folder: boolean;
+}
+export interface GoogleDriveResponse {
+  connected: boolean;
+  /** Every connected Google account email. */
+  accounts: string[];
+  /** "combined" or the email of the active view. */
+  selected: string;
+  /** Files sorted by ``modifiedTime`` descending. */
+  files: GoogleDriveFile[];
+  error: string | null;
 }
 
 export interface NewsSource {

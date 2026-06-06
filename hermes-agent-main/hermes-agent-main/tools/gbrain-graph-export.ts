@@ -290,7 +290,72 @@ async function main(): Promise<void> {
     edges.push(...simEdges);
   }
 
+  // ── Layers ─────────────────────────────────────────────────────────────────
+  // UA renders the OVERVIEW as one cluster node per `layer` — with NO layers the
+  // canvas is empty (KnowledgeGraphSchema requires `layers` + `tour`; the runtime
+  // shows nothing until a layer exists to select). Cluster nodes by connected
+  // components of the (undirected) edge set so the overview shows drillable
+  // topical clusters; singletons fold into one "Unlinked notes" layer.
+  // Deterministic, no LLM. As the brain grows and diversifies, components split.
+  const parent: Record<string, string> = {};
+  for (const n of nodes) parent[n.id] = n.id;
+  const find = (x: string): string => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  const deg: Record<string, number> = {};
+  for (const e of edges) {
+    const s = String(e.source);
+    const t = String(e.target);
+    if (parent[s] !== undefined && parent[t] !== undefined) {
+      const rs = find(s);
+      const rt = find(t);
+      if (rs !== rt) parent[rs] = rt;
+      deg[s] = (deg[s] ?? 0) + 1;
+      deg[t] = (deg[t] ?? 0) + 1;
+    }
+  }
+  const comps = new Map<string, string[]>();
+  for (const n of nodes) {
+    const r = find(n.id);
+    const arr = comps.get(r);
+    if (arr) arr.push(n.id);
+    else comps.set(r, [n.id]);
+  }
+  const nameById = new Map(nodes.map((n) => [n.id, n.name] as const));
+  const numericSort = (a: string, b: string) =>
+    /^\d+$/.test(a) && /^\d+$/.test(b) ? Number(a) - Number(b) : a.localeCompare(b);
+  const multi = [...comps.values()]
+    .filter((ids) => ids.length > 1)
+    .sort((a, b) => b.length - a.length || numericSort(a[0], b[0]));
+  const singletons = [...comps.values()].filter((ids) => ids.length === 1).flat();
+  const layers: Array<{ id: string; name: string; description: string; nodeIds: string[] }> = [];
+  for (const ids of multi) {
+    const hub = ids.reduce((best, i) => ((deg[i] ?? 0) > (deg[best] ?? 0) ? i : best), ids[0]);
+    let name = (nameById.get(hub) ?? "Cluster").trim();
+    if (name.length > 48) name = `${name.slice(0, 45).trimEnd()}…`;
+    layers.push({
+      id: `layer:${hub}`,
+      name,
+      description: `${ids.length} related notes clustered around “${name}”.`,
+      nodeIds: [...ids].sort(numericSort),
+    });
+  }
+  if (singletons.length) {
+    layers.push({
+      id: "layer:unlinked",
+      name: "Unlinked notes",
+      description: "Notes with no strong similarity links to others.",
+      nodeIds: [...singletons].sort(numericSort),
+    });
+  }
+
   const graph = {
+    version: "1.0.0",
+    kind: "knowledge",
     project: {
       name: "gbrain",
       languages: ["knowledge"],
@@ -302,12 +367,15 @@ async function main(): Promise<void> {
     },
     nodes,
     edges,
+    layers,
+    tour: [],
   };
 
   await Bun.write(outPath, JSON.stringify(graph, null, 2));
   console.error(
     `gbrain-graph-export: pages=${pages.length} link-edges=${linkEdgeCount} ` +
-      `similarity-edges=${simEdgeCount} total-edges=${edges.length} → ${outPath}`,
+      `similarity-edges=${simEdgeCount} total-edges=${edges.length} ` +
+      `layers=${layers.length} → ${outPath}`,
   );
 
   if (typeof engine.close === "function") {

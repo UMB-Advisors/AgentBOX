@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   CalendarClock,
@@ -20,6 +21,8 @@ import {
   CardTitle,
 } from "@nous-research/ui/ui/components/card";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
+import { AccountTag } from "@/components/AccountSelector";
+import { useAccountView } from "@/contexts/useAccountView";
 import { api } from "@/lib/api";
 import type {
   ActionItem,
@@ -59,6 +62,8 @@ export default function HomePage() {
   const [brief, setBrief] = useState<DigestBrief | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
+  // Per-account / combined view comes from the global header selector.
+  const { view } = useAccountView();
   const [board, setBoard] = useState<KanbanBoard | null>(null);
   const [boardError, setBoardError] = useState<string | null>(null);
 
@@ -108,13 +113,13 @@ export default function HomePage() {
     setBriefLoading(true);
     setBriefError(null);
     try {
-      setBrief(await api.getDigestBrief());
+      setBrief(await api.getDigestBrief(view));
     } catch (err) {
       setBriefError(err instanceof Error ? err.message : "Failed to load brief.");
     } finally {
       setBriefLoading(false);
     }
-  }, []);
+  }, [view]);
 
   const loadBoard = useCallback(() => {
     setBoardError(null);
@@ -241,6 +246,7 @@ export default function HomePage() {
           loading={briefLoading}
           error={briefError}
           onRefresh={refreshBrief}
+          view={view}
         />
       )}
 
@@ -330,6 +336,7 @@ function DailyBrief({
   loading,
   error,
   onRefresh,
+  view,
 }: {
   brief: DigestBrief | null;
   fyiTasks: FyiTask[];
@@ -337,6 +344,7 @@ function DailyBrief({
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
+  view: string;
 }) {
   const weekday = new Date().toLocaleDateString(undefined, { weekday: "long" });
   const connected = brief?.connected ?? false;
@@ -345,6 +353,9 @@ function DailyBrief({
   const events = brief?.calendar.events ?? [];
   const calError = brief?.calendar.error ?? null;
   const firstLoad = loading && brief == null;
+  // Combined view tags each item with its source account; single-account
+  // views omit the redundant per-item tag.
+  const showAccountTag = view === "combined";
 
   return (
     <Card className="overflow-hidden">
@@ -389,7 +400,9 @@ function DailyBrief({
           </div>
         ) : (
           <>
-            {/* Top of Mind + On Your Calendar both need a connected Google. */}
+            {/* Top of Mind + On Your Calendar both need a connected Google.
+                The Combined / per-account view comes from the global header
+                selector (shared across every account-aware tab). */}
             {!connected && <ConnectGoogle />}
 
             {connected && (
@@ -401,7 +414,7 @@ function DailyBrief({
                 ) : (
                   <ul className="flex flex-col divide-y divide-border">
                     {emails.map((m) => (
-                      <EmailRow key={m.id} email={m} />
+                      <EmailRow key={m.id} email={m} showAccount={showAccountTag} />
                     ))}
                   </ul>
                 )}
@@ -420,7 +433,11 @@ function DailyBrief({
                 ) : (
                   <ul className="flex flex-col divide-y divide-border">
                     {events.map((ev) => (
-                      <EventRow key={ev.id || ev.start} event={ev} />
+                      <EventRow
+                        key={ev.id || ev.start}
+                        event={ev}
+                        showAccount={showAccountTag}
+                      />
                     ))}
                   </ul>
                 )}
@@ -471,7 +488,13 @@ function BriefSection({
   );
 }
 
-function EmailRow({ email }: { email: BriefEmail }) {
+function EmailRow({
+  email,
+  showAccount,
+}: {
+  email: BriefEmail;
+  showAccount: boolean;
+}) {
   return (
     <li className="flex gap-3 py-2.5">
       <span
@@ -488,6 +511,7 @@ function EmailRow({ email }: { email: BriefEmail }) {
           <p className="flex-1 truncate text-sm font-medium leading-snug text-foreground group-hover:text-brand">
             {email.subject}
           </p>
+          {showAccount && <AccountTag account={email.account} />}
           {email.from && (
             <span className="shrink-0 text-xs text-text-secondary">{email.from}</span>
           )}
@@ -502,7 +526,13 @@ function EmailRow({ email }: { email: BriefEmail }) {
   );
 }
 
-function EventRow({ event }: { event: BriefEvent }) {
+function EventRow({
+  event,
+  showAccount,
+}: {
+  event: BriefEvent;
+  showAccount: boolean;
+}) {
   return (
     <li className="flex items-center gap-3 py-2.5">
       <CalendarClock className="h-4 w-4 shrink-0 text-text-secondary" />
@@ -514,6 +544,7 @@ function EventRow({ event }: { event: BriefEvent }) {
           <p className="truncate text-xs text-muted-foreground">{event.location}</p>
         )}
       </div>
+      {showAccount && <AccountTag account={event.account} />}
       <span className="shrink-0 text-xs text-text-secondary">
         {formatEventWhen(event)}
       </span>
@@ -525,16 +556,18 @@ function EventRow({ event }: { event: BriefEvent }) {
  *  Mirrors the calendar-not-connected pattern; the brief lights up the moment
  *  the operator runs the google-workspace login. */
 function ConnectGoogle() {
+  const navigate = useNavigate();
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-4">
+    <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-4">
       <p className="text-sm font-medium text-foreground">
         Connect Google to see your mail and calendar
       </p>
       <p className="text-sm text-text-secondary">
         Top of Mind and On Your Calendar read your Gmail and Google Calendar.
-        Authorize the google-workspace integration on the box, then refresh —
-        your brief fills in automatically. (FYI below works without it.)
       </p>
+      <Button size="sm" onClick={() => navigate("/settings/google")}>
+        Connect Google accounts
+      </Button>
     </div>
   );
 }

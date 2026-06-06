@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Contact as ContactIcon, Pencil, Trash2, X } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -12,8 +12,10 @@ import { useConfirmDelete } from "@nous-research/ui/hooks/use-confirm-delete";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 import { useModalBehavior } from "@/hooks/useModalBehavior";
 import { usePageHeader } from "@/contexts/usePageHeader";
+import { useAccountView } from "@/contexts/useAccountView";
 import { cn, themedBody } from "@/lib/utils";
 import { type Contact, type ContactInput, crmApi, type Social } from "@/lib/crm";
+import { api } from "@/lib/api";
 
 interface FormState {
   name: string;
@@ -63,9 +65,10 @@ function formToInput(f: FormState): ContactInput {
 }
 
 export default function ContactsPage() {
-  const { setTitle, setEnd } = usePageHeader();
+  const { setTitle } = usePageHeader();
   const { toast, showToast } = useToast();
 
+  const { view: accountView } = useAccountView();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -79,6 +82,19 @@ export default function ContactsPage() {
   const modalRef = useModalBehavior({ open: modalOpen, onClose: closeModal });
 
   useEffect(() => setTitle("Contacts"), [setTitle]);
+
+  // Per-account filtering driven by the global header selector. A specific
+  // account shows only that Google account's imported contacts (matched by the
+  // external_id "<email>:<resourceName>" prefix); "combined" shows everything.
+  const visibleContacts = useMemo(() => {
+    if (accountView === "combined") return contacts;
+    const prefix = accountView.toLowerCase() + ":";
+    return contacts.filter(
+      (c) =>
+        c.source === "google" &&
+        (c.external_id || "").toLowerCase().startsWith(prefix),
+    );
+  }, [contacts, accountView]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -111,14 +127,31 @@ export default function ContactsPage() {
     setModalOpen(true);
   }, []);
 
-  useLayoutEffect(() => {
-    setEnd(
-      <Button size="sm" className="uppercase" onClick={openCreate}>
-        Add Contact
-      </Button>,
-    );
-    return () => setEnd(null);
-  }, [setEnd, openCreate]);
+  const [importing, setImporting] = useState(false);
+  const handleImport = useCallback(async () => {
+    setImporting(true);
+    try {
+      const r = await api.importGoogleContacts();
+      if (!r.connected) {
+        showToast("Connect a Google account first (Settings → Google).", "error");
+      } else if (r.error && !r.imported && !r.updated) {
+        showToast(`Import: ${r.error}`, "error");
+      } else {
+        const added = r.imported ? `${r.imported} added` : "";
+        const upd = r.updated ? `${r.updated} updated` : "";
+        const summary = [added, upd].filter(Boolean).join(", ") || "no changes";
+        showToast(
+          `Google Contacts: ${summary}${r.error ? " (some accounts errored)" : ""}`,
+          "success",
+        );
+        load();
+      }
+    } catch (e) {
+      showToast(`Import failed: ${e}`, "error");
+    } finally {
+      setImporting(false);
+    }
+  }, [load, showToast]);
 
   const handleSave = async () => {
     if (!form.name.trim()) {
@@ -240,21 +273,42 @@ export default function ContactsPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <ContactIcon className="h-4 w-4" />
-        <span className="text-sm">{contacts.length} contact{contacts.length === 1 ? "" : "s"}</span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <ContactIcon className="h-4 w-4" />
+          <span className="text-sm">{visibleContacts.length} contact{visibleContacts.length === 1 ? "" : "s"}{accountView !== "combined" ? " in this account" : ""}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            outlined
+            className="uppercase"
+            onClick={handleImport}
+            disabled={importing}
+            title="Pull your Google Contacts into the CRM"
+          >
+            {importing ? "Importing…" : "Import Google"}
+          </Button>
+          <Button size="sm" className="uppercase" onClick={openCreate}>
+            Add Contact
+          </Button>
+        </div>
       </div>
 
-      {contacts.length === 0 ? (
+      {visibleContacts.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-            <p className="text-sm text-muted-foreground">No contacts yet.</p>
+            <p className="text-sm text-muted-foreground">
+              {accountView !== "combined" && contacts.length > 0
+                ? "No contacts from this account yet."
+                : "No contacts yet."}
+            </p>
             <Button size="sm" className="uppercase" onClick={openCreate}>Add Contact</Button>
           </CardContent>
         </Card>
       ) : (
         <div className="flex flex-col gap-3">
-          {contacts.map((c) => (
+          {visibleContacts.map((c) => (
             <Card key={c.id}>
               <CardContent className="flex items-start gap-4 py-4">
                 <div className="flex-1 min-w-0">
