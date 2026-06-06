@@ -16,6 +16,7 @@ Pure stdlib (urllib) — no third-party HTTP dependency. Mirrors the proven
 reference client verified against the live store.
 """
 
+import base64
 import json
 import logging
 import os
@@ -110,11 +111,37 @@ def resolve_blog_id(blog_handle):
     raise ValueError(f"No blog with handle {blog_handle!r}")
 
 
+def _build_article_image(image_path=None, image_src=None, alt=None):
+    """Build a Shopify article ``image`` dict.
+
+    From a local file (e.g. a PNG produced by the ``image_generate`` tool under
+    ``$HERMES_HOME/cache/images/``) -> base64 ``attachment``; or from a remote
+    ``image_src`` URL. Returns None if neither is given.
+    """
+    img = {}
+    if image_path:
+        with open(image_path, "rb") as fh:
+            img["attachment"] = base64.b64encode(fh.read()).decode("ascii")
+        img["filename"] = os.path.basename(image_path)
+    elif image_src:
+        img["src"] = image_src
+    else:
+        return None
+    if alt:
+        img["alt"] = alt[:512]
+    return img
+
+
 def create_blog_post(blog_handle, title, body_html, tags="", author=None,
-                     summary_html=None, published=False):
+                     summary_html=None, published=False,
+                     image_path=None, image_src=None, image_alt=None):
     """Create a blog article. published=False => DRAFT (not on storefront).
 
-    Returns {"id", "handle", "published", "admin_url"} on success.
+    A featured image can be attached from a local file (``image_path``, e.g. the
+    PNG returned by ``image_generate``) or a URL (``image_src``); ``image_alt``
+    defaults to the title.
+
+    Returns {"id", "handle", "published", "admin_url", "has_image"} on success.
     """
     blog_id = resolve_blog_id(blog_handle)
     article = {"title": title, "body_html": body_html, "published": bool(published)}
@@ -124,6 +151,9 @@ def create_blog_post(blog_handle, title, body_html, tags="", author=None,
         article["author"] = author
     if summary_html:
         article["summary_html"] = summary_html
+    image = _build_article_image(image_path, image_src, image_alt or title)
+    if image:
+        article["image"] = image
     res = _req("POST", f"blogs/{blog_id}/articles.json", {"article": article})["article"]
     shop, _ = _get_config()
     store_slug = shop.split(".")[0]
@@ -131,6 +161,7 @@ def create_blog_post(blog_handle, title, body_html, tags="", author=None,
         "id": res["id"],
         "handle": res.get("handle"),
         "published": res.get("published_at") is not None,
+        "has_image": res.get("image") is not None,
         "admin_url": f"https://admin.shopify.com/store/{store_slug}/content/articles/{res['id']}",
     }
 
@@ -163,6 +194,9 @@ def _handle_create_blog_post(args: dict, **kw) -> str:
     author = args.get("author") or None
     summary_html = args.get("summary_html") or None
     published = bool(args.get("published", False))
+    image_path = args.get("image_path") or None
+    image_src = args.get("image_src") or None
+    image_alt = args.get("image_alt") or None
 
     try:
         result = create_blog_post(
@@ -173,6 +207,9 @@ def _handle_create_blog_post(args: dict, **kw) -> str:
             author=author,
             summary_html=summary_html,
             published=published,
+            image_path=image_path,
+            image_src=image_src,
+            image_alt=image_alt,
         )
         return json.dumps({"result": result})
     except Exception as e:
@@ -276,6 +313,25 @@ CREATE_SHOPIFY_BLOG_POST_SCHEMA = {
                     "Whether to publish immediately. Defaults to false (DRAFT). "
                     "Leave false unless explicitly instructed to publish live."
                 ),
+            },
+            "image_path": {
+                "type": "string",
+                "description": (
+                    "Optional local image file path to attach as the post's "
+                    "featured image (e.g. the PNG path returned by the "
+                    "image_generate tool). The file is read and uploaded."
+                ),
+            },
+            "image_src": {
+                "type": "string",
+                "description": (
+                    "Optional public image URL for the featured image "
+                    "(alternative to image_path)."
+                ),
+            },
+            "image_alt": {
+                "type": "string",
+                "description": "Optional alt text for the featured image; defaults to the title.",
             },
         },
         "required": ["blog", "title", "body_html"],

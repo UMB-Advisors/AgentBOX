@@ -29,7 +29,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 JOB_NAME = "Yes Cacao daily blog draft"
 SCHEDULE = "0 9 * * *"
-ENABLED_TOOLSETS = ["web", "shopify", "messaging"]
+ENABLED_TOOLSETS = ["web", "shopify", "messaging", "image_gen"]
 SKILLS = ["brand", "shopify-blog"]
 # Override per-deployment via env; default is the Yes Cacao operator.
 OPERATOR_EMAIL = os.getenv("SHOPIFY_OPERATOR_EMAIL", "consultingfutures@gmail.com")
@@ -47,9 +47,15 @@ Write a complete blog post in the Yes Cacao brand voice (use the brand skill), \
 <html>/<body> wrapper). Give it a compelling title and a 1-2 sentence \
 summary_html. Add 3-6 relevant tags.
 
+Generate a featured image: call image_generate with provider="openai-codex", a \
+16:9 / wide aspect ratio, and a brand-appropriate prompt based on the topic \
+(warm, botanical, product-forward Yes Cacao chocolate aesthetic; photographic; \
+NO text or words in the image). Note the returned image file path.
+
 Create it as an UNPUBLISHED DRAFT on the '{BLOG_HANDLE}' blog by calling \
 create_shopify_blog_post(blog="{BLOG_HANDLE}", title=..., body_html=..., \
-summary_html=..., tags=..., author="Yes Cacao", published=false).
+summary_html=..., tags=..., author="Yes Cacao", \
+image_path=<the file path returned by image_generate>, published=false).
 
 Then EMAIL a summary to the operator: call send_message with \
 target="{OPERATOR_EMAIL}" and a message containing the post title, the chosen \
