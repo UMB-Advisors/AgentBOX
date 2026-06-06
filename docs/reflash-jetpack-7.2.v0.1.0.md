@@ -12,6 +12,20 @@
 
 ---
 
+## ⚠️ Known issues on r39.2 (from the field) — read before flashing
+
+Source: NVIDIA forum "JP 7.2 / r39.2 on Orin Nano — Getting Started & feedback" (topic 372151).
+
+| Reported failure | Cause | Mitigation |
+|---|---|---|
+| **Lost MAXN_SUPER / 25W** (`nvpmodel -m 2` → "bad power mode 2"; only 7W/15W) | Flashed 7.2 while **system/UEFI firmware was still old 36.x** and not updated first. Boxes already on **36.5.0** kept MAXN_SUPER. | Confirm box is on **≥36.4.x firmware** (ours = 36.5.0 ✅). Flash with `--flash all` so the **QSPI/UEFI firmware updates** too. **Verify `nvpmodel` after boot.** |
+| **Boot loop** — "Capsule staged 5 times but version not bumped, aborting" + `/cow` errors | The **ISO USB-installer** failing the UEFI capsule bump | **Do NOT use the ISO USB installer.** Flash via **SDK Manager CLI → NVMe**. |
+| **SDK Manager offers USB flash only (no NVMe) for 7.2** | Running it on **Ubuntu 20.04** | Use a **22.04/24.04** flash host (ours = 22.04 ✅). |
+
+**Field-confirmed recovery (#38):** if MAXN_SUPER is lost or 7.2 won't take, SDK-Manager-flash back to **6.2.2**, confirm power modes, then re-flash up to 7.2 with `--flash all`. This is why we keep the 6.2.2 backup until 7.2 is proven.
+
+---
+
 ## 0. Prerequisites
 
 | Need | Detail |
@@ -138,4 +152,4 @@ sudo apt-get autoremove -y
 
 ---
 
-*v0.1.0 · 2026‑06‑05 · author: ops. Verify SDK Manager target IDs and r39.2 BSP URLs against the 7.2 release notes before flashing.*
+*v0.1.1 · 2026‑06‑06 · author: ops. Added "Known issues on r39.2 (from the field)" from forum topic 372151. Verify SDK Manager target IDs and r39.2 BSP URLs against the 7.2 release notes before flashing.*
