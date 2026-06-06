@@ -152,3 +152,24 @@ Build the scaffold plus the three highest-leverage fully-unblocked jobs. This pr
 - **True A/B serving** (1.2) — the box can produce two page drafts but cannot serve/measure a split natively; v1 produces variants for external/manual testing only.
 - **L2 autonomy on money/reputation jobs** (1.4 spend, 2.2 first-touch sends, 3.1 below-floor quotes) — never auto-reached; gated behind explicit human authorization with hard floor guards even after graduation.
 - **The "Adva Cera automated-quoting" shared structure** referenced in spec §3.1 — that codebase is NOT on this box; treat as aspirational, not a verifiable reuse.
+
+---
+
+## 8. Open-question resolutions (v1 decisions — 2026-06-06)
+
+Resolved with conservative defaults so the build proceeds without new spend,
+compliance risk, or extra prod blast-radius. All are reversible; the operator can
+upgrade any of them later.
+
+| OQ | Decision (v1) | Upgrade path |
+|---|---|---|
+| **OQ1** channel mix | Assume DTC-led with a real wholesale + corporate-gifting motion; ICP (Job 1.1) carries all three segments and the agent confirms specifics at runtime via `clarify`. | Operator confirms the real split → reweight 1.1/1.2/2.x. |
+| **OQ2** CRM / pipeline store | **kanban-SQLite + `$HERMES_HOME` JSON** stores (enrichment accounts, pipeline deals). Do NOT give the box the dashboard Postgres creds. | Expose a CRM-as-toolset over Postgres once trusted. |
+| **OQ3** enrichment / LinkedIn | **Firmographic-only, email-first, LinkedIn OFF** (behind a flag), no paid provider. | Add Apollo/Clearbit behind `managed_tool_gateway`; resolve LinkedIn compliance. |
+| **OQ4** graduation thresholds | Shipped: configurable per-job defaults (N=5 judgment / 10 content / 20 sends; material = edit_magnitude>0.02 OR structural). | Per-client overrides via `set_config`. |
+| **OQ5** persona home | The existing **mailbox-dashboard** (trust tile + queues). | Port to an Optimus Sales Command Center later. |
+
+**Operator actions (gate live data; build is stub/draft-first until done):**
+- Grant Gmail `send` consent on the box (`setup.py`) — gates live sends for 2.2/2.3 (drafts work without it).
+- Re-mint the Shopify offline token with `read_orders`/`read_customers` (3.2/3.3), `draft_orders` (3.1), `write_themes`/`write_discounts` (1.2). Until then those jobs produce review-folder draft artifacts instead of live Shopify objects.
+- Ad-platform access (Meta/TikTok) for 1.4 Track B — deferred; 1.4 ships read-only/recommendation Track A only.
