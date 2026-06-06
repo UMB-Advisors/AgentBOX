@@ -20,15 +20,29 @@ PROTOTYPE=0; [ "${1:-}" = "--prototype" ] && PROTOTYPE=1
 MAILBOX_GIT_URL="${MAILBOX_GIT_URL:-https://github.com/UMB-Advisors/mailbox.git}"
 MAILBOX_GIT_REF="${MAILBOX_GIT_REF:-main}"
 STACK_DIR="${STACK_DIR:-$HOME/mailbox}"                   # MailBOX stack checkout on the box
+HERMES_REF="${HERMES_REF:-927fa7a98}"                     # Hermes v0.15.1 pin — 0.16 enforces >=64K ctx which breaks local Qwen3-4B (DR: 2026-06-06)
+DASHBOARD_IMAGE="${DASHBOARD_IMAGE:-}"                    # if set/preloaded, skip the from-source dashboard build (no GH token needed)
+MAILBOX_FQDN="${MAILBOX_FQDN:-}"                          # tailnet FQDN for n8n/Funnel; blank on a bench/--prototype box
 log(){ echo "[$(date -u +%H:%M:%S)] $*"; }
 die(){ echo "FATAL: $*" >&2; exit 1; }
 PSQL(){ docker exec -i mailbox-postgres-1 psql -U "${POSTGRES_USER:-mailbox}" -d "${POSTGRES_DB:-mailbox}" "$@"; }
 
-# ── STAGE 0: preconditions ────────────────────────────────────────────────
-log "STAGE 0 — preconditions"
+# ── STAGE 0: preconditions + JP7.2 base prep ──────────────────────────────
+log "STAGE 0 — preconditions + JP7.2 base prep"
 command -v docker >/dev/null || die "docker not installed"
-docker info 2>/dev/null | grep -qi nvidia || log "WARN: nvidia runtime not default — GPU inference may be unavailable"
+docker ps >/dev/null 2>&1 || die "cannot talk to docker as $USER — add to the 'docker' group and re-login: sudo usermod -aG docker $USER"
 [ "$(df --output=avail -BG "$HOME" | tail -1 | tr -dc 0-9)" -ge 16 ] || die "need >=16GB free disk"
+# JP7.2 / L4T r39: the nvidia container runtime ships but is frequently unregistered
+# with the daemon (GPU containers then fail with "unknown runtime: nvidia").
+if ! docker info 2>/dev/null | grep -qiE 'Runtimes:.*nvidia'; then
+  if command -v nvidia-ctk >/dev/null; then
+    log "  registering nvidia container runtime (nvidia-ctk) + restarting docker"
+    sudo nvidia-ctk runtime configure --runtime=docker >/dev/null && sudo systemctl restart docker \
+      || log "  WARN: nvidia runtime registration failed — GPU inference may be unavailable"
+  else
+    log "  WARN: nvidia runtime unregistered and nvidia-ctk absent — GPU inference unavailable"
+  fi
+fi
 
 # ── STAGE 0.5: MailBOX stack (clone the SEPARATE repo; cd into it) ─────────
 # AgentBOX = MailBOX stack + Hermes. The stack lives in its own repo; clone it
@@ -50,6 +64,15 @@ else
 fi
 cd "$STACK_DIR"   # ← all stack stages below run inside the MailBOX checkout
 [ -f docker-compose.yml ] && [ -f .env.example ] || die "MailBOX stack incomplete at $STACK_DIR"
+
+# AgentBOX compose override (loopback publishes for Hermes<->Ollama :11435 +
+# dashboard :3001 iframe, plus n8n FQDN). Applied BEFORE STAGE 2 so Ollama is
+# published from its first `up`. Authoritative copy lives in the AgentBOX repo.
+if [ -f "$REPO/config/docker-compose.override.yml.template" ]; then
+  sed "s#__MAILBOX_FQDN__#${MAILBOX_FQDN:-localhost}#g" \
+    "$REPO/config/docker-compose.override.yml.template" > docker-compose.override.yml
+  log "  applied docker-compose.override.yml (FQDN=${MAILBOX_FQDN:-localhost})"
+fi
 
 # ── STAGE 1: secrets + .env (gate ON; DR-66 security model) ───────────────
 log "STAGE 1 — secrets / .env"
@@ -124,7 +147,17 @@ docker exec mailbox-ollama-1 ollama list
 log "STAGE 5 — full stack up"
 CADDY="caddy"
 if [ "$PROTOTYPE" = 1 ]; then CADDY=""; log "  --prototype: skipping caddy (LAN/tailnet only; no DNS/TLS creds)"; fi
-docker compose up -d --build mailbox-dashboard n8n $CADDY
+# Dashboard image: build from source (needs a REAL GITHUB_PACKAGES_TOKEN for npm —
+# the committed .env.example token is a placeholder), OR reuse a preloaded image
+# (set DASHBOARD_IMAGE, or `docker save|load` mailbox-dashboard:local from another
+# box). Offline / no-token installs must preload.
+BUILD_FLAG="--build"
+if [ -n "$DASHBOARD_IMAGE" ]; then
+  export DASHBOARD_IMAGE; BUILD_FLAG=""; log "  using DASHBOARD_IMAGE=$DASHBOARD_IMAGE (skipping --build)"
+elif docker image inspect mailbox-dashboard:local >/dev/null 2>&1; then
+  BUILD_FLAG=""; log "  using preloaded mailbox-dashboard:local (skipping --build)"
+fi
+docker compose up -d $BUILD_FLAG mailbox-dashboard n8n $CADDY
 docker compose --profile qdrant-bootstrap run --rm mailbox-qdrant-bootstrap || log "  (qdrant bootstrap non-fatal)"
 
 # ── STAGE 6: n8n credential + workflows + activate ────────────────────────
@@ -155,22 +188,80 @@ docker compose restart n8n >/dev/null 2>&1; sleep 10
 docker compose --profile n8n-verify run --rm mailbox-n8n-verify || log "  WARN: n8n-verify non-zero — check workflow activation"
 log "  NOTE: live Gmail triage needs Gmail OAuth (MANUAL browser consent, per inbox) — not bench-automatable."
 
-# ── STAGE 7: Hermes client-mode + gbrain at the shared ollama (DR-63/64) ──
+# ── STAGE 7: Hermes (v0.15.1 pin) + gbrain memory ─────────────────────────
+# Native (not containerized). Codifies the validated JP7.2 sequence (2026-06-06).
+# Idempotent: each step is guarded so re-runs converge.
 log "STAGE 7 — Hermes + gbrain"
-if command -v hermes >/dev/null || [ -x "$HOME/.local/bin/hermes" ]; then
-  log "  Hermes present. MANUAL: confirm client-mode (no local weights):"
-  log "    hermes doctor ; ollama ps   # must show ONLY nomic + qwen3, nothing Hermes-pulled"
-  log "  DR-64: repoint gbrain at the shared dockerized ollama (publish ollama 11434"
-  log "    to host or set gbrain base_urls.ollama to it) and retire the standalone host ollama."
+HH="$HOME/.hermes"; HBIN="$HOME/.local/bin/hermes"
+export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+
+# 7.1 install hermes-agent if absent
+if [ ! -x "$HBIN" ]; then
+  log "  installing hermes-agent (non-interactive)"
+  curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
+    | bash -s -- --skip-setup || log "  WARN: hermes install returned non-zero"
+fi
+# 7.2 pin to HERMES_REF (0.15.1) — 0.16's >=64K ctx floor rejects the local Qwen3-4B
+if [ -d "$HH/hermes-agent/.git" ]; then
+  CUR=$(git -C "$HH/hermes-agent" rev-parse --short HEAD 2>/dev/null || echo none)
+  if [ "$CUR" != "$HERMES_REF" ]; then
+    log "  pinning Hermes to $HERMES_REF (was $CUR)"
+    git -C "$HH/hermes-agent" fetch --tags origin >/dev/null 2>&1
+    git -C "$HH/hermes-agent" checkout -f "$HERMES_REF" >/dev/null 2>&1 \
+      && ( cd "$HH/hermes-agent" && uv sync >/dev/null 2>&1 ) || log "  WARN: Hermes pin/sync failed"
+  fi
+fi
+# 7.3 config.yaml from the AgentBOX template (local Qwen3-4B @ :11435 + gbrain MCP + cloud fallback)
+if [ -f "$REPO/config/hermes/config.yaml.template" ]; then
+  [ -f "$HH/config.yaml" ] && cp "$HH/config.yaml" "$HH/config.yaml.pre-agentbox.bak"
+  sed "s#__AGENTBOX_HOME__#$HOME#g" "$REPO/config/hermes/config.yaml.template" > "$HH/config.yaml"
+  log "  hermes config.yaml installed (qwen3:4b-instruct via :11435)"
+fi
+# 7.4 gbrain: source (vendored copy if absent) + bun deps + global wrapper + fresh pglite brain
+if [ ! -d "$HOME/gbrain-src" ] && [ -d "$REPO/gbrain-master/gbrain-master" ]; then
+  log "  deploying gbrain-src from vendored AgentBOX copy"
+  cp -r "$REPO/gbrain-master/gbrain-master" "$HOME/gbrain-src"
+  ( cd "$HOME/gbrain-src" && command -v bun >/dev/null && bun install >/dev/null 2>&1 ) || log "  WARN: gbrain bun install failed"
+fi
+if [ -d "$HOME/gbrain-src" ] && command -v bun >/dev/null; then
+  [ -x "$HOME/.bun/bin/gbrain" ] || { printf '#!/usr/bin/env bash\nexec bun "$HOME/gbrain-src/src/cli.ts" "$@"\n' > "$HOME/.bun/bin/gbrain"; chmod +x "$HOME/.bun/bin/gbrain"; }
+  mkdir -p "$HOME/.hermesbox/.gbrain"
+  [ -f "$HOME/.hermesbox/.gbrain/config.json" ] || sed "s#__AGENTBOX_HOME__#$HOME#g" \
+    "$REPO/config/hermes/gbrain-config.json.template" > "$HOME/.hermesbox/.gbrain/config.json"
+  # embeddings (nomic) live in the docker ollama from STAGE 4 (gbrain points at :11435)
+  if [ ! -d "$HOME/.hermesbox/.gbrain/brain.pglite" ]; then
+    log "  initializing fresh gbrain brain (pglite)"
+    ( cd "$HOME/gbrain-src" && GBRAIN_HOME="$HOME/.hermesbox" bun src/cli.ts apply-migrations --yes --non-interactive >/dev/null 2>&1 ) \
+      || log "  WARN: gbrain migrations non-zero (re-run: GBRAIN_HOME=~/.hermesbox gbrain apply-migrations --yes)"
+  fi
 else
-  log "  MANUAL: install hermes-agent (uv venv, ~/.hermes) in client-mode + wire gbrain MCP."
+  log "  MANUAL: gbrain not set up (need bun + ~/gbrain-src) — see docs/agentbox-jp72-reproduction"
+fi
+# 7.5 build the dashboard web dist once (the :9119 service runs with --skip-build)
+if [ -x "$HBIN" ] && [ ! -d "$HH/hermes-agent/hermes_cli/web_dist" ]; then
+  log "  building hermes dashboard web dist (one-time; ~minutes)"
+  timeout 360 "$HBIN" dashboard --host 127.0.0.1 --port 9119 --no-open >/tmp/hermes-webbuild.log 2>&1 &
+  for i in $(seq 1 80); do [ -d "$HH/hermes-agent/hermes_cli/web_dist" ] && break; sleep 3; done
+  "$HBIN" dashboard --stop >/dev/null 2>&1 || true
+  [ -d "$HH/hermes-agent/hermes_cli/web_dist" ] && log "  web_dist built" || log "  WARN: web_dist not built — see /tmp/hermes-webbuild.log"
 fi
 
-# ── STAGE 8: boot-to-ready (SM-100) ───────────────────────────────────────
-log "STAGE 8 — boot-to-ready"
-log "  compose 'restart: unless-stopped' covers the stack on reboot."
-log "  MANUAL (production): install an 'agentbox.target' systemd unit that brings the"
-log "  compose stack + Hermes up at boot; validate cold boot -> healthy <= 5 min (SM-100)."
+# ── STAGE 8: boot-to-ready systemd (SM-100) ───────────────────────────────
+# Install the AgentBOX user units: agentbox.service (compose orchestrator) +
+# hermes-dashboard.service (:9119). Enable linger so they start at boot headless.
+log "STAGE 8 — boot-to-ready (systemd)"
+if [ -d "$REPO/systemd" ]; then
+  mkdir -p "$HOME/.config/systemd/user"
+  cp "$REPO/systemd/"*.service "$HOME/.config/systemd/user/"
+  sudo loginctl enable-linger "$USER" >/dev/null 2>&1 || log "  WARN: enable-linger failed (units won't start until login)"
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  systemctl --user daemon-reload 2>/dev/null || true
+  systemctl --user enable --now agentbox.service hermes-dashboard.service 2>/dev/null \
+    && log "  agentbox.service + hermes-dashboard.service enabled (:9119)" \
+    || log "  WARN: could not enable user units in this session — run: systemctl --user enable --now agentbox.service hermes-dashboard.service"
+else
+  log "  WARN: $REPO/systemd not found — boot units not installed"
+fi
 
 # ── STAGE 9: verify ───────────────────────────────────────────────────────
 log "STAGE 9 — verify"

@@ -1,9 +1,37 @@
-# AgentBOX compose override — adds the Funnel-fronting basic_auth Caddy and puts
-# n8n behind it for the Gmail-OAuth callback. Copy to docker-compose.override.yml
-# in the MailBOX repo root, replace REPLACE_WITH_TAILNET_FQDN, then:
-#   docker compose up -d caddy-funnel n8n
-#   tailscale funnel --bg 8088
+# AgentBOX compose override (template).
+#
+# The installer (`install/agentbox-install.sh`) copies this into the cloned
+# MailBOX stack as `docker-compose.override.yml`, substituting
+# __MAILBOX_FQDN__ (tailnet FQDN, blank on a bench/--prototype box).
+#
+# Two concerns, both required for the unified appliance:
+#  1. Loopback publishes so the co-resident Hermes agent + dashboard work:
+#       - Ollama :11435  -> Hermes uses local Qwen3-4B (custom:local-qwen3-4b)
+#       - dashboard :3001 -> Hermes dashboard "Incoming Messages" iframe
+#  2. Funnel-fronting Caddy + n8n external URLs for the Gmail-OAuth callback
+#     (only meaningful once a tailnet FQDN exists; harmless otherwise).
 services:
+  # Publish Ollama on loopback so Hermes can offer the local Qwen3-4B.
+  ollama:
+    ports:
+      - "127.0.0.1:11435:11434"
+
+  # Publish the approval queue on loopback for the Hermes dashboard iframe.
+  mailbox-dashboard:
+    ports:
+      - "127.0.0.1:3001:3001"
+
+  n8n:
+    environment:
+      # n8n runs HTTP internally; Funnel/Caddy terminates TLS and advertises https.
+      N8N_PROTOCOL: http
+      N8N_SECURE_COOKIE: "false"
+      N8N_EDITOR_BASE_URL: https://__MAILBOX_FQDN__/
+      WEBHOOK_URL: https://__MAILBOX_FQDN__/
+      N8N_HOST: __MAILBOX_FQDN__
+
+  # Funnel-fronting basic_auth Caddy (Gmail-OAuth callback). Bring up explicitly
+  # with `docker compose up -d caddy-funnel` + `tailscale funnel --bg 8088`.
   caddy-funnel:
     image: caddy:2
     ports:
@@ -11,11 +39,3 @@ services:
     volumes:
       - ./caddy/Caddyfile.funnel:/etc/caddy/Caddyfile:ro
     restart: unless-stopped
-  n8n:
-    environment:
-      # n8n runs HTTP internally; Funnel terminates TLS and advertises https.
-      N8N_PROTOCOL: http
-      N8N_SECURE_COOKIE: "false"
-      N8N_EDITOR_BASE_URL: https://REPLACE_WITH_TAILNET_FQDN/
-      WEBHOOK_URL: https://REPLACE_WITH_TAILNET_FQDN/
-      N8N_HOST: REPLACE_WITH_TAILNET_FQDN

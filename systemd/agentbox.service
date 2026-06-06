@@ -1,0 +1,15 @@
+[Unit]
+Description=AgentBOX — unified MailBOX + Hermes stack (boot-to-ready, SM-100)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/mailbox
+ExecStart=/usr/bin/docker compose up -d postgres qdrant ollama n8n mailbox-dashboard
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

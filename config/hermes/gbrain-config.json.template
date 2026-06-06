@@ -1,0 +1,10 @@
+{
+  "engine": "pglite",
+  "database_path": "__AGENTBOX_HOME__/.hermesbox/.gbrain/brain.pglite",
+  "embedding_model": "ollama:nomic-embed-text",
+  "embedding_dimensions": 768,
+  "schema_pack": "gbrain-base-v2",
+  "mcp": { "publish_skills": true },
+  "base_urls": { "ollama": "http://127.0.0.1:11435/v1" },
+  "provider_base_urls": { "ollama": "http://127.0.0.1:11435/v1" }
+}
