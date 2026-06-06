@@ -52,6 +52,11 @@
 
 It is built as a monorepo of three cooperating runtimes — the **Hermes agent**, the **gBrain** memory layer, and the **desktop** client — plus the infrastructure scripts that turn a bare machine into a working appliance.
 
+> [!IMPORTANT]
+> **AgentBOX is the source of truth for the unified appliance** = the **MailBOX** email pipeline (triage → draft → approve → send) **plus** the Hermes agent + gBrain, co-resident on one Jetson. The MailBOX app stack lives in its own repo and is **cloned** by `install/agentbox-install.sh` (it is not vendored here). This repo owns the orchestration: the installer, the Hermes/gBrain wiring (`config/hermes/`), the compose override (`config/`), the boot units (`systemd/`), and the JetPack flow.
+>
+> **New box:** flashed Jetson → `install/agentbox-install.sh --prototype`; bare hardware → the **`/agentbox-flash`** skill. See [`docs/agentbox-jp72-reproduction.v0.1.0.md`](./docs/agentbox-jp72-reproduction.v0.1.0.md).
+
 ## Architecture
 
 ```mermaid
@@ -84,6 +89,8 @@ flowchart TB
 | **Desktop** | [`hermes-desktop-main/`](./hermes-desktop-main) | TypeScript | Native control surface for interacting with and supervising the agent. |
 | **ACL** | [`infra/acl/`](./infra/acl) | Config | Access control for agent capabilities and resources. |
 | **Provisioning** | [`provisioning/`](./provisioning) | Shell | Scripts that turn a bare machine into a configured appliance. |
+| **Unified installer** | [`install/`](./install) + [`config/`](./config) + [`systemd/`](./systemd) | Shell | One-command bring-up of the unified MailBOX + Hermes appliance; clones the MailBOX stack and wires Hermes/gBrain/boot. |
+| **MailBOX stack** | _cloned_ → `~/mailbox` | Compose | Email pipeline (postgres, qdrant, ollama, n8n, dashboard). Separate repo (`UMB-Advisors/mailbox`), pulled by the installer — not vendored. |
 | **CLI** | [`bin/`](./bin) | Shell | Entry-point commands for operating the box. |
 | **Skill** | [`.skill/`](./.skill) | — | Packaged skill definition for agent tooling. |
 | **Docs** | [`docs/`](./docs) | TeX / Markdown | Design notes and appliance documentation. |
