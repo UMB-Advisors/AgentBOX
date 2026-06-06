@@ -7,10 +7,12 @@ import {
   Cpu,
   FileText,
   KeyRound,
+  Mail,
   MessageSquare,
   Package,
   Puzzle,
   Settings,
+  ShoppingBag,
   Sparkles,
   Users,
   ChevronRight,
@@ -29,6 +31,7 @@ interface HubItem {
   path: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
+  description?: string;
 }
 
 /**
@@ -46,6 +49,22 @@ const HOME_ITEMS: HubItem[] = [
 // The operator's org: businesses + their departments (people live in the Team tab).
 const ORG_ITEMS: HubItem[] = [
   { path: "/businesses", label: "Businesses & Departments", icon: Building2 },
+];
+
+// External account connections.
+const CONNECTION_ITEMS: HubItem[] = [
+  {
+    path: "/settings/google",
+    label: "Google accounts",
+    icon: Mail,
+    description: "Connect Gmail, Calendar & Drive accounts",
+  },
+  {
+    path: "/settings/shopify",
+    label: "Shopify stores",
+    icon: ShoppingBag,
+    description: "Connect Shopify stores for blog content",
+  },
 ];
 
 // Built-in views moved under Settings. Routes still mounted in App.tsx.
@@ -84,14 +103,21 @@ function HubGroup({ title, items }: { title: string; items: HubItem[] }) {
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-1">
-        {items.map(({ path, label, icon: Icon }) => (
+        {items.map(({ path, label, icon: Icon, description }) => (
           <NavLink
             key={path}
             to={path}
             className="group flex items-center gap-3 rounded px-2 py-2 text-sm text-text-secondary transition-colors hover:bg-midground/5 hover:text-midground"
           >
             <Icon className="h-4 w-4 shrink-0" />
-            <span className="flex-1 truncate">{label}</span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate">{label}</span>
+              {description && (
+                <span className="truncate text-xs text-text-tertiary">
+                  {description}
+                </span>
+              )}
+            </span>
             <ChevronRight className="h-4 w-4 shrink-0 opacity-40 transition-transform group-hover:translate-x-0.5" />
           </NavLink>
         ))}
@@ -122,6 +148,7 @@ export default function SettingsHubPage() {
       </CardDescription>
       <div className="flex flex-col gap-4">
         <HubGroup title="Home" items={HOME_ITEMS} />
+        <HubGroup title="Connections" items={CONNECTION_ITEMS} />
         <HubGroup title="Organization" items={ORG_ITEMS} />
         <HubGroup title="Agent" items={AGENT_ITEMS} />
         <HubGroup title="System" items={SYSTEM_ITEMS} />

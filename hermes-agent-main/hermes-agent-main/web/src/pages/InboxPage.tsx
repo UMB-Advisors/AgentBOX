@@ -29,6 +29,7 @@ import type {
   ThreadHistoryMessage,
 } from "@/lib/api";
 import { usePageHeader } from "@/contexts/usePageHeader";
+import { useAccountView } from "@/contexts/useAccountView";
 import { RoutingBadge } from "@/components/inbox/RoutingBadge";
 import { EditDiff } from "@/components/inbox/EditDiff";
 import { ActionItemsPanel } from "@/components/inbox/ActionItemsPanel";
@@ -136,9 +137,12 @@ export default function InboxPage() {
     setTitle("Incoming Messages");
   }, [setTitle]);
 
+  // Global Combined / per-account selection (shared header selector). Bridged
+  // to the inbox's own numeric account model by matching ``email_address``.
+  const { view } = useAccountView();
+
   // Filters
   const [tab, setTab] = useState<string>(STATUS_TABS[0].key);
-  const [accountId, setAccountId] = useState<string>("all");
   const [channel, setChannel] = useState<string>("all");
 
   // Data
@@ -155,6 +159,23 @@ export default function InboxPage() {
     [tab],
   );
 
+  // Map the global account view → this inbox's numeric account id. "combined"
+  // shows every account; a specific email resolves to its matching inbox
+  // account by ``email_address``.
+  const matchedAccount = useMemo(
+    () =>
+      view === "combined"
+        ? null
+        : accounts.find(
+            (a) => a.email_address.toLowerCase() === view.toLowerCase(),
+          ) ?? null,
+    [view, accounts],
+  );
+  // The selected Google account has no corresponding inbox account (the two
+  // systems aren't fully unified yet) — show an empty, explained state.
+  const noInboxForView =
+    view !== "combined" && accounts.length > 0 && !matchedAccount;
+
   const loadAccounts = useCallback(() => {
     api
       .inboxListAccounts()
@@ -165,7 +186,13 @@ export default function InboxPage() {
   const loadDrafts = useCallback(() => {
     setLoading(true);
     setLoadError(null);
-    const acct = accountId === "all" ? undefined : Number(accountId);
+    if (noInboxForView) {
+      setRows([]);
+      setSelectedDraftId(null);
+      setLoading(false);
+      return;
+    }
+    const acct = view === "combined" ? undefined : matchedAccount?.id;
     api
       .inboxListDrafts(statusCsv, 200, acct)
       .then((res) => {
@@ -180,7 +207,7 @@ export default function InboxPage() {
         setRows([]);
       })
       .finally(() => setLoading(false));
-  }, [statusCsv, accountId]);
+  }, [statusCsv, view, matchedAccount, noInboxForView]);
 
   useEffect(() => {
     loadAccounts();
@@ -250,22 +277,6 @@ export default function InboxPage() {
         </div>
 
         <div className="flex flex-wrap items-end gap-3">
-          <div className="grid gap-1 min-w-[180px]">
-            <Label htmlFor="inbox-account">Account</Label>
-            <Select
-              id="inbox-account"
-              value={accountId}
-              onValueChange={(v) => setAccountId(v)}
-            >
-              <SelectOption value="all">All accounts</SelectOption>
-              {accounts.map((a) => (
-                <SelectOption key={a.id} value={String(a.id)}>
-                  {a.display_label || a.email_address}
-                </SelectOption>
-              ))}
-            </Select>
-          </div>
-
           <div className="grid gap-1 min-w-[140px]">
             <Label htmlFor="inbox-channel">Channel</Label>
             <Select
@@ -303,6 +314,11 @@ export default function InboxPage() {
           selectedId={selectedDraftId}
           onSelect={setSelectedDraftId}
           onRetry={loadDrafts}
+          emptyHint={
+            noInboxForView
+              ? `${view} isn't connected to the inbox — switch the account selector to Combined to see all messages.`
+              : undefined
+          }
         />
         <InboxDetail
           row={selected}
@@ -324,6 +340,7 @@ interface InboxListProps {
   selectedId: number | null;
   onSelect: (id: number) => void;
   onRetry: () => void;
+  emptyHint?: string;
 }
 
 function InboxList({
@@ -333,6 +350,7 @@ function InboxList({
   selectedId,
   onSelect,
   onRetry,
+  emptyHint,
 }: InboxListProps) {
   return (
     <Card className="flex min-h-0 flex-col overflow-hidden">
@@ -354,7 +372,7 @@ function InboxList({
 
         {!loading && !error && rows.length === 0 && (
           <div className="py-16 text-center text-sm text-muted-foreground">
-            No messages in this view
+            {emptyHint ?? "No messages in this view"}
           </div>
         )}
 

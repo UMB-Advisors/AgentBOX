@@ -46,4 +46,23 @@ PUBLIC_API_PATHS: frozenset[str] = frozenset({
     # Read-only theme + plugin manifests for the dashboard skin engine.
     "/api/dashboard/themes",
     "/api/dashboard/plugins",
+    # Google Workspace OAuth: these two are full-page browser navigations (the
+    # operator clicks "Connect", Google redirects back), so they cannot carry
+    # the dashboard session header. They are NOT unauthenticated in effect —
+    # ``start`` only redirects to Google's consent screen, and ``callback`` is
+    # CSRF-protected by a signed ``state`` matched against an HttpOnly cookie
+    # set on ``start`` (see web_server.py). Account list/delete are deliberately
+    # NOT here — they stay session-gated.
+    "/api/google/auth/start",
+    "/api/google/auth/callback",
+    # Shopify store OAuth: same rationale as the Google pair above — these two
+    # are full-page browser navigations (operator clicks "Connect", Shopify
+    # redirects back), so they cannot carry the dashboard session header. They
+    # are NOT unauthenticated in effect — ``start`` only validates the shop and
+    # redirects to Shopify's consent screen, and ``callback`` is CSRF-protected
+    # by a signed ``state`` matched against an HttpOnly cookie set on ``start``
+    # (plus a shop-domain match). Store list/delete are deliberately NOT here —
+    # they stay session-gated.
+    "/api/shopify/auth/start",
+    "/api/shopify/auth/callback",
 })

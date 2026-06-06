@@ -1415,30 +1415,457 @@ async def get_digest_calendar():
 # fetched separately by the SPA. Cached briefly so each Home load doesn't hit
 # the Google APIs.
 # ---------------------------------------------------------------------------
-_BRIEF_CACHE: Dict[str, Any] = {"ts": 0.0, "data": None}
+_BRIEF_CACHE: Dict[str, Any] = {}  # keyed by account view ("combined" | "<email>")
 _BRIEF_TTL_SECONDS = 60.0
 
 
 @app.get("/api/digest/brief")
-async def get_digest_brief():
+async def get_digest_brief(request: Request):
     """Gmail + Google Calendar for the Home daily brief.
 
-    Returns ``{connected, gmail:{messages,error}, calendar:{events,error}}``.
+    ``?account=<email>`` restricts the view to one connected account; omitted
+    (or ``combined``/``all``) aggregates across every connected account. The
+    payload also carries ``accounts`` (all connected emails) so the SPA can
+    render its Combined / per-account selector, and tags each item with its
+    source ``account``.
+
     Always 200: with no Google token the payload is the disconnected shape so
     the SPA shows a "Connect Google" state rather than erroring (and a 401 here
     would wrongly trip the loopback stale-token reload in ``fetchJSON``).
     """
     from hermes_cli import google_brief
 
+    raw = (request.query_params.get("account") or "").strip()
+    key = raw.lower() or "combined"
+    arg = None if key in ("combined", "all") else raw
+
     mono = time.monotonic()
-    cached = _BRIEF_CACHE.get("data")
-    if cached is not None and (mono - _BRIEF_CACHE.get("ts", 0.0)) < _BRIEF_TTL_SECONDS:
-        return JSONResponse(cached)
+    entry = _BRIEF_CACHE.get(key)
+    if entry is not None and (mono - entry.get("ts", 0.0)) < _BRIEF_TTL_SECONDS:
+        return JSONResponse(entry["data"])
 
     loop = asyncio.get_running_loop()
-    data = await loop.run_in_executor(None, google_brief.build_brief)
-    _BRIEF_CACHE["ts"] = mono
-    _BRIEF_CACHE["data"] = data
+    data = await loop.run_in_executor(None, google_brief.build_brief, arg)
+    _BRIEF_CACHE[key] = {"ts": mono, "data": data}
+    return JSONResponse(data)
+
+
+# ---------------------------------------------------------------------------
+# Google Workspace — multi-account connect (dashboard OAuth, Web client).
+#
+# ``start`` and ``callback`` are full-page browser navigations, so they can't
+# carry the dashboard session header — they live on the PUBLIC allowlist
+# (dashboard_auth/public_paths.py) and are CSRF-protected by a signed ``state``
+# matched against an HttpOnly cookie. ``accounts`` (list/delete) are normal
+# SPA fetches and stay behind the session gate.
+# ---------------------------------------------------------------------------
+_GOOGLE_STATE_COOKIE = "g_oauth_state"
+
+
+def _google_redirect_uri(request: "Request") -> str:
+    """Build the callback URL from the request so it matches whichever entry
+    point the operator is on (tunnel → http://localhost:9119/…, funnel →
+    https://mailbox2.…/…). Both are registered on the OAuth client; Google
+    requires an exact match against ``redirect_uri``."""
+    proto = (
+        request.headers.get("x-forwarded-proto")
+        or request.url.scheme
+        or "http"
+    ).split(",")[0].strip()
+    host = (
+        request.headers.get("x-forwarded-host")
+        or request.headers.get("host")
+        or request.url.netloc
+    ).split(",")[0].strip()
+    return f"{proto}://{host}/api/google/auth/callback"
+
+
+def _google_settings_redirect(status: str, detail: str = ""):
+    from urllib.parse import urlencode
+
+    from fastapi.responses import RedirectResponse
+
+    qs = urlencode({"google": status, **({"detail": detail} if detail else {})})
+    return RedirectResponse(url=f"/settings/google?{qs}", status_code=303)
+
+
+@app.get("/api/google/auth/start")
+async def google_auth_start(request: Request):
+    """Begin the OAuth dance: set a CSRF state cookie, redirect to Google."""
+    from fastapi.responses import RedirectResponse
+
+    from hermes_cli import google_accounts
+
+    if not google_accounts.client_configured():
+        return _google_settings_redirect("error", "no_client")
+    try:
+        redirect_uri = _google_redirect_uri(request)
+        state = secrets.token_urlsafe(24)
+        url = google_accounts.build_auth_url(redirect_uri, state)
+    except Exception:  # noqa: BLE001
+        _log.warning("google auth start failed", exc_info=True)
+        return _google_settings_redirect("error", "start_failed")
+    resp = RedirectResponse(url=url, status_code=303)
+    is_https = request.url.scheme == "https" or request.headers.get(
+        "x-forwarded-proto", ""
+    ).startswith("https")
+    resp.set_cookie(
+        _GOOGLE_STATE_COOKIE,
+        state,
+        max_age=600,
+        httponly=True,
+        samesite="lax",
+        secure=is_https,
+        path="/api/google",
+    )
+    return resp
+
+
+@app.get("/api/google/auth/callback")
+async def google_auth_callback(request: Request):
+    """Google redirects back here with ``code`` + ``state``. Verify the state
+    against the cookie, exchange the code, resolve the account email, persist
+    the per-account token, then bounce to Settings → Google."""
+    from hermes_cli import google_accounts
+
+    if request.query_params.get("error"):
+        return _google_settings_redirect("error", request.query_params["error"])
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    cookie_state = request.cookies.get(_GOOGLE_STATE_COOKIE)
+    if (
+        not code
+        or not state
+        or not cookie_state
+        or not hmac.compare_digest(state, cookie_state)
+    ):
+        return _google_settings_redirect("error", "bad_state")
+    try:
+        redirect_uri = _google_redirect_uri(request)
+        loop = asyncio.get_running_loop()
+        token = await loop.run_in_executor(
+            None, google_accounts.exchange_code, code, redirect_uri
+        )
+        email = await loop.run_in_executor(
+            None, google_accounts.userinfo_email, token.get("access_token")
+        )
+        await loop.run_in_executor(
+            None, google_accounts.save_account, token, email
+        )
+    except Exception:  # noqa: BLE001
+        _log.warning("google auth callback failed", exc_info=True)
+        resp = _google_settings_redirect("error", "exchange_failed")
+        resp.delete_cookie(_GOOGLE_STATE_COOKIE, path="/api/google")
+        return resp
+    _BRIEF_CACHE.clear()  # force the brief to re-aggregate with the new account
+    resp = _google_settings_redirect("connected", email)
+    resp.delete_cookie(_GOOGLE_STATE_COOKIE, path="/api/google")
+    return resp
+
+
+@app.get("/api/google/accounts")
+async def google_list_accounts():
+    """Connected Google accounts + whether the OAuth client is set up."""
+    from hermes_cli import google_accounts
+
+    return JSONResponse(
+        {
+            "client_configured": google_accounts.client_configured(),
+            "accounts": google_accounts.list_accounts(),
+        }
+    )
+
+
+@app.delete("/api/google/accounts/{email}")
+async def google_delete_account(email: str, request: Request):
+    """Revoke + remove a connected account."""
+    from hermes_cli import google_accounts
+
+    loop = asyncio.get_running_loop()
+    removed = await loop.run_in_executor(
+        None, google_accounts.delete_account, email
+    )
+    _BRIEF_CACHE.clear()
+    return JSONResponse({"removed": removed})
+
+
+# ---------------------------------------------------------------------------
+# Shopify store connect (dashboard OAuth) — mirrors the Google endpoints above.
+# The two ``auth/*`` endpoints are full-page browser navigations (the operator
+# clicks "Connect", Shopify redirects back), so they can't carry the dashboard
+# session header and are allowlisted in dashboard_auth.public_paths. The store
+# list/disconnect endpoints stay behind the session gate.
+# ---------------------------------------------------------------------------
+_SHOPIFY_STATE_COOKIE = "shopify_oauth_state"
+_SHOPIFY_SHOP_COOKIE = "shopify_oauth_shop"
+
+
+def _shopify_redirect_uri(request: "Request") -> str:
+    """Build the callback URL from the request so it matches whichever entry
+    point the operator is on (tunnel / funnel). Computed exactly like the
+    Google redirect URI — this is the URL that must be allowlisted in the
+    Shopify app's OAuth configuration."""
+    proto = (
+        request.headers.get("x-forwarded-proto")
+        or request.url.scheme
+        or "http"
+    ).split(",")[0].strip()
+    host = (
+        request.headers.get("x-forwarded-host")
+        or request.headers.get("host")
+        or request.url.netloc
+    ).split(",")[0].strip()
+    return f"{proto}://{host}/api/shopify/auth/callback"
+
+
+def _shopify_settings_redirect(status: str, detail: str = ""):
+    from urllib.parse import urlencode
+
+    from fastapi.responses import RedirectResponse
+
+    qs = urlencode({"shopify": status, **({"detail": detail} if detail else {})})
+    return RedirectResponse(url=f"/settings/shopify?{qs}", status_code=303)
+
+
+@app.get("/api/shopify/auth/start")
+async def shopify_auth_start(request: Request):
+    """Begin the Shopify OAuth dance: validate ``shop``, set a CSRF state cookie
+    (+ remember the shop), redirect to the store's consent screen."""
+    from fastapi.responses import RedirectResponse
+
+    from hermes_cli import shopify_accounts
+
+    if not shopify_accounts.client_configured():
+        return _shopify_settings_redirect("error", "no_client")
+    shop = request.query_params.get("shop", "")
+    if not shopify_accounts.valid_shop((shop or "").strip().lower()):
+        return _shopify_settings_redirect("error", "bad_shop")
+    try:
+        shop = shopify_accounts.normalize_shop(shop)
+        redirect_uri = _shopify_redirect_uri(request)
+        state = secrets.token_urlsafe(24)
+        url = shopify_accounts.build_auth_url(shop, redirect_uri, state)
+    except Exception:  # noqa: BLE001
+        _log.warning("shopify auth start failed", exc_info=True)
+        return _shopify_settings_redirect("error", "start_failed")
+    resp = RedirectResponse(url=url, status_code=303)
+    is_https = request.url.scheme == "https" or request.headers.get(
+        "x-forwarded-proto", ""
+    ).startswith("https")
+    cookie_kw = dict(
+        max_age=600,
+        httponly=True,
+        samesite="lax",
+        secure=is_https,
+        path="/api/shopify",
+    )
+    resp.set_cookie(_SHOPIFY_STATE_COOKIE, state, **cookie_kw)
+    # The shop isn't returned in Shopify's callback in a trustworthy way, so we
+    # pin it to the CSRF cookie and verify the callback's ``shop`` against it.
+    resp.set_cookie(_SHOPIFY_SHOP_COOKIE, shop, **cookie_kw)
+    return resp
+
+
+@app.get("/api/shopify/auth/callback")
+async def shopify_auth_callback(request: Request):
+    """Shopify redirects back here with ``code`` + ``state`` (+ ``shop``).
+    Verify the state against the cookie, confirm the shop matches the one we
+    started with, exchange the code for an offline token, persist it, then
+    bounce to Settings → Shopify."""
+    from hermes_cli import shopify_accounts
+
+    def _clear(resp):
+        resp.delete_cookie(_SHOPIFY_STATE_COOKIE, path="/api/shopify")
+        resp.delete_cookie(_SHOPIFY_SHOP_COOKIE, path="/api/shopify")
+        return resp
+
+    if request.query_params.get("error"):
+        # Allowlist the OAuth error before it is reflected into the SPA's URL.
+        raw_err = request.query_params.get("error", "")
+        safe_err = raw_err if raw_err in {
+            "access_denied", "invalid_request", "unauthorized_client",
+        } else "denied"
+        return _clear(_shopify_settings_redirect("error", safe_err))
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    shop = (request.query_params.get("shop") or "").strip().lower()
+    cookie_state = request.cookies.get(_SHOPIFY_STATE_COOKIE)
+    cookie_shop = (request.cookies.get(_SHOPIFY_SHOP_COOKIE) or "").strip().lower()
+    if (
+        not code
+        or not state
+        or not cookie_state
+        or not hmac.compare_digest(state, cookie_state)
+    ):
+        return _clear(_shopify_settings_redirect("error", "bad_state"))
+    # The shop must be a valid *.myshopify.com host AND match the one the flow
+    # started with — never trust the callback's shop on its own.
+    if (
+        not shopify_accounts.valid_shop(shop)
+        or not cookie_shop
+        or shop != cookie_shop  # shop is not a secret; plain compare is correct
+    ):
+        return _clear(_shopify_settings_redirect("error", "bad_shop"))
+    try:
+        loop = asyncio.get_running_loop()
+        token = await loop.run_in_executor(
+            None, shopify_accounts.exchange_code, shop, code
+        )
+        await loop.run_in_executor(
+            None, shopify_accounts.save_store, shop, token
+        )
+    except Exception:  # noqa: BLE001
+        _log.warning("shopify auth callback failed", exc_info=True)
+        return _clear(_shopify_settings_redirect("error", "exchange_failed"))
+    return _clear(_shopify_settings_redirect("connected", shop))
+
+
+@app.get("/api/shopify/accounts")
+async def shopify_list_accounts():
+    """Connected Shopify stores + whether the OAuth app is set up. Never
+    includes access tokens."""
+    from hermes_cli import shopify_accounts
+
+    return JSONResponse(
+        {
+            "client_configured": shopify_accounts.client_configured(),
+            "accounts": shopify_accounts.list_stores(),
+        }
+    )
+
+
+@app.delete("/api/shopify/accounts/{shop}")
+async def shopify_delete_account(shop: str, request: Request):
+    """Forget a connected store (local token removal)."""
+    from hermes_cli import shopify_accounts
+
+    loop = asyncio.get_running_loop()
+    removed = await loop.run_in_executor(
+        None, shopify_accounts.delete_store, shop
+    )
+    return JSONResponse({"removed": removed})
+
+
+class CalendarEventBody(BaseModel):
+    """Payload for create/update on the Calendar tab. ``account`` selects which
+    connected account's primary calendar to write to (blank = primary). Timed
+    events carry RFC3339 ``start``/``end`` (with offset); all-day events carry
+    ``YYYY-MM-DD`` with an exclusive ``end``."""
+    account: Optional[str] = None
+    title: str = ""
+    start: str = ""
+    end: str = ""
+    all_day: bool = False
+    location: str = ""
+    description: str = ""
+    timezone: Optional[str] = None
+
+
+@app.get("/api/google/calendar")
+async def get_google_calendar(request: Request):
+    """Events for the Calendar tab. ``?account=<email>`` filters to one account
+    (omitted/combined = all). ``?start=&end=`` (RFC3339) set an explicit window
+    for the month/week grids; otherwise ``?days=N`` spans today→+N (default 7).
+    Tags each event with its source account; session-gated like the brief."""
+    from hermes_cli import google_brief
+
+    raw = (request.query_params.get("account") or "").strip()
+    key = raw.lower() or "combined"
+    arg = None if key in ("combined", "all") else raw
+    start = (request.query_params.get("start") or "").strip() or None
+    end = (request.query_params.get("end") or "").strip() or None
+    try:
+        days = int(request.query_params.get("days") or 7)
+    except (TypeError, ValueError):
+        days = 7
+    loop = asyncio.get_running_loop()
+    data = await loop.run_in_executor(
+        None, google_brief.build_calendar, arg, days, start, end
+    )
+    return JSONResponse(data)
+
+
+@app.post("/api/google/calendar/events")
+async def create_google_calendar_event(body: CalendarEventBody):
+    """Create an event on a connected account's primary calendar."""
+    from hermes_cli import google_brief
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None, google_brief.create_event, body.account, body.model_dump()
+    )
+    _BRIEF_CACHE.clear()
+    if result.get("error"):
+        return JSONResponse(result, status_code=400)
+    return JSONResponse(result)
+
+
+@app.patch("/api/google/calendar/events/{event_id}")
+async def update_google_calendar_event(event_id: str, body: CalendarEventBody):
+    """Update an existing event on a connected account's primary calendar."""
+    from hermes_cli import google_brief
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None, google_brief.update_event, body.account, event_id, body.model_dump()
+    )
+    _BRIEF_CACHE.clear()
+    if result.get("error"):
+        return JSONResponse(result, status_code=400)
+    return JSONResponse(result)
+
+
+@app.delete("/api/google/calendar/events/{event_id}")
+async def delete_google_calendar_event(event_id: str, request: Request):
+    """Delete an event from a connected account's primary calendar.
+    ``?account=<email>`` selects the owning account (blank = primary)."""
+    from hermes_cli import google_brief
+
+    account = (request.query_params.get("account") or "").strip() or None
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None, google_brief.delete_event, account, event_id
+    )
+    _BRIEF_CACHE.clear()
+    if result.get("error"):
+        return JSONResponse(result, status_code=400)
+    return JSONResponse(result)
+
+
+@app.get("/api/google/drive")
+async def get_google_drive(request: Request):
+    """Recent / name-searched Drive files for the Drive tab. ``?account=<email>``
+    filters (omitted/combined = all); ``?q=<text>`` name-searches. Tags each file
+    with its source account; session-gated."""
+    from hermes_cli import google_brief
+
+    raw = (request.query_params.get("account") or "").strip()
+    key = raw.lower() or "combined"
+    arg = None if key in ("combined", "all") else raw
+    q = (request.query_params.get("q") or "").strip() or None
+    loop = asyncio.get_running_loop()
+    data = await loop.run_in_executor(None, google_brief.build_drive, arg, q)
+    return JSONResponse(data)
+
+
+@app.post("/api/google/contacts/import")
+async def google_import_contacts(request: Request):
+    """Import Google Contacts (People API) from one or all connected accounts
+    into the CRM (`source='google'`, deduped by external_id). ``?account=<email>``
+    limits to one account; omitted/combined = all. Session-gated."""
+    from hermes_cli import google_people
+
+    raw = (request.query_params.get("account") or "").strip()
+    arg = None if raw.lower() in ("", "combined", "all") else raw
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, google_people.import_contacts, arg)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("google contacts import failed", exc_info=True)
+        return JSONResponse(
+            {"imported": 0, "updated": 0, "error": f"Import failed: {exc}"},
+            status_code=500,
+        )
     return JSONResponse(data)
 
 
@@ -4768,6 +5195,24 @@ def mount_spa(application: FastAPI):
     # auth middleware (same as the SPA + the /dashboard inbox proxy); the edge
     # (Caddy basic-auth) already fronts the whole origin.
     if GRAPH_APP_DIST.is_dir() and (GRAPH_APP_DIST / "index.html").is_file():
+        # The graph snapshot is MUTABLE (regenerated as the brain changes), but
+        # StaticFiles sends no Cache-Control, so browsers heuristically cache it
+        # and keep showing a stale graph across refreshes — e.g. an old export
+        # with no `layers`, which the UA dashboard renders as a blank canvas.
+        # Serve this one file with `no-cache` so every load revalidates. Must be
+        # registered BEFORE the mount below so it wins for this exact path.
+        _graph_snapshot = GRAPH_APP_DIST / "knowledge-graph.json"
+
+        @application.get("/graph-app/knowledge-graph.json")
+        async def graph_snapshot():
+            if not _graph_snapshot.is_file():
+                return JSONResponse({"error": "no graph snapshot yet"}, status_code=404)
+            return Response(
+                content=_graph_snapshot.read_bytes(),
+                media_type="application/json",
+                headers={"Cache-Control": "no-cache"},
+            )
+
         application.mount(
             "/graph-app",
             StaticFiles(directory=GRAPH_APP_DIST, html=True),

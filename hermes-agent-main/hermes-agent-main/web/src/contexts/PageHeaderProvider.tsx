@@ -4,6 +4,7 @@ import { PageHeaderContext } from "./page-header-context";
 import { resolvePageTitle } from "@/lib/resolve-page-title";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
+import { GlobalAccountSelector } from "@/components/GlobalAccountSelector";
 
 export function PageHeaderProvider({
   children,
@@ -104,6 +105,13 @@ export function PageHeaderProvider({
                   {afterTitle}
                 </div>
               ) : null}
+            </div>
+
+            {/* Global Combined / per-account switcher — present on every page so
+                all account-aware tabs share one selection. Renders nothing
+                unless 2+ Google accounts are connected. */}
+            <div className="flex shrink-0 items-center justify-end sm:order-last">
+              <GlobalAccountSelector />
             </div>
 
             {end ? (

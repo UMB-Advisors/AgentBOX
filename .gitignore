@@ -29,3 +29,7 @@ result-*
 .DS_Store
 *.swp
 .direnv/
+
+# Claude Code agent worktrees (local session state, not source).
+# ``**/`` so it matches nested checkouts, not just the repo root.
+**/.claude/worktrees/
