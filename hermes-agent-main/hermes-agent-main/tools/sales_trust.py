@@ -179,21 +179,25 @@ def record_outcome(
     ai_draft: str = "",
     human_final: str = "",
     *,
+    magnitude: Optional[float] = None,
     structural_change: bool = False,
     rejected: bool = False,
 ) -> Dict[str, Any]:
     """Record a human's verdict on one AI-produced artifact and update the counter.
 
-    Clean = not rejected AND edit_magnitude(ai_draft, human_final) <= threshold
-    AND not a structural change. Clean increments the streak (and may graduate a
-    level); a rejection or material/structural edit resets the streak to 0.
+    Clean = not rejected AND edit magnitude <= threshold AND not a structural
+    change. Clean increments the streak (and may graduate a level); a rejection
+    or material/structural edit resets the streak to 0.
+
+    Pass ``magnitude`` directly when the caller already computed it (e.g. the
+    blog loop) to skip recomputing from ``ai_draft``/``human_final``.
     """
     state = get_state(job_id)
-    magnitude: Optional[float] = None
     if rejected:
         clean = False
     else:
-        magnitude = _edit_magnitude(ai_draft, human_final)
+        if magnitude is None:
+            magnitude = _edit_magnitude(ai_draft, human_final)
         clean = (magnitude <= state["material_threshold"]) and not structural_change
 
     state["last_edit_magnitude"] = magnitude

@@ -608,6 +608,24 @@ def _handle_record_lesson(args: dict, **kw) -> str:
         edit_magnitude=edit_mag,
         lessons_count=len(written),
     )
+
+    # Blog is the reference channel of the Content Engine (Job 1.3): feed the
+    # shared sales trust counter so the loop graduates L0 -> L1 -> L2 as the
+    # editor stops materially changing drafts. Best-effort.
+    trust_header = None
+    try:
+        from tools import sales_trust
+        trust = sales_trust.record_outcome(
+            "1.3",
+            magnitude=(edit_mag if edit_mag is not None else 0.0),
+            rejected=(status == "rejected"),
+        )
+        trust_header = sales_trust.trust_header("1.3")
+        logger.info("blog_learning: Job 1.3 trust -> L%s (%s clean)",
+                    trust.get("level"), trust.get("consecutive_clean"))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("blog_learning sales_trust update skipped: %s", e)
+
     return tool_result(
         {
             "recorded": len(written),
@@ -615,6 +633,7 @@ def _handle_record_lesson(args: dict, **kw) -> str:
             "lesson_files": written,
             "status": status,
             "digest": str(digest_path()),
+            "trust_header": trust_header,
         }
     )
 
