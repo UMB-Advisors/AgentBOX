@@ -36,25 +36,36 @@ OPERATOR_EMAIL = os.getenv("SHOPIFY_OPERATOR_EMAIL", "consultingfutures@gmail.co
 BLOG_HANDLE = "yes-blog"
 
 PROMPT = f"""\
-Pick ONE timely topic for the Yes Cacao blog from these themes: product \
+Pick ONE timely topic for the YES! blog from these themes: product \
 education, ingredient science, functional benefits, recipes/rituals, \
 sourcing/sustainability, brand story. Choose the freshest/most seasonally \
 relevant angle and ground it with quick web research (web_search/web_extract) \
 for any facts or trends you cite.
 
-Write a complete blog post in the Yes Cacao brand voice (use the brand skill), \
+BRAND RULES (non-negotiable; also in the brand skill):
+- The brand is ALWAYS written "YES!" — capitalized, with the exclamation mark. \
+Never "Yes", "Yes Cacao", or "YES" without the "!".
+- The product line is ALWAYS called "Celebrational Cacao".
+
+Write a complete blog post in the YES! brand voice (use the brand skill), \
 ~600-900 words, as semantic HTML in body_html (use <h2>, <p>, <ul> etc - no \
-<html>/<body> wrapper). Give it a compelling title and a 1-2 sentence \
+<html>/<body> wrapper). Optimize for AEO (Answer Engine Optimization), kept \
+natural: open with a clear, self-contained answer to the post's core question; \
+use question-style H2s that match how people actually ask; keep paragraphs \
+short and directly quotable; define key terms early; add a brief FAQ if it \
+fits. No keyword stuffing. Give it a compelling title and a 1-2 sentence \
 summary_html. Add 3-6 relevant tags.
 
 Generate a featured image: call image_generate with provider="openai-codex", a \
 16:9 / wide aspect ratio, and a brand-appropriate prompt based on the topic \
-(warm, botanical, product-forward Yes Cacao chocolate aesthetic; photographic; \
-NO text or words in the image). Note the returned image file path.
+(warm, celebratory, botanical, product-forward YES! Celebrational Cacao \
+aesthetic; photographic). Feature YES!-branded Celebrational Cacao products in \
+the scene whenever it makes sense (product packaging in-frame is intended); \
+avoid overlaid text, captions, or watermarks. Note the returned image file path.
 
 Create it as an UNPUBLISHED DRAFT on the '{BLOG_HANDLE}' blog by calling \
 create_shopify_blog_post(blog="{BLOG_HANDLE}", title=..., body_html=..., \
-summary_html=..., tags=..., author="Yes Cacao", \
+summary_html=..., tags=..., author="YES!", \
 image_path=<the file path returned by image_generate>, published=false).
 
 Then EMAIL a summary to the operator: call send_message with \
