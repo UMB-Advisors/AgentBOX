@@ -38,6 +38,7 @@
 - [Components](#components)
 - [Getting Started](#getting-started)
 - [Provisioning the Appliance](#provisioning-the-appliance)
+- [Reflashing the OS (JetPack)](#reflashing-the-os-jetpack)
 - [Repository Layout](#repository-layout)
 - [The thUMBox Family](#the-thumbox-family)
 - [Contributing](#contributing)
@@ -137,6 +138,15 @@ sudo ./provisioning/PROVISION_SCRIPT.sh   # TODO: name the actual entry script
 
 > [!TIP]
 > Provisioning wires up the agent, gBrain, the ACL layer, and the desktop into a single managed appliance. Review `infra/acl/` before exposing the box on a shared network.
+
+## Reflashing the OS (JetPack)
+
+Provisioning assumes a flashed JetPack base. To re‑image a box from scratch — e.g. moving the Orin Nano Super from JetPack 6.2 to **JetPack 7.2** (Jetson Linux r39.2, Ubuntu 24.04, CUDA 13), headless — follow the dedicated runbook:
+
+➡️ **[`docs/reflash-jetpack-7.2.v0.1.0.md`](./docs/reflash-jetpack-7.2.v0.1.0.md)** — backup → Force Recovery → `sdkmanager --cli` flash → headless (no desktop) → restore.
+
+> [!WARNING]
+> A reflash wipes the NVMe (root, Docker volumes, Tailscale state, users). Back up off‑box first, and note that the JetPack 6.2→7.2 jump (CUDA 12.6→13) requires rebuilding the GPU containers and updating the `provisioning/` pins. See the runbook's caveats.
 
 ## Repository Layout
 
