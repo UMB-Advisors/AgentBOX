@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # hermesBOX — Phase 0: base platform bring-up (idempotent)
-# Target: Jetson Orin Nano 8GB "super" devkit, JetPack 6.2 (L4T R36.5), CUDA 12.6, NVMe root.
+# Target: Jetson Orin Nano 8GB "super" devkit, JetPack 7.2 (L4T r39.2, Ubuntu 24.04), CUDA 13, NVMe root.
 # Runs AS the appliance user (mailbox) on the box. Safe to re-run.
 # Spec: docs/PRD-v1.0.0.md §8 Phase 0 · docs/CONTEXT-phase-0-v1.0.0.md · Linear UMB-379
 set -euo pipefail
 
 # Pinned versions (Constitution §4 — exact pins, no ranges)
-PY_VERSION="3.11"
-NODE_MAJOR="22"          # Node 22 LTS (Jod)
+PY_VERSION="3.11"        # uv-managed; 24.04 default is 3.12 but components pin 3.11
+NODE_MAJOR="22"          # Node 22 LTS (Jod); nodesource setup_22.x supports noble/24.04
 ENV_FILE="${HOME}/.hermesbox_env.sh"
 MARKER="# >>> hermesBOX env >>>"
 MARKER_END="# <<< hermesBOX env <<<"
@@ -52,7 +52,7 @@ fi
 log "5/6 — canonical env file (CUDA + uv + bun on PATH for all shells & systemd)"
 cat > "${ENV_FILE}" <<'EOF'
 # hermesBOX canonical environment — sourced by interactive shells and systemd units.
-# CUDA 12.6 (JetPack 6.2)
+# CUDA 13 (JetPack 7.2 / L4T r39.2)
 export CUDA_HOME="/usr/local/cuda"
 export PATH="${CUDA_HOME}/bin:${HOME}/.local/bin:${HOME}/.bun/bin:${PATH}"
 export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"

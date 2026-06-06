@@ -59,7 +59,7 @@ else
 fi
 
 log "4/4 — smoke: put a page, hybrid query, confirm hermes sees the MCP tools"
-printf "# hermesBOX\nThe hermesBOX appliance runs on an NVIDIA Jetson Orin Nano 8GB (JetPack 6.2), cloud Codex inference, gbrain memory.\n" | "$BUN" run "$CLI" put hermesbox-test >/dev/null 2>&1 || true
+printf "# hermesBOX\nThe hermesBOX appliance runs on an NVIDIA Jetson Orin Nano 8GB (JetPack 7.2), cloud Codex inference, gbrain memory.\n" | "$BUN" run "$CLI" put hermesbox-test >/dev/null 2>&1 || true
 "$BUN" run "$CLI" query "what hardware does hermesbox run on" 2>&1 | tail -3
 hermes mcp list 2>&1 | grep -i gbrain || echo "WARN: gbrain not in 'hermes mcp list'"
 echo "PHASE4_GBRAIN_DONE"
