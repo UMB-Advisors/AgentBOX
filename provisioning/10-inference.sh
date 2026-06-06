@@ -9,7 +9,7 @@ log() { printf '\n\033[1;36m[phase1]\033[0m %s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # ---------------------------------------------------------------------------
-log "1/4 — install Ollama (JetPack/Tegra CUDA build, systemd service)"
+log "1/4 — install Ollama (arm64 CUDA 13 build via official installer, systemd service)"
 if ! have ollama; then
   curl -fsSL https://ollama.com/install.sh | sh
 else
