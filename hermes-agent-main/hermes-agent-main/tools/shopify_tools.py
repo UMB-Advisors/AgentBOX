@@ -190,13 +190,26 @@ def _handle_create_blog_post(args: dict, **kw) -> str:
     if not body_html:
         return tool_error("Missing required parameter: body_html")
 
-    tags = args.get("tags", "") or ""
     author = args.get("author") or None
     summary_html = args.get("summary_html") or None
     published = bool(args.get("published", False))
     image_path = args.get("image_path") or None
     image_src = args.get("image_src") or None
     image_alt = args.get("image_alt") or None
+    # Learning-loop provenance hints (optional; default null).
+    topic = args.get("topic") or None
+    theme = args.get("theme") or None
+
+    # Every AgentBOX post carries the hidden ``agentbox`` tag so the
+    # learn-from-published loop can find it later. Best-effort: a failure in the
+    # learning module must never block post creation.
+    tags = args.get("tags", "") or ""
+    try:
+        from tools import blog_learning
+        tags = blog_learning.ensure_agentbox_tag(tags)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("blog_learning tag injection skipped: %s", e)
+        blog_learning = None
 
     try:
         result = create_blog_post(
@@ -211,10 +224,30 @@ def _handle_create_blog_post(args: dict, **kw) -> str:
             image_src=image_src,
             image_alt=image_alt,
         )
-        return json.dumps({"result": result})
     except Exception as e:
         logger.error("create_shopify_blog_post error: %s", e)
         return tool_error(f"Failed to create blog post: {e}")
+
+    # Write a provenance record of the AI's original draft (best-effort).
+    if blog_learning is not None:
+        try:
+            blog_learning.record_provenance(
+                article_id=result["id"],
+                blog_handle=blog,
+                title=title,
+                body_html=body_html,
+                summary_html=summary_html,
+                image_alt=image_alt,
+                image_path=image_path,
+                tags=tags,
+                topic=topic,
+                theme=theme,
+                model=os.getenv("HERMES_BLOG_MODEL"),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("blog_learning provenance write skipped: %s", e)
+
+    return json.dumps({"result": result})
 
 
 def _handle_resolve_blog_id(args: dict, **kw) -> str:
@@ -332,6 +365,20 @@ CREATE_SHOPIFY_BLOG_POST_SCHEMA = {
             "image_alt": {
                 "type": "string",
                 "description": "Optional alt text for the featured image; defaults to the title.",
+            },
+            "topic": {
+                "type": "string",
+                "description": (
+                    "Optional one-line topic of the post, recorded for the "
+                    "editorial learning loop (e.g. 'summer cacao cooler ritual')."
+                ),
+            },
+            "theme": {
+                "type": "string",
+                "description": (
+                    "Optional content theme, recorded for the learning loop "
+                    "(e.g. 'recipes/rituals', 'ingredient science')."
+                ),
             },
         },
         "required": ["blog", "title", "body_html"],
