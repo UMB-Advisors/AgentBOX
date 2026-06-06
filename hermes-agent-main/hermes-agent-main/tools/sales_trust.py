@@ -354,11 +354,81 @@ def summary_all() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+JOB_NAMES = {
+    "1.1": "Market & ICP Research", "1.2": "Funnel & Landing Pages",
+    "1.3": "Content Engine", "1.4": "Paid Ad Management",
+    "2.1": "Lead Enrichment", "2.2": "Outbound Sequencing",
+    "2.3": "Speed-to-Lead", "3.1": "Quote & Line-Sheet",
+    "3.2": "Pipeline & Forecasting", "3.3": "Reorder & Expansion",
+}
+
+
+def _esc(s: Any) -> str:
+    return (
+        str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    )
+
+
+def render_board() -> Path:
+    """Render a self-contained static HTML trust board from the state files and
+    write it to ``$HERMES_HOME/sales_trust/board.html``. Pure stdlib — the
+    dashboard can iframe/link it, or the operator can open it directly. Returns
+    the path."""
+    rows = summary_all()
+    cards = []
+    for r in rows:
+        jid = r.get("job_id")
+        name = JOB_NAMES.get(jid, jid)
+        lvl = r.get("level") or 0
+        n = r.get("N") or 1
+        cc = r.get("consecutive_clean") or 0
+        pct = 100 if lvl >= MAX_LEVEL else int(min(100, (cc / n) * 100)) if n else 0
+        badge = "frozen" if r.get("frozen") else (
+            "L2" if lvl >= MAX_LEVEL else f"L{lvl}")
+        sub = ("autonomous" if lvl >= MAX_LEVEL and not r.get("frozen")
+               else "frozen" if r.get("frozen")
+               else f"{cc}/{n} clean &rarr; L{lvl + 1}")
+        if r.get("pending_l2_authorization"):
+            sub += " (awaiting L2 auth)"
+        cards.append(
+            f'<div class="card"><div class="hdr"><span class="jid">{_esc(jid)}</span>'
+            f'<span class="badge b{lvl}">{_esc(badge)}</span></div>'
+            f'<div class="name">{_esc(name)}</div>'
+            f'<div class="bar"><i style="width:{pct}%"></i></div>'
+            f'<div class="sub">{sub}</div></div>'
+        )
+    html = (
+        "<!doctype html><meta charset=utf-8><title>YES! Sales Persona — Trust</title>"
+        "<style>body{background:#0f1115;color:#e6e6e6;font:14px/1.4 system-ui,sans-serif;margin:24px}"
+        "h1{font-size:18px;font-weight:600}.grid{display:grid;gap:12px;"
+        "grid-template-columns:repeat(auto-fill,minmax(220px,1fr));margin-top:16px}"
+        ".card{background:#1a1d24;border:1px solid #272b34;border-radius:10px;padding:14px}"
+        ".hdr{display:flex;justify-content:space-between;align-items:center}"
+        ".jid{color:#8b93a7;font-size:12px}.name{font-weight:600;margin:6px 0 10px}"
+        ".badge{font-size:11px;padding:2px 8px;border-radius:999px;background:#272b34}"
+        ".b1{background:#22384f;color:#7cc4ff}.b2{background:#1f4030;color:#7be0a3}"
+        ".bar{height:6px;background:#272b34;border-radius:4px;overflow:hidden}"
+        ".bar i{display:block;height:100%;background:linear-gradient(90deg,#5b8cff,#7be0a3)}"
+        ".sub{color:#8b93a7;font-size:12px;margin-top:8px}.empty{color:#8b93a7}</style>"
+        f"<h1>YES! Sales Persona — Autonomy Trust</h1>"
+        f'<div class="grid">{"".join(cards) or "<p class=empty>No jobs tracked yet.</p>"}</div>'
+        f"<p class=sub>Generated {_esc(_now_iso())} from $HERMES_HOME/sales_trust/</p>"
+    )
+    trust_dir().mkdir(parents=True, exist_ok=True)
+    out = trust_dir() / "board.html"
+    out.write_text(html, encoding="utf-8")
+    return out
+
+
 def _handle_status(args: dict, **kw) -> str:
     job_id = args.get("job_id")
     if job_id:
         return tool_result({"state": get_state(job_id), "header": trust_header(job_id)})
     return tool_result({"jobs": summary_all()})
+
+
+def _handle_board(args: dict, **kw) -> str:
+    return tool_result({"board_path": str(render_board()), "jobs": len(summary_all())})
 
 
 STATUS_SCHEMA = {
@@ -384,6 +454,16 @@ STATUS_SCHEMA = {
 # Registration
 # ---------------------------------------------------------------------------
 
+BOARD_SCHEMA = {
+    "name": "sales_trust_board",
+    "description": (
+        "Regenerate the static HTML Sales Persona trust board from the current "
+        "state files (a per-job L0/L1/L2 grid) and return its path. The dashboard "
+        "can iframe/link it; the operator can open it directly."
+    ),
+    "parameters": {"type": "object", "properties": {}},
+}
+
 from tools.registry import registry, tool_result  # noqa: E402
 
 registry.register(
@@ -392,4 +472,12 @@ registry.register(
     schema=STATUS_SCHEMA,
     handler=_handle_status,
     emoji="📈",
+)
+
+registry.register(
+    name="sales_trust_board",
+    toolset="sales",
+    schema=BOARD_SCHEMA,
+    handler=_handle_board,
+    emoji="🗂️",
 )

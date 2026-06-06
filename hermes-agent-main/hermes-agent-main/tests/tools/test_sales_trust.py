@@ -169,3 +169,23 @@ class TestSummaryAndTool:
         st.get_state("1.3")
         out = json.loads(st._handle_status({}))
         assert "jobs" in out and len(out["jobs"]) == 1
+
+
+class TestBoard:
+    def test_render_board_writes_html(self):
+        st.set_config("1.3", N=1)
+        st.record_outcome("1.3", "a", "a")  # -> L1
+        st.get_state("2.3")
+        path = st.render_board()
+        assert path.exists()
+        html = path.read_text()
+        assert "Trust" in html
+        assert "Content Engine" in html  # job 1.3 name
+        assert "Speed-to-Lead" in html   # job 2.3 name
+
+    def test_board_handler(self):
+        st.get_state("1.1")
+        out = json.loads(st._handle_board({}))
+        assert out["jobs"] == 1
+        from pathlib import Path
+        assert Path(out["board_path"]).exists()
