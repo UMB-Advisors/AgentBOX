@@ -1,10 +1,9 @@
 <!-- Banner/Logo -->
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="ASSETS_BANNER_DARK_URL">
-    <source media="(prefers-color-scheme: light)" srcset="ASSETS_BANNER_LIGHT_URL">
-    <!-- TODO: Replace ASSETS_BANNER_*_URL with the agentbox banner (see PrintIQ SVG banner workflow). 600–800px wide. -->
-    <img alt="agentbox" src="ASSETS_BANNER_LIGHT_URL" width="520">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark_v1.0.0.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/banner-light_v1.0.0.svg">
+    <img alt="agentbox" src="assets/banner-light_v1.0.0.svg" width="520">
   </picture>
 </p>
 
