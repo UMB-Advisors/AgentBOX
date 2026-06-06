@@ -1,0 +1,19 @@
+# Caddy in front of n8n for the Gmail-OAuth callback ingress, exposed via
+# Tailscale Funnel (TLS terminated at Funnel, so Caddy serves plain HTTP here).
+# basic_auth gates all paths — the OAuth callback still works because the
+# operator's authenticated browser carries the basic_auth through Google's
+# redirect. No bare n8n is ever public.
+#
+# Generate the hash:  docker run --rm caddy:2 caddy hash-password --plaintext '<pw>'
+# Then: funnel ->  tailscale funnel --bg 8088
+{
+	auto_https off
+}
+:8088 {
+	basic_auth {
+		admin REPLACE_WITH_BCRYPT_HASH
+	}
+	reverse_proxy n8n:5678 {
+		header_up Host REPLACE_WITH_TAILNET_FQDN
+	}
+}
