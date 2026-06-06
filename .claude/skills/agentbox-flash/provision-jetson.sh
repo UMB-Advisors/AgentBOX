@@ -57,6 +57,9 @@ run(){ if [ "$DRY" = 1 ]; then echo "DRY: $*"; else eval "$*"; fi; }
 : "${GIT_TOKEN:=}"                                   # for a private repo (PAT); never logged
 : "${AGENTBOX_REPO:=}"                               # only used when DEPLOY_SOURCE=local
 : "${BOX_CHECKOUT:=~/agentbox}"                      # where the repo lands on the box
+# The installer clones the MailBOX stack itself; pin it here if needed.
+: "${MAILBOX_GIT_URL:=https://github.com/UMB-Advisors/mailbox.git}"
+: "${MAILBOX_GIT_REF:=main}"
 
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8"
 BSSH(){ sshpass -p "$BOX_PASS" ssh $SSH_OPTS "$BOX_USER@$BOX_IP" "$@"; }
@@ -179,7 +182,7 @@ st_deploy(){
   # seed the token so the installer's STAGE 1 gate passes; installer writes the rest
   BSSH "cd $BOX_CHECKOUT && touch .env && grep -q '^GITHUB_PACKAGES_TOKEN=' .env || echo 'GITHUB_PACKAGES_TOKEN=$GITHUB_PACKAGES_TOKEN' >> .env"
   log "  running installer on box (streaming)..."
-  BSSH "cd $BOX_CHECKOUT && sg docker -c './install/agentbox-install.sh $INSTALL_MODE'"
+  BSSH "cd $BOX_CHECKOUT && sg docker -c 'MAILBOX_GIT_URL=$MAILBOX_GIT_URL MAILBOX_GIT_REF=$MAILBOX_GIT_REF ./install/agentbox-install.sh $INSTALL_MODE'"
 }
 
 # ── STAGE report ────────────────────────────────────────────────────────────

@@ -14,9 +14,12 @@
 #                 and DO NOT decommission a co-resident hermesBOX/OpenClaw
 #                 (stop-only, restorable). Production omits this flag.
 set -euo pipefail
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # AgentBOX checkout (installer + Hermes wiring)
 PROTOTYPE=0; [ "${1:-}" = "--prototype" ] && PROTOTYPE=1
+# The MailBOX stack is a SEPARATE repo, cloned by this installer (decision: installer-clones-mailbox).
+MAILBOX_GIT_URL="${MAILBOX_GIT_URL:-https://github.com/UMB-Advisors/mailbox.git}"
+MAILBOX_GIT_REF="${MAILBOX_GIT_REF:-main}"
+STACK_DIR="${STACK_DIR:-$HOME/mailbox}"                   # MailBOX stack checkout on the box
 log(){ echo "[$(date -u +%H:%M:%S)] $*"; }
 die(){ echo "FATAL: $*" >&2; exit 1; }
 PSQL(){ docker exec -i mailbox-postgres-1 psql -U "${POSTGRES_USER:-mailbox}" -d "${POSTGRES_DB:-mailbox}" "$@"; }
@@ -25,8 +28,28 @@ PSQL(){ docker exec -i mailbox-postgres-1 psql -U "${POSTGRES_USER:-mailbox}" -d
 log "STAGE 0 — preconditions"
 command -v docker >/dev/null || die "docker not installed"
 docker info 2>/dev/null | grep -qi nvidia || log "WARN: nvidia runtime not default — GPU inference may be unavailable"
-[ "$(df --output=avail -BG "$REPO" | tail -1 | tr -dc 0-9)" -ge 16 ] || die "need >=16GB free disk"
-git submodule update --init 2>/dev/null || log "WARN: submodule init skipped (vendor/thumbox-common needs auth; non-fatal for AgentBOX)"
+[ "$(df --output=avail -BG "$HOME" | tail -1 | tr -dc 0-9)" -ge 16 ] || die "need >=16GB free disk"
+
+# ── STAGE 0.5: MailBOX stack (clone the SEPARATE repo; cd into it) ─────────
+# AgentBOX = MailBOX stack + Hermes. The stack lives in its own repo; clone it
+# and run every stack stage below inside that checkout. (.env, docker-compose,
+# dashboard/ schema+migrations, n8n/workflows all come from MailBOX.)
+log "STAGE 0.5 — MailBOX stack ($MAILBOX_GIT_URL#$MAILBOX_GIT_REF -> $STACK_DIR)"
+# Carry a GITHUB_PACKAGES_TOKEN supplied via env or the AgentBOX .env into the stack .env.
+ABX_TOKEN="${GITHUB_PACKAGES_TOKEN:-}"
+[ -z "$ABX_TOKEN" ] && [ -f "$REPO/.env" ] && ABX_TOKEN="$(grep -m1 '^GITHUB_PACKAGES_TOKEN=' "$REPO/.env" | cut -d= -f2-)"
+if [ -f "$STACK_DIR/docker-compose.yml" ] && [ -d "$STACK_DIR/dashboard/migrations" ]; then
+  log "  existing MailBOX checkout — fetching $MAILBOX_GIT_REF"
+  git -C "$STACK_DIR" fetch --depth 1 origin "$MAILBOX_GIT_REF" >/dev/null 2>&1 \
+    && git -C "$STACK_DIR" checkout -f "$MAILBOX_GIT_REF" >/dev/null 2>&1 \
+    && git -C "$STACK_DIR" reset --hard FETCH_HEAD >/dev/null 2>&1 || log "  WARN: stack update skipped (local changes?)"
+elif [ -e "$STACK_DIR" ]; then
+  die "$STACK_DIR exists but is not a MailBOX checkout — move it aside or set STACK_DIR"
+else
+  git clone --depth 1 --branch "$MAILBOX_GIT_REF" "$MAILBOX_GIT_URL" "$STACK_DIR" || die "mailbox clone failed"
+fi
+cd "$STACK_DIR"   # ← all stack stages below run inside the MailBOX checkout
+[ -f docker-compose.yml ] && [ -f .env.example ] || die "MailBOX stack incomplete at $STACK_DIR"
 
 # ── STAGE 1: secrets + .env (gate ON; DR-66 security model) ───────────────
 log "STAGE 1 — secrets / .env"
@@ -42,6 +65,7 @@ if [ ! -f .env ]; then
       echo "N8N_ENCRYPTION_KEY=$(openssl rand -hex 32)"
       echo "MAILBOX_OAUTH_TOKEN_KEY=$(openssl rand -hex 32)"
       echo "MAILBOX_OAUTH_STATE_SECRET=$(openssl rand -hex 32)"
+      [ -n "$ABX_TOKEN" ] && echo "GITHUB_PACKAGES_TOKEN=$ABX_TOKEN"   # carried from env/AgentBOX .env
     else
       # Production: pull from 1Password (MailBOX vault). Never echo values.
       command -v op >/dev/null || die "1Password CLI 'op' required for production install (or use --prototype)"
