@@ -196,6 +196,27 @@ export function DraftDetail({
           {!readOnly && draft.message.classification && (
             <ClassificationOverride value={draft.message.classification} onChange={onReclassify} />
           )}
+          {/* MBOX-460 — calendar-availability indicator for scheduling drafts.
+              Reads the MBOX-130 flag set on the draft-prompt path. The boolean
+              is binary, so the copy is deliberately "checked" vs "unavailable"
+              rather than over-claiming real free/busy. Only shown on scheduling
+              drafts (the flag is a no-op default elsewhere). */}
+          {draft.message.classification === 'scheduling' &&
+            (draft.scheduling_calendar_unavailable ? (
+              <span
+                className="rounded-sm border border-accent-orange/40 bg-accent-orange/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-accent-orange"
+                title="Google Calendar could not be read when this draft was written (not connected, token expired, rate limited, or fetch failed) — proposed times may not reflect real availability."
+              >
+                Calendar unavailable
+              </span>
+            ) : (
+              <span
+                className="rounded-sm border border-accent-blue/40 bg-accent-blue/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-accent-blue"
+                title="Google Calendar availability was checked when this scheduling draft was written."
+              >
+                Calendar checked
+              </span>
+            ))}
           {draft.input_tokens != null && draft.output_tokens != null && (
             <span className="font-mono text-xs text-ink-dim">
               {draft.input_tokens}↗ / {draft.output_tokens}↙ tokens

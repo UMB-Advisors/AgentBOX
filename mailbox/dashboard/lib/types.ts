@@ -257,6 +257,13 @@ export interface Draft {
   // MBOX-131 — structured action items extracted post-draft-finalize. Empty
   // array when extraction found none, timed out, or errored (non-gating).
   action_items: ActionItem[];
+  // MBOX-460 — calendar-availability flag for `scheduling` drafts. The MBOX-130
+  // draft-prompt path sets it true when the calendar read failed (not connected
+  // / token expired / rate limited / fetch failed). Already on the wire via
+  // selectAll('d'); optional so the curated-view consumers and fixtures that
+  // predate it still typecheck. Surfaced as the "Calendar unavailable" indicator
+  // on scheduling drafts in DraftDetail.
+  scheduling_calendar_unavailable?: boolean;
 }
 
 export interface InboxMessage {
