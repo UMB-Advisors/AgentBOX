@@ -32,7 +32,7 @@ const META: Record<
   google_calendar: {
     title: 'Google Calendar',
     blurb:
-      'Read-only. Scheduling drafts pre-read your calendar so the box can propose concrete open times instead of "let me check my calendar." Also powers the Calendar panel in the right-side rail.',
+      'Scheduling drafts read your calendar so the box can propose concrete open times instead of "let me check my calendar," and (with your approval) create the event for you. Also powers the Calendar panel in the right-side rail.',
     Icon: Calendar,
   },
   google_tasks: {
@@ -57,6 +57,7 @@ function fallback(provider: OAuthProvider): OAuthConnection {
     account_email: null,
     last_fetched_at: null,
     connected_at: null,
+    needs_reconsent: false,
   };
 }
 
@@ -227,18 +228,42 @@ export function GoogleIntegrations({
                       Not connected
                     </p>
                   )}
+                  {/* MBOX-460 — re-consent prompt when a connected grant predates
+                      the current scope (calendar.events upgrade). Calendar reads
+                      degrade until the operator reconnects. */}
+                  {conn.connected && conn.needs_reconsent && (
+                    <p className="mt-2 font-sans text-xs text-accent-orange">
+                      Reconnect to grant calendar write access — scheduling drafts and event
+                      creation need re-consent. Calendar availability is paused until you do.
+                    </p>
+                  )}
                 </div>
 
                 <div className="shrink-0">
                   {conn.connected ? (
-                    <button
-                      type="button"
-                      onClick={() => disconnect(provider)}
-                      disabled={busy !== null}
-                      className="inline-flex items-center gap-1 rounded-sm border border-accent-red/40 px-2 py-1 font-sans text-xs text-accent-red transition-colors hover:bg-accent-red/10 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Unlink size={13} /> {busy === provider ? 'Disconnecting…' : 'Disconnect'}
-                    </button>
+                    <div className="flex flex-col items-end gap-1.5">
+                      {/* MBOX-460 — stale-scope grants (e.g. calendar.readonly
+                          after the calendar.events upgrade) get a Reconnect that
+                          re-runs consent with the new scope. */}
+                      {conn.needs_reconsent && (
+                        <button
+                          type="button"
+                          onClick={() => connect(provider)}
+                          disabled={busy !== null}
+                          className="inline-flex items-center gap-1 rounded-sm border border-accent-orange/50 px-2 py-1 font-sans text-xs text-accent-orange transition-colors hover:bg-accent-orange/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Link2 size={13} /> Reconnect
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => disconnect(provider)}
+                        disabled={busy !== null}
+                        className="inline-flex items-center gap-1 rounded-sm border border-accent-red/40 px-2 py-1 font-sans text-xs text-accent-red transition-colors hover:bg-accent-red/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Unlink size={13} /> {busy === provider ? 'Disconnecting…' : 'Disconnect'}
+                      </button>
+                    </div>
                   ) : (
                     <button
                       type="button"

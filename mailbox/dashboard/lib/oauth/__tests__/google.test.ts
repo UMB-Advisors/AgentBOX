@@ -110,7 +110,7 @@ describe('provider config', () => {
     }
   });
 
-  it('calendar scope is read-only', () => {
-    expect(PROVIDER_SCOPE.google_calendar).toContain('calendar.readonly');
+  it('calendar scope grants event read/write (MBOX-460 — scheduling reads + v2 event creation)', () => {
+    expect(PROVIDER_SCOPE.google_calendar).toContain('calendar.events');
   });
 });

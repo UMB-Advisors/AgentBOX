@@ -56,17 +56,22 @@ export const OAUTH_PROVIDERS = [
 ] as const;
 export type OAuthProvider = (typeof OAUTH_PROVIDERS)[number];
 
-// Per-provider scope. calendar.readonly is read-only (MBOX-130 — pre-read, not
-// write). tasks is read/write (MBOX-129 pushes a task). drive scope deferred to
-// STAQPRO-212. contacts.readonly is read-only (MBOX-398 — right-rail Contacts
-// panel only reads the operator's own connections via the People API).
-// gmail.readonly (MBOX-399 — per-account Sent-history voice backfill; read-only,
-// no send). NOTE the key is `google_gmail`, NOT `gmail`: this is an
+// Per-provider scope. calendar.events is read/write on Events (MBOX-460 —
+// supersedes the MBOX-130 calendar.readonly pre-read: scheduling drafts still
+// READ availability via events.list, AND v2 creates events on approve. The
+// upgrade is non-breaking for reads going forward, but existing calendar.readonly
+// grants no longer satisfy the getAccessToken scope-guard, so they surface
+// `needs_reconsent` and degrade calendar reads to scheduling_calendar_unavailable
+// until the operator reconnects). tasks is read/write (MBOX-129 pushes a task).
+// drive scope deferred to STAQPRO-212. contacts.readonly is read-only (MBOX-398 —
+// right-rail Contacts panel only reads the operator's own connections via the
+// People API). gmail.readonly (MBOX-399 — per-account Sent-history voice backfill;
+// read-only, no send). NOTE the key is `google_gmail`, NOT `gmail`: this is an
 // oauth_tokens.provider grant key (the google_* family), deliberately distinct
 // from the `gmail` MAIL TRANSPORT in lib/mail/providers/types.ts — that file's
 // naming-discipline note warns against conflating the two namespaces.
 export const PROVIDER_SCOPE: Record<OAuthProvider, string> = {
-  google_calendar: 'https://www.googleapis.com/auth/calendar.readonly',
+  google_calendar: 'https://www.googleapis.com/auth/calendar.events',
   google_tasks: 'https://www.googleapis.com/auth/tasks',
   google_drive: 'https://www.googleapis.com/auth/drive.readonly',
   google_contacts: 'https://www.googleapis.com/auth/contacts.readonly',
@@ -184,6 +189,21 @@ export interface OAuthConnection {
   account_email: string | null;
   last_fetched_at: string | null;
   connected_at: string | null;
+  // MBOX-460 — true when the account IS connected but its stored grant predates
+  // the current PROVIDER_SCOPE (e.g. a calendar.readonly grant after the
+  // calendar.events upgrade). Computed with the SAME scopeCovers() check the
+  // getAccessToken scope-guard uses, so the settings "Reconnect" prompt and the
+  // runtime 'auth' failure never disagree. While true, data fetches for this
+  // provider throw 'auth' (degrade) until the operator reconnects.
+  needs_reconsent: boolean;
+}
+
+// True when a stored grant's space-delimited scope string covers `required`.
+// Shared by getConnection (the settings reconsent signal) and getAccessToken
+// (the runtime scope-guard) so the "Reconnect" prompt and the 'auth' failure
+// agree. A null/absent scope never covers anything.
+function scopeCovers(scope: string | null | undefined, required: string): boolean {
+  return scope ? scope.split(/\s+/).includes(required) : false;
 }
 
 export async function getConnection(
@@ -206,13 +226,15 @@ export async function getConnection(
     [provider, acct],
   );
   const row = r.rows[0];
+  const connected = Boolean(row?.has_token);
   return {
     provider,
-    connected: Boolean(row?.has_token),
+    connected,
     scope: row?.scope ?? null,
     account_email: row?.account_email ?? null,
     last_fetched_at: row?.last_fetched_at ?? null,
     connected_at: row?.connected_at ?? null,
+    needs_reconsent: connected && !scopeCovers(row?.scope, PROVIDER_SCOPE[provider]),
   };
 }
 
@@ -472,7 +494,9 @@ export async function getAccessToken(
   // or revoked partial consent. Surface as 'auth' → caller prompts a reconnect.
   const conn = await getConnection(provider, accountId);
   const required = PROVIDER_SCOPE[provider];
-  if (!conn.scope?.split(/\s+/).includes(required)) {
+  // conn.needs_reconsent is `connected && !scopeCovers(scope, required)`; refresh
+  // existed above so connected is true → this is exactly the stale-scope case.
+  if (conn.needs_reconsent) {
     throw new OAuthTokenError(
       `${provider} grant is missing required scope ${required} — reconnect to re-consent`,
       'auth',
