@@ -7,7 +7,7 @@ import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { H2 } from "@nous-research/ui/ui/components/typography/h2";
 import { api } from "@/lib/api";
-import type { CronJob, ProfileInfo } from "@/lib/api";
+import type { CronJob, ProfileInfo, ModelOptionProvider } from "@/lib/api";
 import { crmApi } from "@/lib/crm";
 import type { Department, TeamMember } from "@/lib/crm";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
@@ -247,6 +247,10 @@ export default function CronPage() {
   const [schedule, setSchedule] = useState("");
   const [name, setName] = useState("");
   const [deliver, setDeliver] = useState("local");
+  // Per-job model override. "" = box default. Options come from /api/model/options
+  // (same source as the chat model picker); provider is resolved from the chosen model.
+  const [model, setModel] = useState("");
+  const [modelProviders, setModelProviders] = useState<ModelOptionProvider[]>([]);
   // CRM assignment. Stored as string select values ("" = none); coerced to
   // number on submit. Department/Employee lists come from the mailbox-dashboard
   // CRM (same-origin via the dashboard proxy).
@@ -272,6 +276,7 @@ export default function CronPage() {
     setPrompt("");
     setSchedule("");
     setDeliver("local");
+    setModel("");
     setDepartmentId("");
     setEmployeeId("");
     setCreateModalOpen(true);
@@ -284,6 +289,7 @@ export default function CronPage() {
     setPrompt(getJobPrompt(job));
     setSchedule(getJobScheduleRaw(job));
     setDeliver(asText(job.deliver) || "local");
+    setModel(asText(job.model) || "");
     setDepartmentId(job.department_id != null ? String(job.department_id) : "");
     setEmployeeId(job.employee_id != null ? String(job.employee_id) : "");
     setCreateModalOpen(true);
@@ -312,6 +318,15 @@ export default function CronPage() {
     crmApi.listTeam().then(setTeam).catch(() => setTeam([]));
   }, []);
 
+  // Model options for the per-job override. If unavailable, the select just shows
+  // "Box default" and jobs run with the box default model.
+  useEffect(() => {
+    api
+      .getModelOptions()
+      .then((r) => setModelProviders(r.providers ?? []))
+      .catch(() => setModelProviders([]));
+  }, []);
+
   useEffect(() => {
     loadJobs();
   }, [loadJobs]);
@@ -334,6 +349,14 @@ export default function CronPage() {
       employee_id: empIdNum,
       employee_name: team.find((m) => m.id === empIdNum)?.name ?? null,
     };
+    // Per-job model override; resolve its provider from the picker (null = box default).
+    const chosenModel = model.trim() || null;
+    const modelFields = {
+      model: chosenModel,
+      provider: chosenModel
+        ? (modelProviders.find((p) => (p.models ?? []).includes(chosenModel))?.slug ?? null)
+        : null,
+    };
     setCreating(true);
     try {
       if (isEditing && editingKey) {
@@ -345,6 +368,7 @@ export default function CronPage() {
             schedule: scheduleToSend,
             name: name.trim(),
             deliver,
+            ...modelFields,
             ...crmFields,
           },
           editingProfile,
@@ -357,6 +381,7 @@ export default function CronPage() {
             schedule: scheduleToSend,
             name: name.trim() || undefined,
             deliver,
+            ...modelFields,
             ...crmFields,
           },
           createProfile,
@@ -367,6 +392,7 @@ export default function CronPage() {
       setSchedule("");
       setName("");
       setDeliver("local");
+      setModel("");
       setDepartmentId("");
       setEmployeeId("");
       setEditingKey(null);
@@ -600,6 +626,28 @@ export default function CronPage() {
                     </SelectOption>
                   </Select>
                 </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="cron-model">Model</Label>
+                <Select
+                  id="cron-model"
+                  value={model}
+                  onValueChange={(v) => setModel(v)}
+                >
+                  <SelectOption value="">Box default</SelectOption>
+                  {model &&
+                    !modelProviders.some((p) => (p.models ?? []).includes(model)) && (
+                      <SelectOption value={model}>{model} (current)</SelectOption>
+                    )}
+                  {modelProviders.flatMap((p) =>
+                    (p.models ?? []).map((m) => (
+                      <SelectOption key={`${p.slug}:${m}`} value={m}>
+                        {modelProviders.length > 1 ? `${p.name} · ${m}` : m}
+                      </SelectOption>
+                    )),
+                  )}
+                </Select>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

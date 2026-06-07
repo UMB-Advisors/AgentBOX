@@ -3878,6 +3878,11 @@ class CronJobCreate(BaseModel):
     schedule: str
     name: str = ""
     deliver: str = "local"
+    # Optional per-job model override. Empty → the job uses the box default at run
+    # time. provider pairs with model (resolved from the picker); both are stored on
+    # the job and honored by the scheduler (cron/scheduler.py reads job["model"]).
+    model: Optional[str] = None
+    provider: Optional[str] = None
     # CRM assignment (soft links into the mailbox-dashboard CRM). Optional.
     department_id: Optional[int] = None
     department_name: Optional[str] = None
@@ -4008,6 +4013,8 @@ async def create_cron_job(body: CronJobCreate, profile: str = "default"):
             schedule=body.schedule,
             name=body.name,
             deliver=body.deliver,
+            model=body.model,
+            provider=body.provider,
             department_id=body.department_id,
             department_name=body.department_name,
             employee_id=body.employee_id,
