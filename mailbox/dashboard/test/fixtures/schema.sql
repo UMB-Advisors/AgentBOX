@@ -1453,6 +1453,52 @@ CREATE TABLE IF NOT EXISTS mailbox.prompt_rules (
 CREATE INDEX IF NOT EXISTS prompt_rules_account_enabled_idx
   ON mailbox.prompt_rules (account_id, enabled);
 
+-- AgentBOX CRM: Departments, Team (humans+agents), Contacts, Businesses.
+-- See dashboard/migrations/047-create-crm-tables-v1-2026-06-04.sql and
+-- dashboard/migrations/048-crm-businesses-v1-2026-06-05.sql.
+CREATE TABLE IF NOT EXISTS mailbox.businesses (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,
+  description TEXT NOT NULL DEFAULT '',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS mailbox.departments (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,
+  business_id INTEGER REFERENCES mailbox.businesses(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS mailbox.team_members (
+  id            SERIAL PRIMARY KEY,
+  name          TEXT NOT NULL,
+  kind          TEXT NOT NULL DEFAULT 'human',
+  title         TEXT NOT NULL DEFAULT '',
+  department_id INTEGER REFERENCES mailbox.departments(id) ON DELETE SET NULL,
+  email         TEXT NOT NULL DEFAULT '',
+  status        TEXT NOT NULL DEFAULT 'active',
+  notes         TEXT NOT NULL DEFAULT '',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS mailbox.crm_contacts (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT NOT NULL,
+  company     TEXT NOT NULL DEFAULT '',
+  phones      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  emails      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  socials     JSONB NOT NULL DEFAULT '[]'::jsonb,
+  tags        JSONB NOT NULL DEFAULT '[]'::jsonb,
+  notes       TEXT NOT NULL DEFAULT '',
+  source      TEXT NOT NULL DEFAULT 'manual',
+  external_id TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS crm_contacts_source_external_uniq
+  ON mailbox.crm_contacts (source, external_id) WHERE external_id IS NOT NULL;
+
 --
 -- PostgreSQL database dump complete
 --
