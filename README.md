@@ -50,10 +50,10 @@
 
 **agentbox** packages a self-hosted AI agent, its persistent memory, and a native desktop front end into a single edge appliance you can provision and hand off. Instead of routing every request to a cloud endpoint, agentbox keeps the agent loop, knowledge store, and access control on the box — useful where data residency, latency, offline operation, or running your own models matter.
 
-It is built as a monorepo of three cooperating runtimes — the **Hermes agent**, the **gBrain** memory layer, and the **desktop** client — plus the infrastructure scripts that turn a bare machine into a working appliance.
+It is built as a monorepo of four cooperating parts — the **Hermes agent**, the **gBrain** memory layer, the **desktop** client, and the vendored **MailBOX** email stack — plus the infrastructure scripts that turn a bare machine into a working appliance.
 
 > [!IMPORTANT]
-> **AgentBOX is the source of truth for the unified appliance** = the **MailBOX** email pipeline (triage → draft → approve → send) **plus** the Hermes agent + gBrain, co-resident on one Jetson. The MailBOX app stack lives in its own repo and is **cloned** by `install/agentbox-install.sh` (it is not vendored here). This repo owns the orchestration: the installer, the Hermes/gBrain wiring (`config/hermes/`), the compose override (`config/`), the boot units (`systemd/`), and the JetPack flow.
+> **AgentBOX is the source of truth for the unified appliance** = the **MailBOX** email pipeline (triage → draft → approve → send) **plus** the Hermes agent + gBrain, co-resident on one Jetson. As of UMB-105 the MailBOX app stack is **vendored in this monorepo** under [`mailbox/`](./mailbox) (no external clone); `install/agentbox-install.sh` syncs it into place. This repo owns everything: the vendored stack, the installer, the Hermes/gBrain wiring (`config/hermes/`), the compose override (`config/`), the boot units (`systemd/`), and the JetPack flow.
 >
 > **New box:** flashed Jetson → `install/agentbox-install.sh --prototype`; bare hardware → the **`/agentbox-flash`** skill. See [`docs/agentbox-jp72-reproduction.v0.1.0.md`](./docs/agentbox-jp72-reproduction.v0.1.0.md).
 
