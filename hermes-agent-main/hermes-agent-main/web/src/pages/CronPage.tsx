@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Clock, Pause, Pencil, Play, Trash2, X, Zap } from "lucide-react";
 import cronstrue from "cronstrue";
 import { Badge } from "@nous-research/ui/ui/components/badge";
@@ -228,6 +228,7 @@ export default function CronPage() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [selectedProfile, setSelectedProfile] = useState("all");
+  const [sortBy, setSortBy] = useState<"default" | "department">("default");
   const [loading, setLoading] = useState(true);
   const { toast, showToast } = useToast();
   const { t } = useI18n();
@@ -330,6 +331,24 @@ export default function CronPage() {
   useEffect(() => {
     loadJobs();
   }, [loadJobs]);
+
+  // Optional sort of the jobs list by assigned Department (unassigned last,
+  // tie-broken by job name). "default" preserves the backend order.
+  const sortedJobs = useMemo(() => {
+    if (sortBy !== "department") return jobs;
+    const deptName = (job: CronJob) =>
+      asText(job.department_name) ||
+      departments.find((d) => d.id === job.department_id)?.name ||
+      "";
+    return [...jobs].sort((a, b) => {
+      const da = deptName(a);
+      const db = deptName(b);
+      if (!da && db) return 1;
+      if (da && !db) return -1;
+      const cmp = da.localeCompare(db);
+      return cmp !== 0 ? cmp : getJobName(a).localeCompare(getJobName(b));
+    });
+  }, [jobs, sortBy, departments]);
 
   const handleSubmit = async () => {
     if (!prompt.trim() || !schedule.trim()) {
@@ -722,6 +741,18 @@ export default function CronPage() {
               Schedule a New Job
             </Button>
 
+            <div className="grid gap-1 min-w-[150px]">
+              <Label htmlFor="cron-sort">Sort by</Label>
+              <Select
+                id="cron-sort"
+                value={sortBy}
+                onValueChange={(v) => setSortBy(v as "default" | "department")}
+              >
+                <SelectOption value="default">Default</SelectOption>
+                <SelectOption value="department">Department</SelectOption>
+              </Select>
+            </div>
+
             <div className="grid gap-1 min-w-[180px]">
               <Label htmlFor="cron-profile-filter">Profile</Label>
               <Select
@@ -751,7 +782,7 @@ export default function CronPage() {
           </Card>
         )}
 
-        {jobs.map((job) => {
+        {sortedJobs.map((job) => {
           const state = getJobState(job);
           const promptText = getJobPrompt(job);
           const title = getJobTitle(job);
