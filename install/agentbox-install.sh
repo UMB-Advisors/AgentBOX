@@ -291,13 +291,63 @@ if [ -d "$HOME/gbrain-src" ] && command -v bun >/dev/null; then
 else
   log "  MANUAL: gbrain not set up (need bun + ~/gbrain-src) — see docs/agentbox-jp72-reproduction"
 fi
-# 7.5 build the dashboard web dist once (the :9119 service runs with --skip-build)
-if [ -x "$HBIN" ] && [ ! -d "$HH/hermes-agent/hermes_cli/web_dist" ]; then
-  log "  building hermes dashboard web dist (one-time; ~minutes)"
+# 7.5 build + install the dashboard web dist (the :9119 service runs --skip-build).
+# Prefer the vendored CUSTOM web (Carbon reskin, Settings→Google page); fall back
+# to the stock build only if the custom build is unavailable/fails. web_dist is a
+# gitignored build artifact, so it must be built here — it never ships in the repo.
+ABX_HERMES="$REPO/hermes-agent-main/hermes-agent-main"
+INSTALL_CLI="$HH/hermes-agent/hermes_cli"
+if [ -d "$ABX_HERMES/web" ] && command -v npm >/dev/null; then
+  log "  building AgentBOX custom web bundle (vendored; ~minutes)"
+  if ( cd "$ABX_HERMES/web" && { [ -f package-lock.json ] && npm ci || npm install; } >/tmp/abx-webbuild.log 2>&1 \
+        && npm run build >>/tmp/abx-webbuild.log 2>&1 ) && [ -d "$ABX_HERMES/hermes_cli/web_dist" ]; then
+    mkdir -p "$INSTALL_CLI"
+    [ -d "$INSTALL_CLI/web_dist" ] && cp -a "$INSTALL_CLI/web_dist" "$INSTALL_CLI/web_dist.stock-$(date -u +%Y%m%d-%H%M%S)" 2>/dev/null || true
+    if command -v rsync >/dev/null; then rsync -a --delete "$ABX_HERMES/hermes_cli/web_dist/" "$INSTALL_CLI/web_dist/"
+    else rm -rf "$INSTALL_CLI/web_dist"; cp -a "$ABX_HERMES/hermes_cli/web_dist" "$INSTALL_CLI/web_dist"; fi
+    log "  installed AgentBOX custom web_dist"
+  else
+    log "  WARN: custom web build failed (see /tmp/abx-webbuild.log) — will fall back to stock build"
+  fi
+fi
+if [ -x "$HBIN" ] && [ ! -d "$INSTALL_CLI/web_dist" ]; then
+  log "  building stock hermes dashboard web dist (one-time; ~minutes)"
   timeout 360 "$HBIN" dashboard --host 127.0.0.1 --port 9119 --no-open >/tmp/hermes-webbuild.log 2>&1 &
-  for i in $(seq 1 80); do [ -d "$HH/hermes-agent/hermes_cli/web_dist" ] && break; sleep 3; done
+  for i in $(seq 1 80); do [ -d "$INSTALL_CLI/web_dist" ] && break; sleep 3; done
   "$HBIN" dashboard --stop >/dev/null 2>&1 || true
-  [ -d "$HH/hermes-agent/hermes_cli/web_dist" ] && log "  web_dist built" || log "  WARN: web_dist not built — see /tmp/hermes-webbuild.log"
+  [ -d "$INSTALL_CLI/web_dist" ] && log "  web_dist built (stock)" || log "  WARN: web_dist not built — see /tmp/hermes-webbuild.log"
+fi
+
+# ── STAGE 7.6: AgentBOX custom dashboard BACKEND overlay (DR: 2026-06-06) ──
+# STAGE 7 installs/pins STOCK upstream hermes. Stock has NO /api/google/* or
+# /api/shopify/* routes (so "Connect Google account" 404s), and its auth allowlist
+# doesn't cover the OAuth callbacks. Overlay the AgentBOX-custom backend — the *.py
+# under hermes_cli/ that diverge from the stock import (web_server.py, the
+# google_*/shopify_* helpers, dashboard_auth/public_paths.py). The file set is the
+# shared SoT in bin/lib/custom-backend-files.sh (git-derived, so new custom modules
+# are picked up automatically). MUST run after 7.2 — a re-pin / `hermes update`
+# reverts the working tree to stock; re-running this installer re-applies the overlay.
+log "STAGE 7.6 — AgentBOX custom dashboard backend"
+if [ -f "$REPO/bin/lib/custom-backend-files.sh" ] && [ -d "$ABX_HERMES/hermes_cli" ] && [ -d "$INSTALL_CLI" ]; then
+  . "$REPO/bin/lib/custom-backend-files.sh"
+  PYBIN="$HH/hermes-agent/venv/bin/python3"; [ -x "$PYBIN" ] || PYBIN="python3"
+  OVTS="$(date -u +%Y%m%d-%H%M%S)"; n=0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    src="$ABX_HERMES/hermes_cli/$f"; dst="$INSTALL_CLI/$f"
+    [ -f "$src" ] || { log "  WARN: custom file missing in repo: $f"; continue; }
+    "$PYBIN" -m py_compile "$src" 2>/dev/null || { log "  WARN: py_compile failed: $f — skipping"; continue; }
+    mkdir -p "$(dirname "$dst")"
+    [ -f "$dst" ] && cp -a "$dst" "$dst.stock-$OVTS" 2>/dev/null || true
+    cp -a "$src" "$dst"; n=$((n+1))
+  done < <(abx_custom_backend_files "$ABX_HERMES")
+  log "  overlaid $n custom backend files onto $INSTALL_CLI"
+  # If the dashboard service is already running (re-run / hermes update repair),
+  # restart so the overlay takes effect now. On a first install STAGE 8 starts it.
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  systemctl --user restart hermes-dashboard.service >/dev/null 2>&1 || true
+else
+  log "  WARN: custom backend overlay skipped (missing bin/lib/custom-backend-files.sh or install dir) — run bin/deploy-dashboard.sh"
 fi
 
 # ── STAGE 8: boot-to-ready systemd (SM-100) ───────────────────────────────
@@ -322,5 +372,14 @@ fi
 log "STAGE 9 — verify"
 docker compose ps --format '{{.Name}}\t{{.Status}}'
 PSQL -tAc "select 'drafts:'||(to_regclass('mailbox.drafts') is not null)::text;"
+# Custom dashboard backend live? /api/google/auth/start is an AgentBOX-only route
+# (3xx redirect to Google). Stock backend lacks it -> 401/404 = overlay didn't take.
+sleep 3
+PYBIN="$HH/hermes-agent/venv/bin/python3"; [ -x "$PYBIN" ] || PYBIN="python3"
+GCODE="$("$PYBIN" -c "import http.client as h; c=h.HTTPConnection('127.0.0.1',9119,timeout=10); c.request('GET','/api/google/auth/start'); print(c.getresponse().status)" 2>/dev/null || echo ERR)"
+case "$GCODE" in
+  301|302|303|307|308|200) log "  custom backend OK — /api/google/auth/start -> $GCODE" ;;
+  *) log "  WARN: custom backend NOT live (/api/google/auth/start -> $GCODE). Google connect will 404. Re-run STAGE 7.6 or: bin/deploy-dashboard.sh" ;;
+esac
 log "AgentBOX install complete. Smokes: inject inbound -> draft appears; 'hermes -z' replies;"
 log "re-run the SM-97 spike (spike-hermes-mailbox/12-worstcase-turn.sh) to spot-check the envelope."
