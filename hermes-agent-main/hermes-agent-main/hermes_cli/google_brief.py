@@ -441,6 +441,11 @@ def _event_record(ev: Dict[str, Any], account: str) -> Dict[str, Any]:
         "location": ev.get("location") or "",
         "description": ev.get("description") or "",
         "link": ev.get("htmlLink") or "",
+        # Attendee emails so the edit form pre-loads them (a patch that omitted
+        # them would otherwise clobber the guest list when editing other fields).
+        "attendees": [
+            a.get("email") for a in (ev.get("attendees") or []) if a.get("email")
+        ],
     }
 
 
@@ -557,7 +562,24 @@ def _event_body(payload: Dict[str, Any]) -> Dict[str, Any]:
         if tz:
             body["start"]["timeZone"] = tz
             body["end"]["timeZone"] = tz
+    # Attendees — always written (empty list clears them on patch). The edit
+    # form pre-loads existing attendees, so a patch round-trips them unless the
+    # operator removed some. Trim/lowercase/dedupe; drop anything without an '@'.
+    seen: set = set()
+    attendees = []
+    for raw in payload.get("attendees") or []:
+        email = (raw or "").strip().lower()
+        if email and "@" in email and email not in seen:
+            seen.add(email)
+            attendees.append({"email": email})
+    body["attendees"] = attendees
     return body
+
+
+def _send_updates(payload: Dict[str, Any]) -> str:
+    """Google ``sendUpdates`` param: 'all' emails attendees an invite/notice,
+    'none' writes the event silently. Default silent (False)."""
+    return "all" if payload.get("send_updates") else "none"
 
 
 def create_event(account: Optional[str], payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -570,7 +592,15 @@ def create_event(account: Optional[str], payload: Dict[str, Any]) -> Dict[str, A
     if service is None:
         return {"error": "Couldn't reach Google."}
     try:
-        ev = service.events().insert(calendarId="primary", body=_event_body(payload)).execute()
+        ev = (
+            service.events()
+            .insert(
+                calendarId="primary",
+                body=_event_body(payload),
+                sendUpdates=_send_updates(payload),
+            )
+            .execute()
+        )
         return {"event": _event_record(ev, email), "error": None}
     except Exception as exc:  # noqa: BLE001
         _log.warning("google calendar: create failed for %s", email, exc_info=True)
@@ -588,7 +618,12 @@ def update_event(account: Optional[str], event_id: str, payload: Dict[str, Any])
     try:
         ev = (
             service.events()
-            .patch(calendarId="primary", eventId=event_id, body=_event_body(payload))
+            .patch(
+                calendarId="primary",
+                eventId=event_id,
+                body=_event_body(payload),
+                sendUpdates=_send_updates(payload),
+            )
             .execute()
         )
         return {"event": _event_record(ev, email), "error": None}

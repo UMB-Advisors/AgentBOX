@@ -1759,6 +1759,10 @@ class CalendarEventBody(BaseModel):
     location: str = ""
     description: str = ""
     timezone: Optional[str] = None
+    # Attendee emails to invite. ``send_updates`` controls whether Google emails
+    # them an invitation (False = add to the event silently; True = send invites).
+    attendees: List[str] = []
+    send_updates: bool = False
 
 
 @app.get("/api/google/calendar")

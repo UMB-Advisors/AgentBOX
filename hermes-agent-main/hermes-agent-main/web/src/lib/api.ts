@@ -1030,6 +1030,8 @@ export interface GoogleCalEvent {
   location: string;
   description: string;
   link: string;
+  /** Attendee emails on the event (so the edit form can pre-load them). */
+  attendees: string[];
 }
 /** Payload for creating / updating a calendar event. ``account`` chooses which
  *  connected account's primary calendar to write to (blank = primary). Timed
@@ -1044,6 +1046,10 @@ export interface GoogleCalEventInput {
   location?: string;
   description?: string;
   timezone?: string;
+  /** Attendee emails to invite. */
+  attendees?: string[];
+  /** When true, Google emails attendees an invite; false adds them silently. */
+  send_updates?: boolean;
 }
 export interface GoogleCalEventMutation {
   event?: GoogleCalEvent;
