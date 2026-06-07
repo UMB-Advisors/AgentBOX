@@ -1,0 +1,20 @@
+[Unit]
+Description=hermesBOX — hermes agent gateway (messaging platform integration)
+Documentation=https://github.com/NousResearch/hermes-agent
+After=network-online.target hermes-dashboard.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HERMES_HOME=%h/.hermes
+ExecStart=%h/.local/bin/hermes gateway run --replace
+ExecReload=/bin/kill -USR1 $MAINPID
+Restart=always
+RestartSec=5
+# graceful drain before kill (mirrors agentbox1 ground truth)
+TimeoutStopSec=210
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=default.target

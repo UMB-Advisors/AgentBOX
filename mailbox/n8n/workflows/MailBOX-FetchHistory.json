@@ -1,0 +1,239 @@
+{
+  "active": false,
+  "connections": {
+    "Webhook (mailbox-fetch-history)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Compute After Date",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Compute After Date": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "List Sent Messages",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "List Sent Messages": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Cap Messages",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Cap Messages": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Get Thread",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Get Thread": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Aggregate Threads",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Aggregate Threads": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Respond",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": null,
+  "id": "MailBOXFetchHistory01",
+  "isArchived": false,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "name": "MailBOX-FetchHistory",
+  "nodes": [
+    {
+      "id": "fetchhistory-1111-4111-8111-webhook000001",
+      "name": "Webhook (mailbox-fetch-history)",
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {},
+        "path": "mailbox-fetch-history",
+        "responseMode": "responseNode"
+      },
+      "position": [
+        208,
+        320
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "mailbox-fetch-history-webhook"
+    },
+    {
+      "id": "fetchhistory-2222-4222-8222-compute000002",
+      "name": "Compute After Date",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "after-date-1",
+              "name": "after_date",
+              "type": "string",
+              "value": "={{ $now.minus({ days: Number($json.body.days_lookback || 180) }).toFormat('yyyy/MM/dd') }}"
+            },
+            {
+              "id": "max-messages-1",
+              "name": "max_messages",
+              "type": "number",
+              "value": "={{ Number($json.body.max_messages || 5000) }}"
+            },
+            {
+              "id": "days-lookback-1",
+              "name": "days_lookback",
+              "type": "number",
+              "value": "={{ Number($json.body.days_lookback || 180) }}"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "position": [
+        416,
+        320
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "vEz5mz0uaAtlK8yz",
+          "name": "Gmail account"
+        }
+      },
+      "id": "fetchhistory-3333-4333-8333-listsent00003",
+      "name": "List Sent Messages",
+      "parameters": {
+        "filters": {
+          "q": "=in:sent after:{{ $json.after_date }}"
+        },
+        "limit": 500,
+        "operation": "getAll",
+        "options": {},
+        "returnAll": true,
+        "simple": true
+      },
+      "position": [
+        624,
+        320
+      ],
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "webhookId": "mailbox-fetch-history-listsent"
+    },
+    {
+      "id": "fetchhistory-4444-4444-8444-cap0000000004",
+      "name": "Cap Messages",
+      "parameters": {
+        "jsCode": "// Cap by max_messages from the originating webhook payload, then\n// dedupe to one item per threadId so the Gmail thread.get loop runs\n// once per thread (not once per sent message). The dedupe is essential\n// because Gmail's messages.list with q=in:sent returns one row per sent\n// message; multi-reply threads otherwise pull the same thread N times.\n\nconst max = Number($('Compute After Date').first().json.max_messages) || 5000;\nconst seen = new Set();\nconst out = [];\nfor (const item of $input.all()) {\n  const threadId = item.json.threadId || item.json.thread_id;\n  const messageId = item.json.id || item.json.messageId;\n  if (!threadId) continue;\n  if (seen.has(threadId)) continue;\n  seen.add(threadId);\n  out.push({ json: { thread_id: threadId, sent_message_id: messageId } });\n  if (out.length >= max) break;\n}\nreturn out;\n"
+      },
+      "position": [
+        832,
+        320
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "vEz5mz0uaAtlK8yz",
+          "name": "Gmail account"
+        }
+      },
+      "id": "fetchhistory-5555-4555-8555-getthread0005",
+      "name": "Get Thread",
+      "parameters": {
+        "operation": "get",
+        "options": {
+          "downloadAttachments": false
+        },
+        "resource": "thread",
+        "returnAll": false,
+        "simple": false,
+        "threadId": "={{ $json.thread_id }}"
+      },
+      "position": [
+        1040,
+        320
+      ],
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "webhookId": "mailbox-fetch-history-getthread"
+    },
+    {
+      "id": "fetchhistory-6666-4666-8666-aggregate0006",
+      "name": "Aggregate Threads",
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "threads",
+        "options": {}
+      },
+      "position": [
+        1248,
+        320
+      ],
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1
+    },
+    {
+      "id": "fetchhistory-7777-4777-8777-respond000007",
+      "name": "Respond",
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, days_lookback: $('Compute After Date').first().json.days_lookback, after_date: $('Compute After Date').first().json.after_date, thread_count: $json.threads.length, threads: $json.threads } }}"
+      },
+      "position": [
+        1456,
+        320
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-05-02T00:00:00.000Z",
+  "versionId": "fetchhistory-1"
+}

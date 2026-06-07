@@ -1,0 +1,94 @@
+@import 'tailwindcss';
+
+/*
+  MBOX-162 sandbox UI port — P1a: light theme (D1=B, adopt sandbox light palette).
+  Token NAMES are unchanged so existing class usage (bg-bg-panel, text-ink,
+  accent-orange, …) keeps working; only the VALUES flip dark→light. Palette is
+  the sandbox's zinc neutrals + warm accents on white.
+
+  Surface hierarchy (light): bg/bg-deep = white reading area; bg-panel = zinc-100
+  chrome (headers, list rail); bg-surface = zinc-50 raised cards. Borders zinc-200.
+  Text zinc-800/600/400.
+
+  NOTE: accent-orange is intentionally kept WARM (orange-600), not recolored to
+  the sandbox's indigo brand accent — it does double duty as the warning color
+  (GmailCooldownBanner, StuckApproved, the aged/vip urgency chips), and turning
+  those indigo would lose the warning semantics. Indigo layout accents land with
+  the 3-pane work (P1b). See docs/plan-sandbox-ui-port.v0.1.0.md §3.
+*/
+@theme {
+  --color-bg: #ffffff;
+  --color-bg-deep: #ffffff;
+  --color-bg-surface: #f9fafb;
+  --color-bg-panel: #f4f4f5;
+
+  --color-border: #e4e4e7;
+  --color-border-subtle: #f1f1f4;
+
+  --color-ink: #27272a;
+  --color-ink-muted: #52525b;
+  --color-ink-dim: #a1a1aa;
+
+  --color-accent-orange: #ea580c;
+  --color-accent-green: #16a34a;
+  --color-accent-red: #dc2626;
+  --color-accent-blue: #2563eb;
+
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-serif), ui-serif, Georgia, serif;
+
+  --text-base: 14px;
+  --text-base--line-height: 1.5;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+:root {
+  color-scheme: light;
+  /* System font stacks. The appliance builds offline, so we don't pull from
+     Google Fonts at build time. tailwind.config.ts and the html/body rules
+     reference these via var(--font-*). */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas,
+    monospace;
+  --font-serif: ui-serif, Georgia, "Times New Roman", serif;
+}
+
+html,
+body {
+  background-color: #ffffff;
+  color: #27272a;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background-color: rgba(234, 88, 12, 0.18);
+  color: inherit;
+}

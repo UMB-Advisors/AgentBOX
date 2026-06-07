@@ -1,0 +1,25 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!--
+  MailBox Zero — appliance discovery record (STAQPRO-410).
+  Advertises the dashboard over mDNS so a workstation on the same LAN
+  can reach https://mailbox.local/ without knowing the appliance IP.
+
+  Port 443 (not 3001): traffic is fronted by the Caddy LAN listener
+  configured in caddy/Caddyfile, which terminates TLS via Caddy's
+  internal CA and reverse-proxies to mailbox-dashboard:3001.
+
+  v2 (after STAQPRO-409 slug-stamping): replace the static "v1" TXT
+  record with the live git SHA, and swap the mDNS hostname from
+  "mailbox" to "<customer-slug>" so two appliances on the same LAN
+  don't collide.
+-->
+<service-group>
+  <name replace-wildcards="yes">%h</name>
+  <service>
+    <type>_http._tcp</type>
+    <port>443</port>
+    <txt-record>path=/dashboard/queue</txt-record>
+    <txt-record>version=v1</txt-record>
+  </service>
+</service-group>

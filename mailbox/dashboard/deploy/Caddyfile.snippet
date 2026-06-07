@@ -1,0 +1,15 @@
+# Add this `handle` block inside the existing `mailbox.heronlabsinc.com { ... }`
+# site block in /home/bob/mailbox/caddy/Caddyfile.
+#
+# We forward the FULL path including `/dashboard` (no path strip) because the
+# Next.js app is built with basePath=/dashboard — its assets, routes, and links
+# all live under that prefix. Stripping the prefix would break /_next/static/*
+# asset loading.
+#
+# Ordering note: Caddy matches `handle` blocks in declaration order. Place this
+# `handle /dashboard/*` BEFORE the catch-all `handle` that proxies n8n at /,
+# otherwise n8n would 404 on /dashboard/queue before reaching the dashboard.
+
+	handle /dashboard/* {
+		reverse_proxy mailbox-dashboard:3001
+	}

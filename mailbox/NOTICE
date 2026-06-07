@@ -1,0 +1,32 @@
+MailBox One — Third-Party Attribution Notices
+==============================================
+
+This product is built and operated by Staqs.
+
+----------------------------------------------------------------------
+
+NVIDIA Nemotron 3 Nano 4B (GGUF, Q4_K_M)
+----------------------------------------
+
+MailBox appliances on which Nemotron 3 Nano 4B is installed include
+NVIDIA-Nemotron-3-Nano-4B-GGUF, a small language model developed and
+released by NVIDIA Corporation.
+
+Licensed by NVIDIA Corporation under the NVIDIA Nemotron Model License.
+
+Full license text: licenses/NVIDIA-Nemotron-Open-Model-License.txt
+Upstream model card: https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF
+
+Per Section 3 of the license, this NOTICE is provided to each recipient
+of the appliance. The license itself is bundled at the path above and
+surfaced via the appliance dashboard at /about (or /licenses).
+
+NVIDIA, Nemotron, and Jetson are trademarks of NVIDIA Corporation. Use
+of those marks in this NOTICE is for attribution only; no other right or
+license is granted under Section 4 of the license.
+
+----------------------------------------------------------------------
+
+(Additional third-party notices will be appended below as new components
+are bundled. See docs/memo-nemotron-license-review-v0_1-2026-05-13.md for
+the compliance-package rationale.)

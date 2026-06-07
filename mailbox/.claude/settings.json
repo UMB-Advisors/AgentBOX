@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Project-level Claude Code settings for the MailBOX repo. The SessionStart hook prints a coordination-protocol banner so any session sees Linear's active-epic state and the GSD entry-point requirement before touching code. Originated 2026-05-16 after a duplicate-work incident — see commit message + Linear comment on STAQPRO-336.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat <<'BANNER'\n========== MAILBOX — coordination protocol ==========\n\nThis repo has a parallel Linear-driven design track. The M5 milestone is\nactive; parent epic is STAQPRO-336 (Draft quality roadmap). Before any\nEdit / Write / modifying-Bash, satisfy ONE of:\n\n  (a) Invoke /gsd:quick, /gsd:execute-phase, or /gsd:debug as the task\n      entry point. The GSD skills run the Linear alignment scan first.\n      This is what dashboard/CLAUDE.md 'GSD Workflow Enforcement' mandates.\n\n  (b) If skipping /gsd, manually:\n        - list_issues({ project: 'UMB Advisors MailBOX',\n                        milestone: 'M5 — Production Box',\n                        state: 'started OR backlog' })\n        - list_issues({ project: 'UMB Advisors MailBOX', parentId: null })\n      Read the matching epic + every 'Delivered' child for prior art.\n      Post a 1-line intent comment on the closest matching ticket BEFORE\n      writing code. The intent comment IS the coordination trail.\n\nIf no Linear epic matches the requested work, ASK before building rather\nthan inventing a new track silently.\n\nWhy this banner exists: 2026-05-16 — a session built a duplicate of\nSTAQPRO-340 because Linear wasn't queried first. Reverted via PR #108.\nDon't repeat that. 30-second cost, hours saved.\n\n=====================================================\nBANNER\n"
+          }
+        ]
+      }
+    ]
+  }
+}

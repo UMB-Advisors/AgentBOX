@@ -1,0 +1,499 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+    - postgres_data:/var/lib/postgresql/data
+    - ./scripts/init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+  qdrant:
+    image: qdrant/qdrant:v1.17.1
+    environment:
+      MALLOC_CONF: narenas:1
+    volumes:
+    - qdrant_data:/qdrant/storage
+    healthcheck:
+      test:
+      - CMD
+      - bash
+      - -c
+      - echo > /dev/tcp/localhost/6333
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    runtime: nvidia
+    environment:
+      # 5m (was 24h): let nomic-embed-text unload between RAG calls so the
+      # ~436MB GPU it holds is freed for Qwen3's working set under burst
+      # load. Mitigates STAQPRO-206 root cause #1 (llama runner OOM-killed
+      # when classify-generate + RAG-embed hit concurrently).
+      OLLAMA_KEEP_ALIVE: 5m
+      # Serialize per-model inference. Trades latency for safety on
+      # 8GB unified VRAM (STAQPRO-206 root cause #1).
+      OLLAMA_NUM_PARALLEL: 1
+    volumes:
+    - ollama_models:/root/.ollama
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - bash -c 'cat < /dev/null > /dev/tcp/localhost/11434' 2>/dev/null || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+  llama-cpp:
+    image: local/llama-cpp:cuda-jetson
+    runtime: nvidia
+    container_name: mailbox-llama-cpp-1
+    # STAQPRO-338 / DR-25: dustynv/llama_cpp:r36.4.0 retagged.
+    # Image has empty entrypoint + bash cmd; override entrypoint to the
+    # server binary so docker-compose `command:` provides only args.
+    entrypoint: ["/usr/local/bin/llama-server"]
+    command:
+      - "--model"
+      - "/models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+      - "--ctx-size"
+      - "4096"
+      - "--flash-attn"
+      - "--cache-type-k"
+      - "q8_0"
+      - "--cache-type-v"
+      - "q8_0"
+      - "--n-gpu-layers"
+      - "99"
+      - "--no-mmap"
+      - "--slots"
+      - "--parallel"
+      - "2"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+    environment:
+      LLAMA_LOG_LEVEL: "info"
+    volumes:
+      - ./llama-cpp-models:/models:ro
+    # No ports: block — internal docker network only, matches M2's tighter
+    # binding model. Workstation access is via tailnet+ssh tunnel.
+    restart: unless-stopped
+    depends_on: []
+  n8n:
+    image: n8nio/n8n:2.14.2
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: ${DOMAIN}
+      WEBHOOK_URL: https://${DOMAIN}/
+      N8N_EDITOR_BASE_URL: https://${DOMAIN}/
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      N8N_SECURE_COOKIE: 'true'
+      # Disable n8n's anonymous usage telemetry (RudderStack + PostHog).
+      # The SPA otherwise proxies telemetry through /rest/telemetry/* which
+      # gets gated by Caddy basic_auth and floods the browser console with
+      # 401s on every page load. Appliance is single-tenant; no telemetry
+      # value to us, only noise. STAQPRO-237 follow-up.
+      N8N_DIAGNOSTICS_ENABLED: 'false'
+      # Caddy fronts n8n with one upstream hop. Without this, n8n's internal
+      # express-rate-limit middleware refuses the X-Forwarded-For header
+      # (Express trust proxy = false default) and floods logs every webhook
+      # call. STAQPRO-228.
+      N8N_PROXY_HOPS: '1'
+      # MBOX-185 — allow workflow expressions to read $env. n8n 2.x defaults
+      # N8N_BLOCK_ENV_ACCESS_IN_NODE=true, which blocks `$env.*` in node/trigger
+      # expressions. That made BOTH the MailBOX-Digest and MailBOX-AlertCheck
+      # SCHEDULE triggers fail to activate ("access to env vars denied") — so
+      # neither ever fired (digest_sends sat empty from MBOX-132 onward, undetected
+      # until the AlertCheck import 2026-05-29). Both read $env in their schedule
+      # interval/hour expression. Single-tenant trusted appliance with first-party
+      # workflows → allowing $env is acceptable; without it the two env-driven
+      # schedules silently never run.
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: 'false'
+      # MBOX-132 — daily digest schedule. DIGEST_SEND_HOUR_LOCAL is read by the
+      # MailBOX-Digest schedule trigger (`$env.DIGEST_SEND_HOUR_LOCAL`) — the
+      # hour-of-day the once-per-day operator digest fires. GENERIC_TIMEZONE is
+      # the TZ n8n interprets that hour in (timezone open question resolved in
+      # favour of an explicit appliance-configured TZ; defaults to UTC so the
+      # send hour is deterministic on a fresh box). Forward-or-no-op per
+      # MBOX-306: unset → 7am UTC (the workflow's own `?? 7` fallback + UTC).
+      DIGEST_SEND_HOUR_LOCAL: ${DIGEST_SEND_HOUR_LOCAL:-7}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-UTC}
+      # MBOX-185 — poll cadence (minutes) for the MailBOX-AlertCheck schedule
+      # trigger (`$env.ALERT_CHECK_INTERVAL_MIN ?? 15`). Threshold tuning +
+      # recipient resolution live on the dashboard side (ALERT_* read by
+      # /api/internal/alert-check); n8n only needs the cadence. Unset → 15.
+      ALERT_CHECK_INTERVAL_MIN: ${ALERT_CHECK_INTERVAL_MIN:-15}
+    volumes:
+    - n8n_data:/home/node/.n8n
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -qO- http://localhost:5678/healthz || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+  caddy:
+    build: ./caddy
+    # MBOX-184 — GHCR digest-pin indirection. `image:` names the local tag the
+    # `--build` path produces by default (CADDY_IMAGE unset → the local tag
+    # below), so M1's `docker compose up -d --build` keeps rebuilding + tagging
+    # locally exactly as today (NON-BREAKING). An OTA/clean appliance sets
+    # CADDY_IMAGE to a GHCR digest-pinned ref (ghcr.io/umb-advisors/mailbox-caddy@sha256:…
+    # — the digest the /status panel reads live from the registry, MBOX-347) and
+    # runs a plain `up -d` (no --build) to pull that exact digest. See
+    # .env.example "OTA image pinning (MBOX-184)".
+    image: ${CADDY_IMAGE:-mailbox-caddy:local}
+    ports:
+    - 80:80
+    - 443:443
+    volumes:
+    - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    - caddy_data:/data
+    - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN}
+      CADDY_EMAIL: ${CADDY_EMAIL}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      MAILBOX_BASIC_AUTH_USER: ${MAILBOX_BASIC_AUTH_USER}
+      MAILBOX_BASIC_AUTH_HASH: ${MAILBOX_BASIC_AUTH_HASH}
+      MAILBOX_LAN_HOSTNAME: ${MAILBOX_LAN_HOSTNAME:-mailbox.local}
+    depends_on:
+      n8n:
+        condition: service_healthy
+    restart: unless-stopped
+  mailbox-dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+      args:
+        # Auth for installing @umb-advisors/* packages from GitHub Packages
+        # during `npm ci` in the deps stage. Reads from host .env at build
+        # time; needs read:packages scope. dashboard/.npmrc references this
+        # via ${GITHUB_PACKAGES_TOKEN}. Token never lands in any image layer.
+        GITHUB_PACKAGES_TOKEN: ${GITHUB_PACKAGES_TOKEN}
+    # MBOX-184 — GHCR digest-pin indirection (see the caddy service for the
+    # full rationale). DASHBOARD_IMAGE unset → the local tag below, so M1's
+    # `up -d --build` rebuilds + tags locally as today (NON-BREAKING). OTA /
+    # clean appliances set DASHBOARD_IMAGE to a GHCR digest-pinned ref and run
+    # a plain `up -d` to pull that exact digest.
+    image: ${DASHBOARD_IMAGE:-mailbox-dashboard:local}
+    container_name: mailbox-dashboard
+    restart: unless-stopped
+    environment:
+      POSTGRES_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      N8N_WEBHOOK_URL: http://n8n:5678/webhook/mailbox-send
+      # MBOX-357 (P1 T5) — per-provider send webhook for IMAP accounts. The
+      # dashboard routes approve/retry here when the draft's account is an IMAP
+      # provider; Gmail accounts keep using N8N_WEBHOOK_URL. Only consumed when
+      # an IMAP account exists — harmless on a Gmail-only appliance.
+      N8N_IMAP_WEBHOOK_URL: ${N8N_IMAP_WEBHOOK_URL:-http://n8n:5678/webhook/mailbox-imap-send}
+      # MBOX-369 — per-row Gmail queue actions (archive/delete/mark-read) fan out
+      # to the MailBOX-MsgAction workflow. Snooze is local-only (no Gmail snooze
+      # API) and does NOT use this. lib/n8n.ts:triggerMsgActionWebhook falls back
+      # to this same default if unset; pinned here for parity with N8N_WEBHOOK_URL.
+      N8N_MSG_ACTION_URL: ${N8N_MSG_ACTION_URL:-http://n8n:5678/webhook/mailbox-msg-action}
+      NODE_ENV: production
+      PORT: "3001"
+      # STAQPRO-148 — KB upload original-bytes storage. Sha256-keyed file
+      # lifecycle handled by lib/rag/kb-ingest.ts. Survives container
+      # recreation via the mailbox_kb_uploads named volume below.
+      KB_STORAGE_DIR: /var/lib/mailbox/kb
+      # STAQPRO-199 followup — PR #35's 6000-char default still 500'd nomic on
+      # dense-token replies (~1.36 tok/char × 6000 ≈ 8160 tok, at the 8192
+      # ceiling once prefix tokens land). Empirical smoke (2026-05-02) showed
+      # 1/30 fail at 6000. Lower to 4500 (~6120 tok worst-case) for headroom.
+      EMBED_MAX_CHARS: "4500"
+      # Cloud LLM credentials — read by lib/drafting/router.ts and forwarded to
+      # n8n in /api/internal/draft-prompt response (apiKey field). Per dashboard
+      # n8n Boundary Contract, these are NOT n8n credentials — they live as env
+      # on the dashboard service and are passed per-request. Discovered missing
+      # 2026-05-04 — cloud route silently 401'd against ollama.com because the
+      # dashboard container env was empty; only local route ever worked.
+      OLLAMA_CLOUD_API_KEY: ${OLLAMA_CLOUD_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # MBOX-398 — Google OAuth for the right-rail Calendar/Contacts/Tasks panels
+      # (and the MBOX-130 calendar pre-read + MBOX-129 tasks handoff). Read by
+      # lib/oauth/google.ts. Like the cloud LLM creds above, the dashboard service
+      # enumerates env explicitly (no env_file) — a value in .env alone is a no-op
+      # until it's listed HERE (MBOX-306 lesson). All default empty so an appliance
+      # without Google OAuth provisioned is unchanged; the Connect button returns a
+      # clear "not set" error rather than redirecting. To enable: create a Google
+      # OAuth 2.0 Web client (reuse the appliance's existing GCP project), add the
+      # redirect URI ${MAILBOX_PUBLIC_BASE_URL}${NEXT_PUBLIC_BASE_PATH}/api/oauth/google/callback,
+      # then set these in .env and `docker compose up -d mailbox-dashboard`.
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      # AES-256-GCM key (32-byte hex) for refresh-token-at-rest + the connect-flow
+      # state HMAC. Separate secrets (key separation). Generate each with
+      # `openssl rand -hex 32`.
+      MAILBOX_OAUTH_TOKEN_KEY: ${MAILBOX_OAUTH_TOKEN_KEY:-}
+      MAILBOX_OAUTH_STATE_SECRET: ${MAILBOX_OAUTH_STATE_SECRET:-}
+      # Public https origin of the appliance (e.g. https://mailbox.heronlabsinc.com)
+      # — builds the OAuth callback URL. NEXT_PUBLIC_BASE_PATH is also read at
+      # RUNTIME by callbackUrl() (the client bundle bakes it at build, but the
+      # server route needs it here too); default /dashboard matches Caddy's mount.
+      MAILBOX_PUBLIC_BASE_URL: ${MAILBOX_PUBLIC_BASE_URL:-}
+      NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-/dashboard}
+      # STAQPRO-221 — operator email for H2 voice-priming. Empty/unset = the
+      # dashboard logs a once-per-30-min warning and falls back to inbound-only
+      # retrieval (the existing pre-221 path). All other RAG_RETRIEVE_TOP_K_*
+      # and RAG_MIN_INBOUND_CHARS tunables fall through to retrieve.ts defaults.
+      MAILBOX_OPERATOR_EMAIL: ${MAILBOX_OPERATOR_EMAIL:-}
+      # MAILBOX_LOCAL_MODEL_OVERRIDE — A/B knob for swapping the local
+      # draft model in lib/drafting/router.ts pickEndpoint(). Strategic
+      # direction is local-first; this lets us compare local-model
+      # candidates (e.g., qwen3:4b-ctx4k vs qwen3.5:4b-ctx4k vs
+      # gemma4:e4b-q4) on the same hardware. The override must name a
+      # model already pulled into the local Ollama daemon
+      # (`ollama pull <tag>` on the appliance). Default unset = baseline
+      # (qwen3:4b-ctx4k). Cloud route is unaffected by this knob.
+      # Rollback: remove from .env and `docker compose up -d mailbox-dashboard`
+      # (NOT `restart` — see root CLAUDE.md ".env rotation gotchas").
+      MAILBOX_LOCAL_MODEL_OVERRIDE: ${MAILBOX_LOCAL_MODEL_OVERRIDE:-}
+      # STAQPRO-338 / DR-25 — runtime selector + llama-cpp endpoint.
+      # Defaults preserve Ollama behavior on appliances that don't set these.
+      # The LLAMA_CPP_MODEL default is the post-STAQPRO-342 bake-off winner
+      # (qwen3-4b-instruct-2507); appliances can override via .env if needed.
+      LOCAL_INFERENCE_RUNTIME: ${LOCAL_INFERENCE_RUNTIME:-ollama}
+      LLAMA_CPP_BASE_URL: ${LLAMA_CPP_BASE_URL:-http://llama-cpp:8080}
+      LLAMA_CPP_MODEL: ${LLAMA_CPP_MODEL:-qwen3-4b-instruct-2507}
+      # MBOX-306 — env vars read by dashboard code (lib/drafting/router.ts,
+      # lib/drafting/thread-history.ts, lib/rag/retrieve.ts) but previously NOT
+      # forwarded into the container, so setting them in .env silently no-op'd
+      # (no dotenv loader in the dashboard runtime). Defaults below mirror the
+      # code defaults exactly, so behavior is unchanged when the var is unset.
+      #
+      # Cloud-route RAG privacy gate (default off per root CLAUDE.md "RAG
+      # retrieval → Privacy gate"). Until this was forwarded the gate could not
+      # be flipped on via .env at all — cloud-route drafts always fell back to
+      # persona-stub. Default '' (not '1'): code checks `=== '1'`, so '' is off.
+      RAG_CLOUD_ROUTE_ENABLED: ${RAG_CLOUD_ROUTE_ENABLED:-}
+      # P3 (MBOX-162) redraft-with-prompt feature flag. Default '' (off): the
+      # /api/internal/draft-redraft endpoint 403s and the queue hides the button
+      # until this is '1'. Must be forwarded here or the .env value never reaches
+      # the container (the dashboard service enumerates env explicitly). Local-
+      # only loop (DR-53); enable once validated on-box.
+      MAILBOX_REDRAFT_ENABLED: ${MAILBOX_REDRAFT_ENABLED:-}
+      # Cloud drafter model + base URL overrides (router.ts:39-40). Documented
+      # in CLAUDE.md as the override knob but ignored until forwarded.
+      OLLAMA_CLOUD_MODEL: ${OLLAMA_CLOUD_MODEL:-gpt-oss:120b}
+      OLLAMA_CLOUD_BASE_URL: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
+      # RAG retrieval tunables (retrieve.ts:154-200, STAQPRO-191/221/222).
+      # Forwarded so they are .env-tunable; defaults match retrieve.ts so unset
+      # = current behavior. EXCLUDE_SAME_THREAD is on unless explicitly '0'
+      # (code checks `!== '0'`), so the '1' default preserves the on-state.
+      RAG_RETRIEVE_TOP_K: ${RAG_RETRIEVE_TOP_K:-3}
+      RAG_RETRIEVE_TOP_K_OUTBOUND: ${RAG_RETRIEVE_TOP_K_OUTBOUND:-2}
+      RAG_RETRIEVE_TOP_K_INBOUND: ${RAG_RETRIEVE_TOP_K_INBOUND:-1}
+      RAG_MIN_INBOUND_CHARS: ${RAG_MIN_INBOUND_CHARS:-40}
+      RAG_MIN_SCORE: ${RAG_MIN_SCORE:-0.70}
+      RAG_RETRIEVE_EXCLUDE_SAME_THREAD: ${RAG_RETRIEVE_EXCLUDE_SAME_THREAD:-1}
+      # MBOX-283 — chat retrieval tunables (lib/rag/chat-retrieve.ts). Query-
+      # scoped top-k over email_messages with a relevance floor for the
+      # /dashboard/chat surface (MBOX-282). Separate knobs from the draft-path
+      # RAG_* vars so chat can pull a wider source set without disturbing the
+      # draft-prompt token budget. Defaults match chat-retrieve.ts so unset =
+      # current behavior (per the MBOX-306 forward-or-no-op rule).
+      CHAT_RETRIEVE_TOP_K: ${CHAT_RETRIEVE_TOP_K:-4}
+      CHAT_RETRIEVE_SCORE_FLOOR: ${CHAT_RETRIEVE_SCORE_FLOOR:-0.65}
+      # MBOX-134 — per-category urgency age thresholds (hours). Read by
+      # lib/urgency.ts:ageThresholdHours; a draft older than its category
+      # threshold while still 'pending' fires the 'aged' urgency signal.
+      # Resolved in favour of ENV over a urgency_thresholds table (issue open
+      # question). Defaults match lib/urgency.ts so unset = current behavior
+      # (MBOX-306 forward-or-no-op rule). Categories without an explicit var
+      # fall back to URGENCY_AGE_HOURS_DEFAULT (4h) inside the code.
+      URGENCY_AGE_HOURS_INQUIRY: ${URGENCY_AGE_HOURS_INQUIRY:-4}
+      URGENCY_AGE_HOURS_REORDER: ${URGENCY_AGE_HOURS_REORDER:-4}
+      URGENCY_AGE_HOURS_FOLLOW_UP: ${URGENCY_AGE_HOURS_FOLLOW_UP:-24}
+      URGENCY_AGE_HOURS_ESCALATE: ${URGENCY_AGE_HOURS_ESCALATE:-1}
+      # MBOX-377 — follow-up / no-reply thresholds (read by lib/followup.ts via
+      # lib/queries-followup.ts). Hours of counterparty silence after WE sent a
+      # reply before the thread shows in the digest's "Awaiting reply" section.
+      # Longer than the urgency windows above (chase after days, not hours).
+      # Defaults match lib/followup.ts; categories without an explicit var fall
+      # back to DEFAULT_FOLLOWUP_AGE_HOURS (48h) in code (MBOX-306 forward rule).
+      FOLLOWUP_AGE_HOURS_INQUIRY: ${FOLLOWUP_AGE_HOURS_INQUIRY:-48}
+      FOLLOWUP_AGE_HOURS_REORDER: ${FOLLOWUP_AGE_HOURS_REORDER:-48}
+      FOLLOWUP_AGE_HOURS_SCHEDULING: ${FOLLOWUP_AGE_HOURS_SCHEDULING:-24}
+      FOLLOWUP_AGE_HOURS_FOLLOW_UP: ${FOLLOWUP_AGE_HOURS_FOLLOW_UP:-72}
+      FOLLOWUP_AGE_HOURS_INTERNAL: ${FOLLOWUP_AGE_HOURS_INTERNAL:-72}
+      FOLLOWUP_AGE_HOURS_ESCALATE: ${FOLLOWUP_AGE_HOURS_ESCALATE:-24}
+      FOLLOWUP_AGE_HOURS_UNKNOWN: ${FOLLOWUP_AGE_HOURS_UNKNOWN:-48}
+      # MBOX-132 — daily digest worker (read by app/api/internal/digest).
+      # DIGEST_SEND_FROM_GMAIL gates the appliance-Gmail-OAuth send path (v1
+      # default per the issue's open-question resolution); treated as ON unless
+      # explicitly '0'/'false'. DIGEST_QUEUE_URL is the dashboard queue base the
+      # digest's "Open in queue" deep-links point at (e.g.
+      # https://mailbox.staqs.io/dashboard/queue); unset → links omitted.
+      # Recipient is MAILBOX_OPERATOR_EMAIL (forwarded above) → onboarding email
+      # fallback. Forward-or-no-op per MBOX-306; defaults match the code.
+      DIGEST_SEND_FROM_GMAIL: ${DIGEST_SEND_FROM_GMAIL:-true}
+      DIGEST_QUEUE_URL: ${DIGEST_QUEUE_URL:-}
+      # MBOX-163 — repo path inside the container where the host repo bind
+      # mount lands. The dashboard reads it via lib/queries-git.ts to surface
+      # branch/sha/behind-master on /api/system/status. Default matches the
+      # mount target below; only override if you remount the repo somewhere
+      # else inside the container.
+      MAILBOX_REPO_MOUNT: ${MAILBOX_REPO_MOUNT:-/app/repo}
+      # MBOX-168 — swap-in-use threshold (MiB) for the /status swap stat.
+      # 0..threshold = yellow (noise floor / zram cycling), > threshold = red.
+      # Default 100 MiB matches lib/preflight/swap.ts. Forward-or-no-op per
+      # MBOX-306 rule (the helper falls back to the same default if unset).
+      MAILBOX_SWAP_THRESHOLD_MIB: ${MAILBOX_SWAP_THRESHOLD_MIB:-100}
+      # MBOX-168 — compose project name used to build the expected
+      # container-name pattern (`<project>-<svc>-1`) in
+      # lib/queries-orphans.ts. Matches the directory name docker-compose
+      # uses by default. Override only if you deploy under a non-default
+      # project name (`docker compose -p <name>`).
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-mailbox}
+    volumes:
+      - mailbox_kb_uploads:/var/lib/mailbox/kb
+      # MBOX-163 — bind-mount the host repo READ-ONLY so the dashboard can
+      # surface live appliance git state on /api/system/status (branch,
+      # short_sha, commits_behind_master, fetch age, dirty). Closes the
+      # STAQPRO-336 incident class: M1 sat on worktree-staqpro-360 at 198e105
+      # for 36h with local master 19 commits behind origin, invisible from
+      # off-the-box; Eric burned a rebuild before noticing. Read-only (:ro)
+      # is non-negotiable — the dashboard MUST never write to the host repo.
+      # Override per-appliance via HOST_REPO_DIR (default matches the M1
+      # layout in root CLAUDE.md "Deploy flow"). Mount-target stays /app/repo
+      # so the in-container MAILBOX_REPO_MOUNT default just works.
+      - ${HOST_REPO_DIR:-/home/bob/mailbox}:/app/repo:ro
+      # MBOX-168 — bind the host docker socket READ-ONLY so the dashboard
+      # can enumerate running containers and surface orphans (containers
+      # running outside docker-compose.yml) on /api/system/status.
+      # `:ro` is OPERATOR INTENT — the docker engine treats it as advisory
+      # (the protocol could in principle still execute writes), so this is
+      # acceptable only on the single-tenant trusted appliance. The
+      # dashboard code only ever calls GET /containers/json and is wired
+      # fail-closed (lib/queries-docker.ts). Closes the DR-25 misdiagnosis
+      # class: an orphan llama-cpp container hoarded 3.86 GiB invisibly to
+      # /status; this gives operators (and other Claude sessions) a
+      # one-glance answer instead of an SSH session.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # MBOX-168 follow-up — add the host docker group GID to nextjs's
+    # supplementary groups so it can actually read /var/run/docker.sock.
+    # Without this the bind lands (socket visible) but every API call hits
+    # EACCES because the socket is mode 0660 owned root:docker. Default 994
+    # is the docker GID on the M1 Jetson host; override per-appliance via
+    # DOCKER_GID in .env (`getent group docker` on the host to find the
+    # right value). Caught on M1 smoke 2026-05-26 — first deploy of PR #152.
+    group_add:
+      - "${DOCKER_GID:-994}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      n8n:
+        condition: service_started
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3001/dashboard/queue"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  mailbox-migrate:
+    profiles: ["migrate"]
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./dashboard:/app
+    environment:
+      POSTGRES_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # MBOX-325 — npm install at runtime against mounted dashboard/.npmrc
+      # needs the token in env to expand ${GITHUB_PACKAGES_TOKEN}.
+      GITHUB_PACKAGES_TOKEN: ${GITHUB_PACKAGES_TOKEN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - default
+    command: sh -c "npm install --no-audit --no-fund && npm run migrate"
+  mailbox-qdrant-bootstrap:
+    # STAQPRO-188 — one-shot idempotent Qdrant collection bootstrap. Runs to
+    # completion and exits. Re-running is safe (PUT collection + payload
+    # indexes are idempotent in Qdrant 1.13+).
+    profiles: ["qdrant-bootstrap"]
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./dashboard:/app
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      # MBOX-325 — npm install at runtime against mounted dashboard/.npmrc
+      # needs the token in env to expand ${GITHUB_PACKAGES_TOKEN}.
+      GITHUB_PACKAGES_TOKEN: ${GITHUB_PACKAGES_TOKEN}
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    networks:
+      - default
+    command: sh -c "npm install --no-audit --no-fund && npm run qdrant:bootstrap"
+  mailbox-n8n-verify:
+    # Audit 2026-05-15 — STAQPRO-181 dark-classify guardrail.
+    # Asserts all four MailBOX* workflows in n8n's workflow_entity table
+    # are active=t. Run after every n8n version bump, workflow re-import,
+    # or container recreate. Exits 0 on green, 1 on missing/inactive, 2 on
+    # connection error. Safe to re-run; read-only against workflow_entity.
+    #
+    # Invoke:
+    #   docker compose --profile n8n-verify run --rm mailbox-n8n-verify
+    profiles: ["n8n-verify"]
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./dashboard:/app
+    environment:
+      POSTGRES_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # MBOX-325 — npm install at runtime against mounted dashboard/.npmrc
+      # needs the token in env to expand ${GITHUB_PACKAGES_TOKEN}.
+      GITHUB_PACKAGES_TOKEN: ${GITHUB_PACKAGES_TOKEN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - default
+    command: sh -c "npm install --no-audit --no-fund && npm run n8n:verify"
+volumes:
+  postgres_data: null
+  qdrant_data: null
+  # STAQPRO-148 — original KB upload bytes (sha256-keyed). Backed up alongside
+  # other named volumes; deletes via DELETE /api/kb-documents are idempotent
+  # against missing files (fs.rm with force:true).
+  mailbox_kb_uploads: null
+  ollama_models: null
+  n8n_data: null
+  caddy_data: null
+  caddy_config: null

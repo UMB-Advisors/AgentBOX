@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# Cancel in-progress runs on PR push.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Minimal permission set. packages: read is NOT sufficient here — see below.
+permissions:
+  contents: read
+
+jobs:
+  dashboard:
+    name: dashboard (typecheck + test)
+    runs-on: ubuntu-latest
+
+    # Postgres service for DB-backed schema-invariants test cases.
+    # Migrations are applied by the test setup step below — without that, the
+    # CHECK constraints don't exist yet and the DB-backed cases would fail
+    # rather than skip.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: mailbox
+          POSTGRES_PASSWORD: mailbox
+          POSTGRES_DB: mailbox
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: dashboard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      # dashboard/.npmrc points @umb-advisors:* at npm.pkg.github.com and reads
+      # the auth token from ${GITHUB_PACKAGES_TOKEN}. The built-in GITHUB_TOKEN
+      # cannot read this package: @umb-advisors/llm is published from
+      # thumbox-platform (a different repo) and its "Actions access" list does
+      # not include UMB-Advisors/mailbox, so GITHUB_TOKEN → 403
+      # permission_denied:read_package (MBOX-337). Fix: a classic PAT with
+      # read:packages scope stored as the repo secret GH_PACKAGES_TOKEN — the
+      # secret cannot be named GITHUB_PACKAGES_TOKEN (the GITHUB_ prefix is
+      # reserved by GitHub), so the step maps it onto the GITHUB_PACKAGES_TOKEN
+      # env var that .npmrc reads.
+      - name: Install dependencies
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          export GITHUB_PACKAGES_TOKEN="$GH_PACKAGES_TOKEN"
+          npm ci
+
+      # Apply the canonical schema snapshot (captured from Bob via pg_dump).
+      # The dashboard's incremental .sql migrations assume mailbox.drafts +
+      # mailbox.inbox_messages already exist (created out-of-band on the
+      # appliance), so they cannot bootstrap a fresh DB on their own.
+      # Refresh test/fixtures/schema.sql when migrations land — see the
+      # comment block at the top of that file.
+      - name: Apply schema snapshot to CI Postgres
+        run: |
+          PGPASSWORD=mailbox psql \
+            -h localhost -p 5432 -U mailbox -d mailbox \
+            -v ON_ERROR_STOP=1 \
+            -f test/fixtures/schema.sql
+
+      - name: Lint + format (Biome)
+        run: npm run lint
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Vitest (schema invariants + pure code)
+        env:
+          TEST_POSTGRES_URL: postgresql://mailbox:mailbox@localhost:5432/mailbox
+        run: npm test
+
+# Deferred for follow-up commits under STAQPRO-134:
+#   - Lint/format step (Biome recommended; pick + add)
+#   - Workflow JSON drift check (after STAQPRO-133's drift test lands)
+#   - Pipeline smoke test job (separate job; needs Ollama or mocked LLM)

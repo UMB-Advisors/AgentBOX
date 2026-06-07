@@ -1,0 +1,98 @@
+{
+  "active": true,
+  "connections": {
+    "Webhook (mailbox-msg-action)": {
+      "main": [
+        [
+          {
+            "node": "Gmail Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Action": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "description": "MBOX-369 — applies a single Gmail row action (archive / delete / mark_read) for the dashboard approval queue. Called by dashboard lib/n8n.ts:triggerMsgActionWebhook. Body: { action, account_id, message_id }. archive => messages.modify removeLabelIds [INBOX]; mark_read => messages.modify removeLabelIds [UNREAD]; delete => messages.trash (recoverable, NOT permanent messages.delete). Uses the Gmail REST API via an HTTP Request node (predefined gmailOAuth2 credential) because the n8n Gmail node's 'delete' operation is a PERMANENT delete. Snooze is NOT here — it is appliance-local (Gmail has no snooze API). Single-account today: the one 'Gmail account' credential serves every account_id; per-account credential resolution is the MBOX-162 multi-account follow-up.",
+  "id": "MailBOXMsgAction00000001",
+  "isArchived": false,
+  "meta": {},
+  "name": "MailBOX-MsgAction",
+  "nodes": [
+    {
+      "id": "a1f0b2c3-0001-4a01-9001-msgactionwhk1",
+      "name": "Webhook (mailbox-msg-action)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -120,
+        0
+      ],
+      "webhookId": "b7c2e9d4-3a51-4f62-9c83-1a2b3c4d5e6f",
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {},
+        "path": "mailbox-msg-action",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "a1f0b2c3-0002-4a02-9002-msgactionhttp",
+      "name": "Gmail Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        120,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://gmail.googleapis.com/gmail/v1/users/me/messages/{{ $json.body.message_id }}/{{ $json.body.action === 'delete' ? 'trash' : 'modify' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body.action === 'archive' ? { removeLabelIds: ['INBOX'] } : ($json.body.action === 'mark_read' ? { removeLabelIds: ['UNREAD'] } : {})) }}",
+        "options": {}
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "vEz5mz0uaAtlK8yz",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "a1f0b2c3-0003-4a03-9003-msgactionresp",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        360,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, action: $('Webhook (mailbox-msg-action)').item.json.body.action, message_id: $('Webhook (mailbox-msg-action)').item.json.body.message_id, account_id: $('Webhook (mailbox-msg-action)').item.json.body.account_id, at: $now.toISO() } }}"
+      }
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}

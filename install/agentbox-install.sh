@@ -9,17 +9,16 @@
 #   - mint provider/cloud secrets (pulled from 1Password)
 #   - Gmail OAuth consent (browser, once per inbox)
 #
-# Usage:   ./scripts/agentbox-install.sh [--prototype]
+# Usage:   ./install/agentbox-install.sh [--prototype]
 #   --prototype : bench mode — generate throwaway secrets instead of 1Password,
 #                 and DO NOT decommission a co-resident hermesBOX/OpenClaw
 #                 (stop-only, restorable). Production omits this flag.
 set -euo pipefail
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # AgentBOX checkout (installer + Hermes wiring)
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # AgentBOX checkout (installer + Hermes wiring + vendored MailBOX stack)
 PROTOTYPE=0; [ "${1:-}" = "--prototype" ] && PROTOTYPE=1
-# The MailBOX stack is a SEPARATE repo, cloned by this installer (decision: installer-clones-mailbox).
-MAILBOX_GIT_URL="${MAILBOX_GIT_URL:-https://github.com/UMB-Advisors/mailbox.git}"
-MAILBOX_GIT_REF="${MAILBOX_GIT_REF:-main}"
-STACK_DIR="${STACK_DIR:-$HOME/mailbox}"                   # MailBOX stack checkout on the box
+# The MailBOX stack is VENDORED in this monorepo at $REPO/mailbox (decision UMB-105:
+# absorb MailBOX into AgentBOX — no external clone). STAGE 0.5 syncs it into place.
+STACK_DIR="${STACK_DIR:-$HOME/mailbox}"                   # MailBOX stack runtime checkout on the box
 HERMES_REF="${HERMES_REF:-927fa7a98}"                     # Hermes v0.15.1 pin — 0.16 enforces >=64K ctx which breaks local Qwen3-4B (DR: 2026-06-06)
 DASHBOARD_IMAGE="${DASHBOARD_IMAGE:-}"                    # if set/preloaded, skip the from-source dashboard build (no GH token needed)
 MAILBOX_FQDN="${MAILBOX_FQDN:-}"                          # tailnet FQDN for n8n/Funnel; blank on a bench/--prototype box
@@ -44,25 +43,80 @@ if ! docker info 2>/dev/null | grep -qiE 'Runtimes:.*nvidia'; then
   fi
 fi
 
-# ── STAGE 0.5: MailBOX stack (clone the SEPARATE repo; cd into it) ─────────
-# AgentBOX = MailBOX stack + Hermes. The stack lives in its own repo; clone it
-# and run every stack stage below inside that checkout. (.env, docker-compose,
-# dashboard/ schema+migrations, n8n/workflows all come from MailBOX.)
-log "STAGE 0.5 — MailBOX stack ($MAILBOX_GIT_URL#$MAILBOX_GIT_REF -> $STACK_DIR)"
+# ── STAGE 0.1: MAXN power mode + optional disk encryption (UMB-113) ─────────
+# Ported from the legacy first-boot.sh (Stages 4–5), adapted for JP7.2/r39.
+log "STAGE 0.1 — power mode + disk encryption"
+# MAXN/Super Mode: on r39 the max mode is NAME=MAXN_SUPER (id 2), NOT id 0 (the
+# r36 value). Detect the id by NAME from nvpmodel.conf (matches MAXN + MAXN_SUPER),
+# set it, and persist via systemd (the conf default is a lower-wattage mode).
+if command -v nvpmodel >/dev/null; then
+  MAXN_ID="$(grep -oP '^< POWER_MODEL ID=\K[0-9]+(?= NAME=MAXN)' /etc/nvpmodel.conf 2>/dev/null | head -1 || true)"
+  if [ -n "$MAXN_ID" ]; then
+    if nvpmodel -q 2>/dev/null | grep -qi MAXN; then
+      log "  power mode already MAXN (id $MAXN_ID)"
+    else
+      log "  setting MAXN power mode (nvpmodel -m $MAXN_ID)"
+      sudo nvpmodel -m "$MAXN_ID" >/dev/null 2>&1 || log "  WARN: nvpmodel set failed"
+    fi
+    if [ ! -f /etc/systemd/system/set-maxn-power.service ]; then
+      printf '[Unit]\nDescription=Set Jetson Orin to MAXN power mode\nAfter=multi-user.target\n\n[Service]\nType=oneshot\nExecStart=/usr/bin/nvpmodel -m %s\nRemainAfterExit=yes\n\n[Install]\nWantedBy=multi-user.target\n' "$MAXN_ID" \
+        | sudo tee /etc/systemd/system/set-maxn-power.service >/dev/null \
+        && sudo systemctl daemon-reload && sudo systemctl enable set-maxn-power.service >/dev/null 2>&1 \
+        && log "  set-maxn-power.service enabled (persists across reboot)" \
+        || log "  WARN: could not persist MAXN via systemd"
+    fi
+  else
+    log "  WARN: MAXN mode id not found in /etc/nvpmodel.conf — set manually (nvpmodel -q --verbose)"
+  fi
+else
+  log "  nvpmodel absent — skipping power mode (non-Jetson host?)"
+fi
+# LUKS encryption-at-rest (Jetson-native gen_luks.sh, OP-TEE/fTPM-bound).
+# DESTRUCTIVE — runs only in production with DATA_PARTITION set AND the explicit
+# LUKS_CONFIRM=ENCRYPT gate. Idempotent: skips a partition already LUKS.
+if [ "$PROTOTYPE" = 1 ]; then
+  log "  --prototype: skipping LUKS (bench)"
+elif [ -z "${DATA_PARTITION:-}" ]; then
+  log "  LUKS: DATA_PARTITION unset — skipping (set DATA_PARTITION=/dev/nvmeXnYpZ + LUKS_CONFIRM=ENCRYPT to enable)"
+else
+  [ -b "$DATA_PARTITION" ] || die "DATA_PARTITION=$DATA_PARTITION is not a block device"
+  if sudo cryptsetup isLuks "$DATA_PARTITION" 2>/dev/null; then
+    log "  LUKS: $DATA_PARTITION already encrypted — skipping"
+  else
+    [ "${LUKS_CONFIRM:-}" = "ENCRYPT" ] || die "refusing to encrypt $DATA_PARTITION without LUKS_CONFIRM=ENCRYPT (destructive)"
+    command -v cryptsetup >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq cryptsetup-bin tpm2-tools; }
+    [ -f /usr/sbin/gen_luks.sh ] || sudo apt-get install -y -qq nvidia-l4t-security-utils || true
+    [ -f /usr/sbin/gen_luks.sh ] || die "gen_luks.sh missing (nvidia-l4t-security-utils) — required for TPM-bound LUKS; see docs/agentbox-jp72-reproduction"
+    [ -e /dev/tpm0 ] || [ -e /dev/tpmrm0 ] || log "  WARN: no TPM device — key binding may not work, continuing"
+    log "  encrypting $DATA_PARTITION via gen_luks.sh (TPM-bound)…"
+    sudo /usr/sbin/gen_luks.sh "$DATA_PARTITION" || die "gen_luks.sh failed"
+    sudo cryptsetup luksDump "$DATA_PARTITION" >/dev/null || die "LUKS header not found after gen_luks"
+    log "  LUKS applied to $DATA_PARTITION"
+  fi
+fi
+
+# ── STAGE 0.5: MailBOX stack (VENDORED in this monorepo; sync into place) ──
+# AgentBOX absorbs the MailBOX stack — it lives at $REPO/mailbox (no external
+# clone). Sync the source-controlled stack into $STACK_DIR (the runtime
+# checkout) and run every stack stage below inside it. (.env, docker-compose,
+# dashboard/ schema+migrations, n8n/workflows all ship from the vendored stack.)
+log "STAGE 0.5 — MailBOX stack (vendored: $REPO/mailbox -> $STACK_DIR)"
+[ -f "$REPO/mailbox/docker-compose.yml" ] || die "vendored MailBOX stack missing at $REPO/mailbox"
 # Carry a GITHUB_PACKAGES_TOKEN supplied via env or the AgentBOX .env into the stack .env.
 ABX_TOKEN="${GITHUB_PACKAGES_TOKEN:-}"
 [ -z "$ABX_TOKEN" ] && [ -f "$REPO/.env" ] && ABX_TOKEN="$(grep -m1 '^GITHUB_PACKAGES_TOKEN=' "$REPO/.env" | cut -d= -f2-)"
-if [ -f "$STACK_DIR/docker-compose.yml" ] && [ -d "$STACK_DIR/dashboard/migrations" ]; then
-  log "  existing MailBOX checkout — fetching $MAILBOX_GIT_REF"
-  git -C "$STACK_DIR" fetch --depth 1 origin "$MAILBOX_GIT_REF" >/dev/null 2>&1 \
-    && git -C "$STACK_DIR" checkout -f "$MAILBOX_GIT_REF" >/dev/null 2>&1 \
-    && git -C "$STACK_DIR" reset --hard FETCH_HEAD >/dev/null 2>&1 || log "  WARN: stack update skipped (local changes?)"
-elif [ -e "$STACK_DIR" ]; then
-  die "$STACK_DIR exists but is not a MailBOX checkout — move it aside or set STACK_DIR"
+mkdir -p "$STACK_DIR"
+# Sync vendored stack into the runtime dir. Preserve runtime state that is NOT
+# source-controlled: .env (secrets), the applied override, docker volume data,
+# and the re-downloadable GGUFs. rsync if available; cp -a fallback.
+SYNC_EXCLUDES=(--exclude='.env' --exclude='.env.*.bak' --exclude='docker-compose.override.yml' --exclude='.git' --exclude='llama-cpp-models')
+if command -v rsync >/dev/null; then
+  rsync -a --delete "${SYNC_EXCLUDES[@]}" "$REPO/mailbox/" "$STACK_DIR/" || die "stack sync (rsync) failed"
 else
-  git clone --depth 1 --branch "$MAILBOX_GIT_REF" "$MAILBOX_GIT_URL" "$STACK_DIR" || die "mailbox clone failed"
+  log "  rsync absent — using cp -a (no prune of stale files)"
+  cp -a "$REPO/mailbox/." "$STACK_DIR/" || die "stack sync (cp) failed"
 fi
-cd "$STACK_DIR"   # ← all stack stages below run inside the MailBOX checkout
+cd "$STACK_DIR"   # ← all stack stages below run inside the runtime checkout
 [ -f docker-compose.yml ] && [ -f .env.example ] || die "MailBOX stack incomplete at $STACK_DIR"
 
 # AgentBOX compose override (loopback publishes for Hermes<->Ollama :11435 +
@@ -248,7 +302,8 @@ fi
 
 # ── STAGE 8: boot-to-ready systemd (SM-100) ───────────────────────────────
 # Install the AgentBOX user units: agentbox.service (compose orchestrator) +
-# hermes-dashboard.service (:9119). Enable linger so they start at boot headless.
+# hermes-dashboard.service (:9119) + hermes-gateway.service (messaging gateway).
+# Enable linger so they start at boot headless.
 log "STAGE 8 — boot-to-ready (systemd)"
 if [ -d "$REPO/systemd" ]; then
   mkdir -p "$HOME/.config/systemd/user"
@@ -256,9 +311,9 @@ if [ -d "$REPO/systemd" ]; then
   sudo loginctl enable-linger "$USER" >/dev/null 2>&1 || log "  WARN: enable-linger failed (units won't start until login)"
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
   systemctl --user daemon-reload 2>/dev/null || true
-  systemctl --user enable --now agentbox.service hermes-dashboard.service 2>/dev/null \
-    && log "  agentbox.service + hermes-dashboard.service enabled (:9119)" \
-    || log "  WARN: could not enable user units in this session — run: systemctl --user enable --now agentbox.service hermes-dashboard.service"
+  systemctl --user enable --now agentbox.service hermes-dashboard.service hermes-gateway.service 2>/dev/null \
+    && log "  agentbox + hermes-dashboard (:9119) + hermes-gateway enabled" \
+    || log "  WARN: could not enable user units in this session — run: systemctl --user enable --now agentbox.service hermes-dashboard.service hermes-gateway.service"
 else
   log "  WARN: $REPO/systemd not found — boot units not installed"
 fi

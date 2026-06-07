@@ -1,0 +1,5717 @@
+[
+  {
+    "source": "db",
+    "id": "910",
+    "from_addr": "la.sales@mcmaster.com",
+    "subject": "RE: We Stopped Shipping Orders",
+    "snippet": "Vendor (McMaster) confirming payment-update steps after halting shipments",
+    "label": "escalate",
+    "reasoning": "Supplier shipments halted \u2014 needs human attention to unblock production"
+  },
+  {
+    "source": "db",
+    "id": "911",
+    "from_addr": "accounting@heronlabsinc.com",
+    "subject": "Re: We Stopped Shipping Orders",
+    "snippet": "Internal team member (Sam) asking how to pay with updated credit card inside the escalate thread",
+    "label": "internal",
+    "reasoning": "Team-internal question seeking Dustin's input on payment logistics"
+  },
+  {
+    "source": "db",
+    "id": "912",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: EnerGemz Gummy Manufacturing",
+    "snippet": "Heron team member (Julie) confirming PO submission process to a customer",
+    "label": "follow_up",
+    "reasoning": "Reply inside an active customer thread \u2014 operationally follow_up regardless of who pressed send"
+  },
+  {
+    "source": "db",
+    "id": "913",
+    "from_addr": "la.sales@mcmaster.com",
+    "subject": "We Stopped Shipping Orders",
+    "snippet": "Vendor's original 'we stopped shipping' notification",
+    "label": "escalate",
+    "reasoning": "Same supplier-block issue \u2014 original of the thread"
+  },
+  {
+    "source": "db",
+    "id": "914",
+    "from_addr": "bpray9223@gmail.com",
+    "subject": "Re: Invoice 260203 Z from Heron Labs Inc. due 02/12/2026",
+    "snippet": "Customer asking for unit counts to generate Amazon shipping labels",
+    "label": "reorder",
+    "reasoning": "Active customer order \u2014 operational reorder logistics"
+  },
+  {
+    "source": "db",
+    "id": "915",
+    "from_addr": "eddie@heronlabsinc.com",
+    "subject": "Re: Kevin meet Clinton/Dustin [Gummies]",
+    "snippet": "Heron team member (Eddie) replying inside a prospect intro thread about samples",
+    "label": "follow_up",
+    "reasoning": "Reply inside an active external thread \u2014 follow_up rather than internal"
+  },
+  {
+    "source": "db",
+    "id": "916",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "Save $1300. Two weeks left.",
+    "snippet": "Salesforce promotional offer / discount expiry",
+    "label": "spam_marketing",
+    "reasoning": "Marketing newsletter from a SaaS vendor"
+  },
+  {
+    "source": "db",
+    "id": "917",
+    "from_addr": "info@admin.manus.im",
+    "subject": "What if your trading tools could build their own dashboards?",
+    "snippet": "Cold pitch: AI trading tool with stock signals",
+    "label": "spam_marketing",
+    "reasoning": "Lead-gen pitch unrelated to CPG operations"
+  },
+  {
+    "source": "db",
+    "id": "918",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Auto digest: 'No meetings today, nothing to prepare'",
+    "label": "spam_marketing",
+    "reasoning": "Recurring auto-newsletter \u2014 no action required"
+  },
+  {
+    "source": "db",
+    "id": "919",
+    "from_addr": "isabelle@toranagroup.com",
+    "subject": "Re: Julie <> Isabelle",
+    "snippet": "External contact confirming a meeting and sending a calendar invite",
+    "label": "scheduling",
+    "reasoning": "Calendar logistics \u2014 partner confirming meeting time"
+  },
+  {
+    "source": "db",
+    "id": "920",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Docs for TikTok Shop - Darlin' Wellness",
+    "snippet": "Heron team (Julie) updating customer on production timeline slip",
+    "label": "follow_up",
+    "reasoning": "Reply inside an active customer thread"
+  },
+  {
+    "source": "db",
+    "id": "921",
+    "from_addr": "eddie@heronlabsinc.com",
+    "subject": "Re: LBW Extract Samples",
+    "snippet": "Heron team (Eddie) negotiating sample sizes (Lion's Mane, Reishi) with a customer",
+    "label": "follow_up",
+    "reasoning": "Reply inside an active customer sample thread"
+  },
+  {
+    "source": "db",
+    "id": "922",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Paul Daniels x Heron Labs gummies",
+    "snippet": "Heron team (Julie) replying about collagen formulation options",
+    "label": "follow_up",
+    "reasoning": "Reply inside an active customer formulation thread"
+  },
+  {
+    "source": "db",
+    "id": "923",
+    "from_addr": "dylanharrison4494@gmail.com",
+    "subject": "Re: New Contact: Dylan Harrison from HeroChews",
+    "snippet": "Prospect asking total cost for 240000 gummies and packaging capability",
+    "label": "inquiry",
+    "reasoning": "First-touch pricing question from a prospect"
+  },
+  {
+    "source": "db",
+    "id": "924",
+    "from_addr": "dylanharrison4494@gmail.com",
+    "subject": "Re: New Contact: Dylan Harrison from HeroChews",
+    "snippet": "Prospect listing protein/fiber/sugar specs they're targeting",
+    "label": "inquiry",
+    "reasoning": "Continuation of a first-touch inquiry \u2014 still in pre-quote phase"
+  },
+  {
+    "source": "db",
+    "id": "925",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: New Contact: Dylan Harrison from HeroChews",
+    "snippet": "Heron team (Julie) replying to Dylan about protein gummy progress",
+    "label": "follow_up",
+    "reasoning": "Reply inside an active prospect thread"
+  },
+  {
+    "source": "db",
+    "id": "926",
+    "from_addr": "sagar@getflightmode.com",
+    "subject": "Re: Flightmode",
+    "snippet": "'Just checking in to see where we are at' \u2014 vendor follow-up",
+    "label": "follow_up",
+    "reasoning": "Classic 'just checking in' on a prior thread"
+  },
+  {
+    "source": "db",
+    "id": "927",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Julie <> Isabelle",
+    "snippet": "Heron team (Julie) replying with availability for a Friday morning meeting",
+    "label": "scheduling",
+    "reasoning": "Meeting logistics \u2014 calendar scheduling regardless of sender"
+  },
+  {
+    "source": "db",
+    "id": "928",
+    "from_addr": "bpray9223@gmail.com",
+    "subject": "Re: Invoice 260203 Z from Heron Labs Inc. due 02/12/2026",
+    "snippet": "Customer demanding details on inventory investigation; tone is firm",
+    "label": "escalate",
+    "reasoning": "Worried customer with potential 'massive problems' framing \u2014 needs careful response"
+  },
+  {
+    "source": "db",
+    "id": "969",
+    "from_addr": "roni@heronlabsinc.com",
+    "subject": "Re: Invoice 260203 Z from Heron Labs Inc. due 02/12/2026",
+    "snippet": "Empty/short reply from internal team member inside escalate thread",
+    "label": "internal",
+    "reasoning": "Short team-internal acknowledgement; not externally directed"
+  },
+  {
+    "source": "gmail",
+    "id": "19dcc2c2df179950",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Declined: RnD Planning 2.0 @ Mon Apr 27 2026 10:15am - 10:45am (PDT)",
+    "snippet": "Calendar auto-decline notification from internal team",
+    "label": "scheduling",
+    "reasoning": "Calendar/meeting logistics \u2014 auto-decline notice"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc74daccc7833e",
+    "from_addr": "em@em1.cloudflare.com",
+    "subject": "Welcome to Cloudflare",
+    "snippet": "Vendor onboarding marketing email",
+    "label": "spam_marketing",
+    "reasoning": "Onboarding/marketing email from a SaaS vendor"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc180a84f26ac3",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Jorge Plascencia shared Heron Friday Wrap Up (Google Meet) in Otter",
+    "snippet": "Internal team meeting recording shared via Otter",
+    "label": "internal",
+    "reasoning": "Internal team meeting recording \u2014 operator should be aware"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc08e46ac18d97",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "Auction site marketing newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Recurring marketing newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19dbf948b2b4a4f5",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Auto-digest from a calendar AI tool",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool notification (no real action needed) \u2014 taxonomy gap; spam_marketing is closest fit for noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19dbe39a85aa2bec",
+    "from_addr": "noreply@notify.cloudflare.com",
+    "subject": "heronlabsinc.com is now active on Cloudflare (Free plan)",
+    "snippet": "Domain activation confirmation with feature tips",
+    "label": "spam_marketing",
+    "reasoning": "Mostly upsell/feature-tour content; not actionable"
+  },
+  {
+    "source": "gmail",
+    "id": "19dbe311fe1c7d61",
+    "from_addr": "em@em1.cloudflare.com",
+    "subject": "Free Plan purchased for heronlabsinc.com",
+    "snippet": "Vendor account confirmation",
+    "label": "internal",
+    "reasoning": "Account/operations confirmation for Heron's domain"
+  },
+  {
+    "source": "gmail",
+    "id": "19dbcb2246e37d08",
+    "from_addr": "hello@info.n8n.io",
+    "subject": "Your free n8n license key to unlock selected paid features",
+    "snippet": "Vendor sending license key for self-hosted n8n",
+    "label": "internal",
+    "reasoning": "Functional account info \u2014 operator needs the key"
+  },
+  {
+    "source": "gmail",
+    "id": "19dbc4aa80367c21",
+    "from_addr": "no-reply@accounts.google.com",
+    "subject": "Security alert",
+    "snippet": "New Linux sign-in to Google account",
+    "label": "internal",
+    "reasoning": "Security notification about Heron's Google account"
+  },
+  {
+    "source": "gmail",
+    "id": "19dbc4c34eec83e3",
+    "from_addr": "no-reply@accounts.google.com",
+    "subject": "Security alert",
+    "snippet": "Authenticator app added as sign-in step",
+    "label": "internal",
+    "reasoning": "Security 2FA notification for Heron's account"
+  },
+  {
+    "source": "gmail",
+    "id": "19dbc4d5dea53b13",
+    "from_addr": "no-reply@accounts.google.com",
+    "subject": "Security alert",
+    "snippet": "Authenticator app added (duplicate)",
+    "label": "internal",
+    "reasoning": "Security 2FA notification for Heron's account"
+  },
+  {
+    "source": "gmail",
+    "id": "19dbbc6b0df762af",
+    "from_addr": "childofcoven@gmail.com",
+    "subject": "Collaboration Inquiry \u2013 Child of Coven LLC",
+    "snippet": "Prospect introduced via MDBC club asking to work together",
+    "label": "inquiry",
+    "reasoning": "First-touch prospect with a partnership ask"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc2113410653f3",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Collaboration Inquiry \u2013 Child of Coven LLC",
+    "snippet": "Julie replying to Tomas about R&D scope and facility timing",
+    "label": "internal",
+    "reasoning": "Sender is internal (Julie Tran)"
+  },
+  {
+    "source": "gmail",
+    "id": "19dbbbf501884c75",
+    "from_addr": "madriza@hotmail.com",
+    "subject": "Fw: Forklift",
+    "snippet": "Forwarded supplier email about a forklift offer",
+    "label": "spam_marketing",
+    "reasoning": "Unsolicited supplier offer forwarded into the inbox"
+  },
+  {
+    "source": "gmail",
+    "id": "19dba6e338d93f29",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Same recurring tool digest",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19db7360dabeca21",
+    "from_addr": "marketing@puregroundingredients.com",
+    "subject": "Happy Earth Day!",
+    "snippet": "Supplier marketing newsletter (Earth Day theme)",
+    "label": "spam_marketing",
+    "reasoning": "Supplier marketing newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19db6b3171d989f2",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Kevin Xu from China Best Food",
+    "snippet": "Sales contact form submission via Manus \u2014 gummy concept",
+    "label": "inquiry",
+    "reasoning": "First-touch prospect inquiry via contact form"
+  },
+  {
+    "source": "gmail",
+    "id": "19db6b3c565af83e",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Kevin Xu from China Best Food",
+    "snippet": "Dustin's automated reply with technical feedback",
+    "label": "internal",
+    "reasoning": "Sender is operator (Dustin self-action)"
+  },
+  {
+    "source": "gmail",
+    "id": "19db5eccbcd9505f",
+    "from_addr": "brief@artemis-international.com",
+    "subject": "Algae-Powered Innovation: InSea2\u00ae and WholeCal\u00ae",
+    "snippet": "Ingredient supplier marketing newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Supplier marketing newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19db5992508f217b",
+    "from_addr": "info@admin.manus.im",
+    "subject": "You're falling behind on AI research.",
+    "snippet": "AI tool marketing pitch",
+    "label": "spam_marketing",
+    "reasoning": "Cold marketing newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19db547dc01f05fa",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Same recurring tool digest",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19db540b212e6747",
+    "from_addr": "theconsumervc@substack.com",
+    "subject": "Peptides. So hot right now",
+    "snippet": "VC newsletter on emerging consumer brands",
+    "label": "spam_marketing",
+    "reasoning": "Substack newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19db479e346403fe",
+    "from_addr": "notification@safetyculture.io",
+    "subject": "Your course is overdue!",
+    "snippet": "Compliance training reminder",
+    "label": "internal",
+    "reasoning": "Operator compliance training reminder"
+  },
+  {
+    "source": "gmail",
+    "id": "19db229497145469",
+    "from_addr": "kyle@saanroo.com",
+    "subject": "Saanroo Ingredients",
+    "snippet": "Supplier following up after webinar inquiry form Heron filled out",
+    "label": "follow_up",
+    "reasoning": "Continuation of a prior interaction (webinar inquiry)"
+  },
+  {
+    "source": "gmail",
+    "id": "19db1e7bded42250",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "Recurring auction marketing",
+    "label": "spam_marketing",
+    "reasoning": "Same auction newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19db182219437796",
+    "from_addr": "pureimagination@heronlabsinc.com",
+    "subject": "Moderator's spam report for pureimagination@heronlabsinc.com",
+    "snippet": "Google Groups moderator queue notification",
+    "label": "internal",
+    "reasoning": "System notification about internal group moderation queue"
+  },
+  {
+    "source": "gmail",
+    "id": "19db145416716998",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "What is Slack? Meet the operating system for work",
+    "snippet": "Salesforce/Slack marketing",
+    "label": "spam_marketing",
+    "reasoning": "Recurring vendor marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19db119e66336d1e",
+    "from_addr": "fpleimann@usgreens.net",
+    "subject": "Can we talk about greens? \ud83e\udd6c\ud83c\udf31",
+    "snippet": "Supplier follow-up post Expo West",
+    "label": "follow_up",
+    "reasoning": "Classic 'put us back on your radar' supplier follow-up"
+  },
+  {
+    "source": "gmail",
+    "id": "19db072e3277c5b8",
+    "from_addr": "info@admin.manus.im",
+    "subject": "What if your daily research ran itself?",
+    "snippet": "AI tool cold pitch",
+    "label": "spam_marketing",
+    "reasoning": "Cold marketing pitch"
+  },
+  {
+    "source": "gmail",
+    "id": "19db055512f3cb92",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "Registration is open. Lock in your $999 pass today.",
+    "snippet": "Dreamforce conference marketing",
+    "label": "spam_marketing",
+    "reasoning": "Conference promo"
+  },
+  {
+    "source": "gmail",
+    "id": "19db0230f2fcdb74",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Same recurring tool digest",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19daea9a2ab3391b",
+    "from_addr": "sales@heronlabsinc.com",
+    "subject": "Moderator's spam report for sales@heronlabsinc.com",
+    "snippet": "Google Groups moderator queue notification",
+    "label": "internal",
+    "reasoning": "System notification about internal group moderation queue"
+  },
+  {
+    "source": "gmail",
+    "id": "19dae2b9244c4c53",
+    "from_addr": "bzwang43@gmail.com",
+    "subject": "Protein Gummies & Heron Labs 4/16/20 Meeting Notes & Next Steps",
+    "snippet": "Customer recap of in-person meeting and next steps",
+    "label": "follow_up",
+    "reasoning": "Post-meeting recap from a customer"
+  },
+  {
+    "source": "gmail",
+    "id": "19db2747274ab524",
+    "from_addr": "eddie@heronlabsinc.com",
+    "subject": "Re: Protein Gummies & Heron Labs 4/16/20 Meeting Notes & Next Steps",
+    "snippet": "Eddie internal reply to recap",
+    "label": "internal",
+    "reasoning": "Sender is internal (Eddie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19db727e160f6b25",
+    "from_addr": "eddie@heronlabsinc.com",
+    "subject": "Re: Protein Gummies & Heron Labs 4/16/20 Meeting Notes & Next Steps",
+    "snippet": "Eddie sending updated supplemental facts to customer",
+    "label": "internal",
+    "reasoning": "Sender is internal (Eddie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19db7708623757ec",
+    "from_addr": "bzwang43@gmail.com",
+    "subject": "Re: Protein Gummies & Heron Labs 4/16/20 Meeting Notes & Next Steps",
+    "snippet": "Customer asking detailed product/spec follow-up questions",
+    "label": "follow_up",
+    "reasoning": "Continuation of an active customer thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19db878ccbea1ff8",
+    "from_addr": "fkajee@gmail.com",
+    "subject": "Re: Protein Gummies & Heron Labs 4/16/20 Meeting Notes & Next Steps",
+    "snippet": "Customer asking 'can we go ahead and print packaging' \u2014 production decision",
+    "label": "reorder",
+    "reasoning": "Active production decision \u2014 moving forward on order"
+  },
+  {
+    "source": "gmail",
+    "id": "19dacc2d8dd18884",
+    "from_addr": "Sales@puregroundingredients.com",
+    "subject": "New Stock Items - Pure Ground Ingredients",
+    "snippet": "Weekly supplier stock list newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Recurring supplier newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19dacc04277a9150",
+    "from_addr": "julie@founderland.us",
+    "subject": "Dustin, your Founderland invite is here",
+    "snippet": "Accelerator program lead-gen invite",
+    "label": "spam_marketing",
+    "reasoning": "Lead-gen invite to apply"
+  },
+  {
+    "source": "gmail",
+    "id": "19dac0797667ff4f",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Meeting Summary for Business loans/funding",
+    "snippet": "Otter summary of internal funding strategy meeting",
+    "label": "internal",
+    "reasoning": "Internal team meeting summary"
+  },
+  {
+    "source": "gmail",
+    "id": "19dabd7122e0ca87",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Business loans/funding in Otter",
+    "snippet": "Otter share of internal meeting",
+    "label": "internal",
+    "reasoning": "Internal team meeting recording"
+  },
+  {
+    "source": "gmail",
+    "id": "19dabb8ac3049b74",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Heron Manufacturing Weekly Standup in Otter",
+    "snippet": "Otter share of weekly standup",
+    "label": "internal",
+    "reasoning": "Internal team meeting recording"
+  },
+  {
+    "source": "gmail",
+    "id": "19dab9aaf0cd3395",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Heron Labs moving",
+    "snippet": "Julie sending move logistics to vendor (mover)",
+    "label": "internal",
+    "reasoning": "Sender is internal (Julie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19dcfe3d9efdb537",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Heron Labs moving",
+    "snippet": "Julie following up with mover on dates and equipment",
+    "label": "internal",
+    "reasoning": "Sender is internal (Julie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19dd0152f6aff839",
+    "from_addr": "Shanew@dunkelbros.com",
+    "subject": "RE: Heron Labs moving",
+    "snippet": "Mover (Dunkel Bros) asking for pictures of equipment",
+    "label": "reorder",
+    "reasoning": "Active vendor service order \u2014 logistics in motion"
+  },
+  {
+    "source": "gmail",
+    "id": "19dd01938a06e63d",
+    "from_addr": "Shanew@dunkelbros.com",
+    "subject": "RE: Heron Labs moving",
+    "snippet": "Mover asking if equipment is crated",
+    "label": "reorder",
+    "reasoning": "Active vendor service order coordination"
+  },
+  {
+    "source": "gmail",
+    "id": "19dd02410d41f921",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Heron Labs moving",
+    "snippet": "Julie confirming Jorge will send pictures",
+    "label": "internal",
+    "reasoning": "Sender is internal (Julie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19dab83567be844e",
+    "from_addr": "blog@send.zapier.com",
+    "subject": "Add safety and compliance checks to your workflows",
+    "snippet": "Zapier marketing newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Vendor marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19dab331e2c9c147",
+    "from_addr": "supplysidesupplementjournal@go02.informamarkets.com",
+    "subject": "Register: Upcycled ingredients education series",
+    "snippet": "Industry webinar registration push",
+    "label": "spam_marketing",
+    "reasoning": "Conference/webinar promo"
+  },
+  {
+    "source": "gmail",
+    "id": "19daafb41718488b",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Same recurring digest",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19daa82afdd7a0f5",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Your upcoming meetings and 2 that you may have missed",
+    "snippet": "Weekly digest from Otter about meetings",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool digest noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19da71ff8867b1e6",
+    "from_addr": "flores.sebastian4@gmail.com",
+    "subject": "Inquiry: Manufacturing partner for functional caffeine jelly beans (Zaps)",
+    "snippet": "Prospect asking about manufacturing capability",
+    "label": "inquiry",
+    "reasoning": "First-touch prospect inquiry"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc23c790841e03",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Inquiry: Manufacturing partner for functional caffeine jelly beans (Zaps)",
+    "snippet": "Julie responding to Sebastian about jelly bean equipment",
+    "label": "internal",
+    "reasoning": "Sender is internal (Julie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc5a478c7a8c20",
+    "from_addr": "flores.sebastian4@gmail.com",
+    "subject": "Re: Inquiry: Manufacturing partner for functional caffeine jelly beans (Zaps)",
+    "snippet": "Prospect open to pivoting to gummies",
+    "label": "inquiry",
+    "reasoning": "Continuation of pre-quote inquiry"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc66ba50d1e675",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Inquiry: Manufacturing partner for functional caffeine jelly beans (Zaps)",
+    "snippet": "Julie sending R&D program info sheet",
+    "label": "internal",
+    "reasoning": "Sender is internal (Julie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19dd06e43af07503",
+    "from_addr": "flores.sebastian4@gmail.com",
+    "subject": "Re: Inquiry: Manufacturing partner for functional caffeine jelly beans (Zaps)",
+    "snippet": "Prospect checking in on jelly bean capability timing",
+    "label": "follow_up",
+    "reasoning": "'When do you expect to know' \u2014 checking in on prior question"
+  },
+  {
+    "source": "gmail",
+    "id": "19da71d59df80fcd",
+    "from_addr": "community@startupcpg.com",
+    "subject": "need brands to sample!",
+    "snippet": "StartupCPG community marketing",
+    "label": "spam_marketing",
+    "reasoning": "Community newsletter / event push"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9d95241fbd96e",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Invitation: Moving strategy meeting",
+    "snippet": "Internal calendar invite for moving strategy meeting",
+    "label": "scheduling",
+    "reasoning": "Calendar invite \u2014 meeting logistics"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9d74117135c65",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Jorge Plascencia shared Heron Friday Wrap Up (Google Meet) in Otter",
+    "snippet": "Internal team meeting recording shared",
+    "label": "internal",
+    "reasoning": "Internal team meeting recording"
+  },
+  {
+    "source": "gmail",
+    "id": "19d937369a6ba477",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Urgent: TR177461881463076 - B&B Brands Inc.",
+    "snippet": "Dustin forwarding Eurofins compliance request to JT",
+    "label": "internal",
+    "reasoning": "Sender is operator (Dustin self-forward)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9d39b1491e267",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Urgent: TR177461881463076 - B&B Brands Inc.",
+    "snippet": "Julie responding to Eurofins about GMP audit scope",
+    "label": "internal",
+    "reasoning": "Sender is internal (Julie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9d36dc9ef03ea",
+    "from_addr": "jeff@afterglow.science",
+    "subject": "Heron <> Afterglow",
+    "snippet": "Partner consolidating contact info for account",
+    "label": "internal",
+    "reasoning": "Partner account-administration thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9d778b5dc1dd5",
+    "from_addr": "jeff@afterglow.science",
+    "subject": "Re: Heron <> Afterglow",
+    "snippet": "Partner clarifying email-on-file",
+    "label": "internal",
+    "reasoning": "Partner account-administration follow-up"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9d8136dd41fee",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Heron <> Afterglow",
+    "snippet": "Julie replying with team contact roster",
+    "label": "internal",
+    "reasoning": "Sender is internal (Julie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9ce8b052ca580",
+    "from_addr": "pureimagination@heronlabsinc.com",
+    "subject": "Moderator's spam report for pureimagination@heronlabsinc.com",
+    "snippet": "Group moderation queue notification",
+    "label": "internal",
+    "reasoning": "System notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9c7c7e00a06c9",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Eric Nicholas from Mahaya LLC",
+    "snippet": "Sales contact form submission \u2014 nootropic gummy",
+    "label": "inquiry",
+    "reasoning": "First-touch prospect inquiry via contact form"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9c7cffcf6021c",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Eric Nicholas from Mahaya LLC",
+    "snippet": "Dustin's automated reply about Cognizin gummy concept",
+    "label": "internal",
+    "reasoning": "Sender is operator (Dustin self-action)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9c6f3d5332813",
+    "from_addr": "eddie@heronlabsinc.com",
+    "subject": "Fwd: Document shared with you: \"Jack Cole Debloat label revisions\"",
+    "snippet": "Eddie forwarding internal Google Doc share",
+    "label": "internal",
+    "reasoning": "Sender is internal (Eddie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9c67591ab5e1f",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "Auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Recurring marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9c348dc0a6434",
+    "from_addr": "SupplySide@go02.informamarkets.com",
+    "subject": "You voted \u2014 here are the top-selected sessions for SupplySide Global 2026!",
+    "snippet": "Trade show session announcement",
+    "label": "spam_marketing",
+    "reasoning": "Industry event marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9b88196b86799",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Recurring tool digest",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19d973d5d76ddd4e",
+    "from_addr": "marketing@puregroundingredients.com",
+    "subject": "What Makes Chipotle Peppers Special?",
+    "snippet": "Supplier ingredient newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Supplier newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19d97196c4656c22",
+    "from_addr": "sales@chemgm.com",
+    "subject": "Pharmaceutical Raw Material Supply",
+    "snippet": "Cold pitch from Chinese chemical/extract supplier (undisclosed-recipients)",
+    "label": "spam_marketing",
+    "reasoning": "Cold supplier blast"
+  },
+  {
+    "source": "gmail",
+    "id": "19d96de7507ed2e2",
+    "from_addr": "theconsumervc@substack.com",
+    "subject": "\ud83c\udfa7 How a Diabetic Built One of the Fastest-Growing Cereal Brands in America with Krishna Kaliannan",
+    "snippet": "Substack newsletter podcast post",
+    "label": "spam_marketing",
+    "reasoning": "Substack newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9662cc0f35992",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Recurring tool digest",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19d964c2ad24a1eb",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Andrew Collins from Andrew Collins",
+    "snippet": "Sales contact form submission \u2014 chew product",
+    "label": "inquiry",
+    "reasoning": "First-touch prospect inquiry via contact form"
+  },
+  {
+    "source": "gmail",
+    "id": "19d95f5304bb6ca9",
+    "from_addr": "online@odoo.com",
+    "subject": "Uh-oh! Your Odoo free trial just ended!",
+    "snippet": "Vendor trial expiry / upsell",
+    "label": "spam_marketing",
+    "reasoning": "Vendor sales push (recover/upgrade)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d940b2f0d01414",
+    "from_addr": "sales@heronlabsinc.com",
+    "subject": "Gummy Manufacturing - Heron Labs",
+    "snippet": "Prospect asking about MOQs and single-serve pouches via sales alias",
+    "label": "inquiry",
+    "reasoning": "First-touch prospect inquiry via sales alias"
+  },
+  {
+    "source": "gmail",
+    "id": "19d968ebbcc0bd49",
+    "from_addr": "sales@heronlabsinc.com",
+    "subject": "Re: Gummy Manufacturing - Heron Labs",
+    "snippet": "Same prospect inquiry resent",
+    "label": "inquiry",
+    "reasoning": "Resend of prior prospect inquiry"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc1ff24c965663",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Gummy Manufacturing - Heron Labs",
+    "snippet": "Julie replying to Eric with MOQs and capabilities",
+    "label": "internal",
+    "reasoning": "Sender is internal (Julie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d933ee6c6a6d75",
+    "from_addr": "EurofinsCertification@ft.eurofinsus.com",
+    "subject": "TR177461881463076 - B&B Brands Inc.",
+    "snippet": "Eurofins requesting GMP certification for Amazon Dietary Supplement Verification",
+    "label": "escalate",
+    "reasoning": "Regulatory/compliance verification request \u2014 needs careful response"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9333921429850",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Re: Hi there! BLUEBERRY",
+    "snippet": "Nicky responding to customer about blueberry puree availability",
+    "label": "internal",
+    "reasoning": "Sender is internal (Nicky)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d98a5639dd11da",
+    "from_addr": "eddie@heronlabsinc.com",
+    "subject": "Re: Hi there! BLUEBERRY",
+    "snippet": "Eddie sending ingredients/supplemental facts to customer",
+    "label": "internal",
+    "reasoning": "Sender is internal (Eddie)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d932f191403378",
+    "from_addr": "clinton@heronlabsinc.com",
+    "subject": "Invitation: Business loans/funding @ Mon Apr 20 2026 10am - 11am",
+    "snippet": "Calendar invite from Clinton",
+    "label": "scheduling",
+    "reasoning": "Calendar invite \u2014 meeting logistics"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9303826c99b5f",
+    "from_addr": "ivan@mail.notion.so",
+    "subject": "Notion 3.4, part 2",
+    "snippet": "Notion product update marketing",
+    "label": "spam_marketing",
+    "reasoning": "Vendor product marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19d91ad9382c0518",
+    "from_addr": "customersuccess.americas@mail.odoo.com",
+    "subject": "SURVEY: What is Odoo missing?",
+    "snippet": "Vendor customer success survey",
+    "label": "spam_marketing",
+    "reasoning": "Vendor outreach (no real action needed)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d918cb7478f80c",
+    "from_addr": "info@admin.manus.im",
+    "subject": "Ever wonder how Manus tackles deep research?",
+    "snippet": "Manus marketing pitch",
+    "label": "spam_marketing",
+    "reasoning": "Cold marketing pitch"
+  },
+  {
+    "source": "gmail",
+    "id": "19d913b6c2841c6d",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Recurring tool digest",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19d906558165a857",
+    "from_addr": "notification@safetyculture.io",
+    "subject": "Your course is overdue!",
+    "snippet": "Compliance training reminder",
+    "label": "internal",
+    "reasoning": "Operator compliance training reminder"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8eb99b4c26f43",
+    "from_addr": "invoice+statements+acct_14GBQ34YpZGElkrt@stripe.com",
+    "subject": "Your receipt from Calendly LLC #2668-1203",
+    "snippet": "Stripe receipt for Calendly subscription",
+    "label": "internal",
+    "reasoning": "Vendor receipt \u2014 operator's accounting concern"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8dbb2e446c172",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "Auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Recurring marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8d9a38e1c9700",
+    "from_addr": "clickupdates@mail.clickup.com",
+    "subject": "What's new in ClickUp",
+    "snippet": "Vendor product update newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Vendor marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8d5d404077b1c",
+    "from_addr": "noreply@netlify.com",
+    "subject": "Stop paying for people.",
+    "snippet": "Netlify pricing/upsell marketing",
+    "label": "spam_marketing",
+    "reasoning": "Vendor marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8d38c06550131",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "Introducing Slackbot, Slack's new personalized AI companion",
+    "snippet": "Salesforce/Slack feature marketing",
+    "label": "spam_marketing",
+    "reasoning": "Vendor marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8c9d5f945038e",
+    "from_addr": "nicole@partnerslate.com",
+    "subject": "Candies & Chocolates : Explore What's New at PartnerSlate! \ud83d\ude80",
+    "snippet": "PartnerSlate project alert newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Lead-gen platform newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8c85dc86c5712",
+    "from_addr": "shirleybbrown@pitchmore360group.com",
+    "subject": "Dustin",
+    "snippet": "Cold pitch about getting 4-8 GMP contracts in 90 days",
+    "label": "spam_marketing",
+    "reasoning": "Cold sales pitch (lead-gen agency)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8c6646879941b",
+    "from_addr": "info@admin.manus.im",
+    "subject": "Did You Know Manus Can Turn Your Entire Content Library Into Skills?",
+    "snippet": "Manus marketing pitch",
+    "label": "spam_marketing",
+    "reasoning": "Cold marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8c14ec75cee30",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Recurring tool digest",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8bd6eaa495e7b",
+    "from_addr": "online@odoo.com",
+    "subject": "Your Odoo free trial is coming to an end soon",
+    "snippet": "Vendor trial-expiry warning / upsell",
+    "label": "spam_marketing",
+    "reasoning": "Vendor sales push"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8bd2d04fea466",
+    "from_addr": "online@odoo.com",
+    "subject": "Confirm Your Email Address - heronlabs.co",
+    "snippet": "Vendor email verification",
+    "label": "internal",
+    "reasoning": "Account verification step for Heron's domain"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8bd2ca7a469ea",
+    "from_addr": "noreply@domainnameverification.net",
+    "subject": "Verification of your email address",
+    "snippet": "Domain registry contact verification",
+    "label": "internal",
+    "reasoning": "Domain registration compliance step"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8a9d1ffda46a3",
+    "from_addr": "sales@heronlabsinc.com",
+    "subject": "Moderator's spam report for sales@heronlabsinc.com",
+    "snippet": "Group moderation queue notification",
+    "label": "internal",
+    "reasoning": "System notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19d89ddc41c70bd3",
+    "from_addr": "sales06@focusherb.com",
+    "subject": "2026 SupplySide East in NJ invitation>> FocusHerb",
+    "snippet": "Cold supplier booth invitation",
+    "label": "spam_marketing",
+    "reasoning": "Cold supplier pitch"
+  },
+  {
+    "source": "gmail",
+    "id": "19d89b02e52d1eb7",
+    "from_addr": "team@heronlabsinc.com",
+    "subject": "Moderator's spam report for team@heronlabsinc.com",
+    "snippet": "Group moderation queue notification",
+    "label": "internal",
+    "reasoning": "System notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8907848581b58",
+    "from_addr": "lolthesnoob2x@gmail.com",
+    "subject": "question",
+    "snippet": "Reddit-sourced contact wanting to discuss something",
+    "label": "inquiry",
+    "reasoning": "First-touch contact from social \u2014 likely prospect"
+  },
+  {
+    "source": "gmail",
+    "id": "19d88cadc830beab",
+    "from_addr": "carly@helmsmangroup.com",
+    "subject": "Food Bites of The Week - Rice and Cheese",
+    "snippet": "Recall-prevention newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Vendor newsletter (advisory services)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d88c057a38aa22",
+    "from_addr": "theconsumervc@substack.com",
+    "subject": "Unilever Buys Gr\u00fcns for $1.2B",
+    "snippet": "Substack newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Substack newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19d88a6c66f9ea65",
+    "from_addr": "supplysidefoodbeveragejournal@go02.informamarkets.com",
+    "subject": "Live session: Transforming food waste into profit",
+    "snippet": "Industry webinar promo",
+    "label": "spam_marketing",
+    "reasoning": "Conference/webinar promo"
+  },
+  {
+    "source": "gmail",
+    "id": "19d885658ae189b4",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Jacqui Tate from NewCo",
+    "snippet": "Sales contact form submission \u2014 gummy concept",
+    "label": "inquiry",
+    "reasoning": "First-touch prospect inquiry via contact form"
+  },
+  {
+    "source": "gmail",
+    "id": "19d885706fa57572",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Jacqui Tate from NewCo",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "Sender is operator (Dustin self-action)"
+  },
+  {
+    "source": "gmail",
+    "id": "19d8801498332805",
+    "from_addr": "events@send.zapier.com",
+    "subject": "Tomorrow: Executive Blueprint for Responsible AI Governance",
+    "snippet": "Zapier webinar invite",
+    "label": "spam_marketing",
+    "reasoning": "Conference/webinar promo"
+  },
+  {
+    "source": "gmail",
+    "id": "19d87c7ec5d8502f",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "Dreamforce is almost here. Get first access.",
+    "snippet": "Salesforce conference marketing",
+    "label": "spam_marketing",
+    "reasoning": "Conference promo"
+  },
+  {
+    "source": "gmail",
+    "id": "19d87ac27e0affcd",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Heron Manufacturing Weekly Standup in Otter",
+    "snippet": "Internal team meeting recording shared",
+    "label": "internal",
+    "reasoning": "Internal team meeting recording"
+  },
+  {
+    "source": "gmail",
+    "id": "19d86eea95e82ad8",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Recurring tool digest",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19d868dd936283c7",
+    "from_addr": "newhope@go02.informamarkets.com",
+    "subject": "Did you see this? The natural market insights leaders rely on",
+    "snippet": "Industry market insights upsell",
+    "label": "spam_marketing",
+    "reasoning": "Industry research/marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19d865ea15998568",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Your upcoming meetings and 2 that you may have missed",
+    "snippet": "Weekly Otter digest",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool digest"
+  },
+  {
+    "source": "gmail",
+    "id": "19d7c360e0e6381f",
+    "from_addr": "online@odoo.com",
+    "subject": "Uh-oh! Your Odoo free trial just ended!",
+    "snippet": "Vendor trial expiry / upsell (older trial)",
+    "label": "spam_marketing",
+    "reasoning": "Vendor sales push"
+  },
+  {
+    "source": "gmail",
+    "id": "19d796730d3bde5d",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Jorge Plascencia shared Heron Friday Wrap Up (Google Meet) in Otter",
+    "snippet": "Internal team meeting recording shared",
+    "label": "internal",
+    "reasoning": "Internal team meeting recording"
+  },
+  {
+    "source": "gmail",
+    "id": "19d7958cf5014e78",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "Auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Recurring marketing"
+  },
+  {
+    "source": "gmail",
+    "id": "19d7903f6f9a5e3c",
+    "from_addr": "nicole@partnerslate.com",
+    "subject": "CBD & THC : Explore What's New at PartnerSlate! \ud83d\ude80",
+    "snippet": "PartnerSlate project alert newsletter",
+    "label": "spam_marketing",
+    "reasoning": "Lead-gen platform newsletter"
+  },
+  {
+    "source": "gmail",
+    "id": "19d7848b63598179",
+    "from_addr": "events@send.zapier.com",
+    "subject": "Rivian, KAYAK, Zapier on AI risk and trust",
+    "snippet": "Zapier webinar invite",
+    "label": "spam_marketing",
+    "reasoning": "Conference/webinar promo"
+  },
+  {
+    "source": "gmail",
+    "id": "19d777dfe76aebd3",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Recurring tool digest",
+    "label": "spam_marketing",
+    "reasoning": "Recurring tool noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19d73ef6db735a76",
+    "from_addr": "eddie@ceres14.com",
+    "subject": "Following up!",
+    "snippet": "supplier follow-up about Heron's chemical/ingredient sourcing inquiry",
+    "label": "follow_up",
+    "reasoning": "explicit 'following up' subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19d7813f25711570",
+    "from_addr": "eddie@ceres14.com",
+    "subject": "Re: Following up!",
+    "snippet": "supplier confirming email removed from system",
+    "label": "follow_up",
+    "reasoning": "explicit 'following up' subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19d7365f90b7809b",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Joey Spanjers / Dustin Powers in Otter",
+    "snippet": "external prospect meeting recording shared via Otter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d73606424cd14c",
+    "from_addr": "events@send.zapier.com",
+    "subject": "[Webinar] What Airbnb, Rippling & top leaders wish they'd known about scaling AI",
+    "snippet": "Zapier webinar marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d732fd5e002b19",
+    "from_addr": "marketing@puregroundingredients.com",
+    "subject": "Are you attending ASTA?",
+    "snippet": "supplier inviting Heron to ASTA event",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d72cf0b52ac874",
+    "from_addr": "sales@heronlabsinc.com",
+    "subject": "Reaching out Regarding a Quote",
+    "snippet": "prospect requesting quote for custom mango gummies via sales alias",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc204aa9efa1f7",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Reaching out Regarding a Quote",
+    "snippet": "Julie following up to lost lead found in spam",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d72909893984d9",
+    "from_addr": "nutritioncapitalnetwork@go02.informamarkets.com",
+    "subject": "Key Opportunities Shaping Health & Nutrition Investing in 2026",
+    "snippet": "industry investing newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d7277bcb406734",
+    "from_addr": "brief@artemis-international.com",
+    "subject": "Spotlight on InSea2\u00ae for Blood Sugar Support",
+    "snippet": "ingredient supplier marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d7262648b6246c",
+    "from_addr": "lukedodson@gmail.com",
+    "subject": "Form sent",
+    "snippet": "prospect (Crash Test Gummies) confirming form receipt",
+    "label": "inquiry",
+    "reasoning": "personal-email new contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19d7256cb1ae1e14",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d71ed14a61434d",
+    "from_addr": "online@odoo.com",
+    "subject": "Your Odoo free trial is coming to an end soon",
+    "snippet": "vendor trial expiry / upsell",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d7186f61473f95",
+    "from_addr": "ellen@betonnutrition.com",
+    "subject": "inventory list in USA warehouse",
+    "snippet": "supplier cold pitch with ingredient list",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d6e881fbce2170",
+    "from_addr": "bzwang43@gmail.com",
+    "subject": "Re: Protein Gummies - April 16th visit to NorCal",
+    "snippet": "customer recapping meeting and next steps for protein gummies",
+    "label": "follow_up",
+    "reasoning": "personal-email reply or fwd in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d70b3883ff8802",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Protein Gummies - April 16th visit to NorCal",
+    "snippet": "Julie responding to customer about NorCal facility visit",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d87d0dfe19ba1c",
+    "from_addr": "bzwang43@gmail.com",
+    "subject": "Re: Protein Gummies - April 16th visit to NorCal",
+    "snippet": "customer wanting to finalize gummy production and next steps",
+    "label": "follow_up",
+    "reasoning": "personal-email reply or fwd in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d89eeb8cf73d34",
+    "from_addr": "fkajee@gmail.com",
+    "subject": "Re: Protein Gummies - April 16th visit to NorCal",
+    "snippet": "customer asking for ingredient list and nutritional info",
+    "label": "follow_up",
+    "reasoning": "personal-email reply or fwd in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d89f165de044a0",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Protein Gummies - April 16th visit to NorCal",
+    "snippet": "Julie responding to wait for tomorrow",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d6e199765e66f8",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Luke Dodson from Crash Test Gummies LLC",
+    "snippet": "sales contact form submission - startup gummy",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d6e1a132802fe5",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Luke Dodson from Crash Test Gummies LLC",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d6dfa12576818b",
+    "from_addr": "adobesign@adobesign.com",
+    "subject": "Reminder: Waiting for you to sign MNDA Victory Lap_Blank",
+    "snippet": "Adobe Sign reminder for MNDA signature",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d6d6f3c306bd8c",
+    "from_addr": "la.sales@mcmaster.com",
+    "subject": "Please Pay for Your February 3rd Order",
+    "snippet": "vendor payment chase for $45.32 declined card",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d6d2ecb5bfd119",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d6c59ffbf21ff1",
+    "from_addr": "notification@safetyculture.io",
+    "subject": "Your course is due today!",
+    "snippet": "compliance training reminder",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d698a5bbee1094",
+    "from_addr": "learnmore@gntusa.com",
+    "subject": "Practical Color Insights: New Webinar Series Now Open",
+    "snippet": "supplier webinar promo",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d693c0f1412a14",
+    "from_addr": "ansidor02@gmail.com",
+    "subject": "Manufacturing partner",
+    "snippet": "prospect asking about MOQs and private label gummy manufacturing",
+    "label": "inquiry",
+    "reasoning": "explicit inquiry subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc20fdb1709326",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Manufacturing partner",
+    "snippet": "Julie reconnecting with prospect found in spam",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc661b17463aaf",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Manufacturing partner",
+    "snippet": "Julie sending MNDA to prospect",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d692e5b56277e0",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "How is AI Changing the Way Your Team Communicates? See our latest research.",
+    "snippet": "Salesforce/Slack marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d691ed4bc2ecec",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d6901886105f03",
+    "from_addr": "childofcoven@gmail.com",
+    "subject": "Follow-up on Scheduling Call",
+    "snippet": "prospect following up after no response - want to move forward",
+    "label": "follow_up",
+    "reasoning": "explicit 'following up' subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19d6ddb0e36d833d",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Follow-up on Scheduling Call",
+    "snippet": "Dustin responding about facility move pause",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d68e7e7d32bd89",
+    "from_addr": "notabeneflavors@substack.com",
+    "subject": "The Honeycrisp Problem",
+    "snippet": "Substack newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d68087f0edf0c8",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d65a3a7f51596f",
+    "from_addr": "team@heronlabsinc.com",
+    "subject": "Moderator's spam report for team@heronlabsinc.com",
+    "snippet": "Google Groups moderation queue",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d64dadeaf2c276",
+    "from_addr": "joey@teicor.com",
+    "subject": "Invitation: Joey Spanjers / Dustin Powers @ Thu Apr 9 2026 1:00pm - 1:30pm CDT",
+    "snippet": "external calendar invite from Joey at Teicor",
+    "label": "scheduling",
+    "reasoning": "calendar invite/response"
+  },
+  {
+    "source": "gmail",
+    "id": "19d647ce61b4f531",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Caitlin Kowenstrot from Relief Bites",
+    "snippet": "sales contact form - pediatric acetaminophen gummy",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d647d879d9c2cb",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Caitlin Kowenstrot from Relief Bites",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d63bfef42c13fd",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Invitation: Moving logistics prep @ Mon Apr 6 2026 3:30pm - 4pm (PDT)",
+    "snippet": "internal calendar invite for moving logistics",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d639fb87a0c269",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Heron Manufacturing Weekly Standup in Otter",
+    "snippet": "internal team meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d636a68606162b",
+    "from_addr": "blog@send.zapier.com",
+    "subject": "Automate straight from ChatGPT",
+    "snippet": "Zapier marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d62e5140b79d3c",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d6280fde515f3a",
+    "from_addr": "newhope@go02.informamarkets.com",
+    "subject": "Where the Natural Products Market Is Headed",
+    "snippet": "industry research marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d626dc902edfd2",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Your upcoming meetings and 2 that you may have missed",
+    "snippet": "Otter weekly digest",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d5d2d9805c873d",
+    "from_addr": "online@odoo.com",
+    "subject": "Confirm Your Email Address - heronlabs.co",
+    "snippet": "vendor email verification",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d5d2d0967d7b99",
+    "from_addr": "noreply@domainnameverification.net",
+    "subject": "Verification of your email address",
+    "snippet": "domain registry verification",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d5891d3c4cd901",
+    "from_addr": "theconsumervc@substack.com",
+    "subject": "Drone food delivery is coming, Create raises $20m, McCormick buys Unilever Foods & more",
+    "snippet": "Substack newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d56350623bf5f5",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Rakesh Dasgupta from TBA",
+    "snippet": "sales contact form - gummy concept",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d563592fea1ca1",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Rakesh Dasgupta from TBA",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d5562d18de21e9",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Exec Meeting Coach",
+    "snippet": "tool coaching notification for Heron Friday Wrap Up",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d55624eb31641d",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Recap for \"Heron Friday Wrap Up (Google Meet)\"",
+    "snippet": "tool meeting recap notification",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d555af96ca4021",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Jorge Plascencia shared Heron Friday Wrap Up (Google Meet) in Otter",
+    "snippet": "internal team meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d5543798165c3c",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d54d3eec03029b",
+    "from_addr": "events@send.zapier.com",
+    "subject": "How we build, test, and demo AI live",
+    "snippet": "Zapier webinar",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d5494b3c458ca6",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Lisa Wong from Salt Candy",
+    "snippet": "sales contact form - growth-stage gummy",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d54952926e2ccc",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Lisa Wong from Salt Candy",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d53710a411b9f3",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d502f3bbee0b31",
+    "from_addr": "julie@founderland.us",
+    "subject": "Dustin, Founderland Tickets Are LIVE \u26a1\ufe0f",
+    "snippet": "accelerator/event marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4fc8b7a96ae27",
+    "from_addr": "marketing@puregroundingredients.com",
+    "subject": "The power of powders",
+    "snippet": "supplier newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4faee4af0e86e",
+    "from_addr": "eddie@ceres14.com",
+    "subject": "Quick introduction",
+    "snippet": "supplier cold introduction",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4e80a8293494c",
+    "from_addr": "blogteam@eosworldwide.com",
+    "subject": "Last Chance to Pre-Order Issues Before April 7",
+    "snippet": "EOS book pre-order marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4e49e481ee7c1",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4e19446e495c5",
+    "from_addr": "bpray9223@gmail.com",
+    "subject": "Fwd: GMP - Welcome to Eurofins - TR177461881463076",
+    "snippet": "customer forwarding regulatory request from Eurofins (B&B Brands)",
+    "label": "follow_up",
+    "reasoning": "personal-email reply or fwd in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19db16f50061d838",
+    "from_addr": "bpray9223@gmail.com",
+    "subject": "Re: GMP - Welcome to Eurofins - TR177461881463076",
+    "snippet": "customer following up on whether GMP docs were submitted",
+    "label": "follow_up",
+    "reasoning": "personal-email reply or fwd in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19db359cc9493fd5",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: GMP - Welcome to Eurofins - TR177461881463076",
+    "snippet": "Julie confirming docs submitted to Eurofins",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4cb964e6236e3",
+    "from_addr": "quickbooks@notification.intuit.com",
+    "subject": "Invoice 260401 from Heron Labs, Inc. due 04/02/2026",
+    "snippet": "QuickBooks invoice for Heron's customer ($5000)",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4ca183204c6c1",
+    "from_addr": "shopvitalempirellc@gmail.com",
+    "subject": "Urgent follow-up vital bolt production status",
+    "snippet": "customer urgently asking for production status update",
+    "label": "follow_up",
+    "reasoning": "explicit 'following up' subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19d51c7a27314fec",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Urgent follow-up vital bolt production status",
+    "snippet": "Julie explaining machine issues delay",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d556a28518662d",
+    "from_addr": "shopvitalempirellc@gmail.com",
+    "subject": "Re: Urgent follow-up vital bolt production status",
+    "snippet": "customer thanking and asking to be kept posted",
+    "label": "follow_up",
+    "reasoning": "explicit 'following up' subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4afd24e967ee4",
+    "from_addr": "jake@appliedfoods.com",
+    "subject": "Meeting at SupplySide Connect, NJ",
+    "snippet": "supplier asking to meet at trade show",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4a80f9a6e6073",
+    "from_addr": "invoice+statements+acct_1RUAGOIvej3McWsT@stripe.com",
+    "subject": "New invoice from BPray Enterprises LLC #TV4OIGHG-0001",
+    "snippet": "Stripe invoice from customer (BPray)",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4a623ea387128",
+    "from_addr": "nicole@partnerslate.com",
+    "subject": "Candies & Chocolates : Explore What's New at PartnerSlate! \ud83d\ude80",
+    "snippet": "PartnerSlate project alerts",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4a44e7264dbcf",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Meeting Summary for EnerGemz x Heron update",
+    "snippet": "Otter summary of customer meeting",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4a19c8fdc57e6",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared EnerGemz x Heron update in Otter",
+    "snippet": "Otter share of customer meeting",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4a101046cba09",
+    "from_addr": "marketing@growinco.com",
+    "subject": "Kirkland vs. Celsius: co-manufacturing can be the way for fast time-to-market",
+    "snippet": "industry marketing newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d49ed993b0a281",
+    "from_addr": "adobesign@adobesign.com",
+    "subject": "Reminder: Waiting for you to sign MNDA Victory Lap_Blank",
+    "snippet": "Adobe Sign reminder",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d49e9567220c1a",
+    "from_addr": "SupplySide@go02.informamarkets.com",
+    "subject": "Help shape the 2026 SupplySide Global Education Program lineup: Voting closes soon",
+    "snippet": "industry voting/marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d49e4652b5459a",
+    "from_addr": "notabeneflavors@substack.com",
+    "subject": "Unformulated Issue #3",
+    "snippet": "Substack newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d49de0d6222275",
+    "from_addr": "jake@appliedfoods.com",
+    "subject": "New AFS Contact & Updates",
+    "snippet": "supplier introducing new account exec",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d69009fe3f68e6",
+    "from_addr": "jake@appliedfoods.com",
+    "subject": "Re: New AFS Contact & Updates",
+    "snippet": "supplier following up on samples",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d497969f6a7318",
+    "from_addr": "info@performancefungi.com",
+    "subject": "\ud83d\udea8 ATTENTION REQUIRED \ud83d\udea8",
+    "snippet": "alarming-subject marketing pitch",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d492253f4785c2",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d484d90860f486",
+    "from_addr": "notification@safetyculture.io",
+    "subject": "Your course is almost due!",
+    "snippet": "compliance training reminder",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d465af0a4c5710",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Invitation: EnerGemz x Heron update @ Wed Apr 1 2026 10:30am - 11am (PDT)",
+    "snippet": "internal team calendar invite for customer meeting",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d45fafc5c5d2eb",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Anna Sidor from Anna Sidor",
+    "snippet": "sales contact form - private label gummy",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d45fb91778c129",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Anna Sidor from Anna Sidor",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d45aaa96bcead1",
+    "from_addr": "quickbooks@notification.intuit.com",
+    "subject": "Invoice 251021-2 from Heron Labs, Inc. due 03/31/2026",
+    "snippet": "QuickBooks invoice for Heron's customer ($124.61)",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4556bfd5078b7",
+    "from_addr": "sales@heronlabsinc.com",
+    "subject": "Private label production",
+    "snippet": "prospect asking about private label gummy with actives via sales alias",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4521555b5cecd",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "New demo: Reinvent work with Slack, your agentic work operating system",
+    "snippet": "Salesforce/Slack marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d45092b5eee2de",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "Live now: Meet the new Slack with MrBeast and Anthropic!",
+    "snippet": "Salesforce live event marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d450518b0fcbdc",
+    "from_addr": "events@send.zapier.com",
+    "subject": "[You're invited] Keep up with AI in 4 live workshops this April",
+    "snippet": "Zapier webinar marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d44f5ebead4fa9",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d44d679781f0ac",
+    "from_addr": "online@odoo.com",
+    "subject": "Activate heron-labs-live.odoo.com",
+    "snippet": "vendor account activation step",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d44c50f47f91af",
+    "from_addr": "noreply@netlify.com",
+    "subject": "[Newsletter] A new starting point for the web",
+    "snippet": "Netlify newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d44bdd3a86139f",
+    "from_addr": "online@odoo.com",
+    "subject": "heron-labs-inc-test-19-0331.odoo.com: Upgrade complete",
+    "snippet": "vendor database upgrade notification",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d44b3c4aee771c",
+    "from_addr": "upgrade@odoo.com",
+    "subject": "Odoo Upgrade Request successfully created",
+    "snippet": "vendor upgrade request confirmation",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4499368bc9743",
+    "from_addr": "notabeneflavors@substack.com",
+    "subject": "Dark Cherry Flavor Architecture",
+    "snippet": "Substack newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d440261c62fb8e",
+    "from_addr": "m.aufieri@probiotical.com",
+    "subject": "Meet Probiotical at In-cos Paris",
+    "snippet": "supplier booth invitation at trade show",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d43fc19e663e1b",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d41dc62fd50539",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Cordyceps Extract Invoice",
+    "snippet": "Julie negotiating partial invoice with supplier (Unifi)",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d41ea044266897",
+    "from_addr": "kevin@unififarms.com",
+    "subject": "Re: Cordyceps Extract Invoice",
+    "snippet": "supplier responding about modified invoice",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d419ec9129a3c9",
+    "from_addr": "notifications@stripe.com",
+    "subject": "[Action required] Complete your Stripe setup by April 07, 2026 to avoid losing your work",
+    "snippet": "Stripe sandbox expiration warning",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d40a8527b51d30",
+    "from_addr": "no-reply@email.slackhq.com",
+    "subject": "Tomorrow: See how Anthropic, MrBeast, and Salesforce are using Slack to move faster",
+    "snippet": "Slack/Salesforce marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4033fa168e715",
+    "from_addr": "camron@vertosa.com",
+    "subject": "Invitation: Elefante <> Vertosa: Team visit @ Wed Apr 1 2026 12pm - 2pm (PDT)",
+    "snippet": "calendar invite for partner team visit",
+    "label": "scheduling",
+    "reasoning": "calendar invite/response"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3ff205448ede8",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Updated invitation: Ashley visits Heron @ Mon Mar 30 2026 3pm - 4pm (PDT)",
+    "snippet": "internal calendar invite update",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3f99fb7ee8644",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Recap for \"Heron Manufacturing Weekly Standup\"",
+    "snippet": "tool meeting recap",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3f932128098b3",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Heron Manufacturing Weekly Standup in Otter",
+    "snippet": "internal team meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3f8776d2f54e0",
+    "from_addr": "mariam@tryglimpse.com",
+    "subject": "Expo Recaps and 2 World Cup Tickets Inside",
+    "snippet": "supplier marketing with sweepstakes",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4a4e135b7d4b6",
+    "from_addr": "mariam@tryglimpse.com",
+    "subject": "Re: Expo Recaps and 2 World Cup Tickets Inside",
+    "snippet": "supplier follow-up on sweepstakes",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3f7373615b0ec",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "Tomorrow: See how Anthropic, MrBeast, and Salesforce are using Slack to move faster",
+    "snippet": "Salesforce/Slack marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3edb3e0a480f9",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3e33ac0581f3b",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Your upcoming meetings and 2 that you may have missed",
+    "snippet": "Otter weekly digest",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3d2e48dc55d73",
+    "from_addr": "Eli@isaganiyorke.com",
+    "subject": "Isagani Yorke Follow-up",
+    "snippet": "external contact following up \u2014 investor/consultant",
+    "label": "follow_up",
+    "reasoning": "explicit 'following up' subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3b7f924062a01",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Daniel Wright from Daniel Wright",
+    "snippet": "sales contact form - chew product",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d349064ea847a8",
+    "from_addr": "theconsumervc@substack.com",
+    "subject": "The Week of Acquisitions: Huel, Salt & Stone, Made By Nacho, Monaco Cocktails, So Good So You and Skechers",
+    "snippet": "Substack newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3257c47d16804",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Fwd: Heron Deck Slides Information",
+    "snippet": "Julie forwarding deck-related email",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3295cac79c2d7",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Fwd: Heron Deck Slides Information",
+    "snippet": "Julie forwarding deck-related email",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d32b38bdde53a3",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Heron Deck Slides Information",
+    "snippet": "Julie sharing overview deck link",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d314e7f1f92277",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Jorge Plascencia shared Heron Friday Wrap Up (Google Meet) in Otter",
+    "snippet": "internal team meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3133424e77644",
+    "from_addr": "christopher@firstdscnt.com",
+    "subject": "Re: Packaging supplier Jar - GMP docs request",
+    "snippet": "supplier confirming receipt of GMP docs request",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19dae0be17876b07",
+    "from_addr": "christopher@firstdscnt.com",
+    "subject": "Re: Packaging supplier Jar - GMP docs request",
+    "snippet": "supplier follow-up via signal",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d30a2fed2b1e76",
+    "from_addr": "jeffzorz@gmail.com",
+    "subject": "jeff arndt rosin gummies",
+    "snippet": "customer asking about order status (lost phone, can't be reached)",
+    "label": "inquiry",
+    "reasoning": "personal-email new contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19d30b30384f3f55",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Re: jeff arndt rosin gummies",
+    "snippet": "Nicky responding with production schedule",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d30936527da82b",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3088c4093a00e",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Invitation: deck call @ Wed Apr 1 2026 11:30am - 12:30pm (PDT)",
+    "snippet": "internal calendar invite for deck call",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3084d1cbb95d2",
+    "from_addr": "olivia@goldcoastinc.com",
+    "subject": "Flavor & Color Sampling \u2014 Gold Coast Ingredients",
+    "snippet": "supplier following up after Expo West interest",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d30aa301d36759",
+    "from_addr": "edith@goldcoastinc.com",
+    "subject": "Re: Flavor & Color Sampling \u2014 Gold Coast Ingredients",
+    "snippet": "supplier sales rep introducing herself",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d50eacf23bfe61",
+    "from_addr": "edith@goldcoastinc.com",
+    "subject": "Re: Flavor & Color Sampling \u2014 Gold Coast Ingredients",
+    "snippet": "supplier following up to schedule meeting",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d512af24cdd842",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Flavor & Color Sampling \u2014 Gold Coast Ingredients",
+    "snippet": "Dustin agreeing to meet next week",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d540e4f2b80da2",
+    "from_addr": "edith@goldcoastinc.com",
+    "subject": "Re: Flavor & Color Sampling \u2014 Gold Coast Ingredients",
+    "snippet": "supplier asking for date/time",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d307f9369d777a",
+    "from_addr": "dan@birdwaycpg.com",
+    "subject": "500k gummy project",
+    "snippet": "broker/consultant asking about feasibility for 500k gummies",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d49ac1875a7228",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: 500k gummy project",
+    "snippet": "Dustin reply",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d49ac407de1b2e",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Fwd: 500k gummy project",
+    "snippet": "Dustin forwarding to team for feasibility review",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d49d39848389f8",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: 500k gummy project",
+    "snippet": "Julie giving feasibility opinion to team",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4a29c1e7c2cc7",
+    "from_addr": "dan@birdwaycpg.com",
+    "subject": "Re: 500k gummy project",
+    "snippet": "broker following up with product link",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d3065491d247ed",
+    "from_addr": "ikravzov@premiernutrapharma.com",
+    "subject": "Re: Enquiry: Vegan Gummy Vitamin Manufacturing",
+    "snippet": "partner forwarding inquiry from a brand",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4faf5023850de",
+    "from_addr": "ikravzov@premiernutrapharma.com",
+    "subject": "Re: Enquiry: Vegan Gummy Vitamin Manufacturing",
+    "snippet": "partner asking how to respond about line capability",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d64c6c8bfe274c",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Enquiry: Vegan Gummy Vitamin Manufacturing",
+    "snippet": "Julie responding about starch line",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d64c87f345da6e",
+    "from_addr": "ikravzov@premiernutrapharma.com",
+    "subject": "Re: Enquiry: Vegan Gummy Vitamin Manufacturing",
+    "snippet": "partner thanking",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2fd7cbd01a9bf",
+    "from_addr": "SupplySide@go02.informamarkets.com",
+    "subject": "Help shape the 2026 SupplySide Global Education Program lineup: Survey is open",
+    "snippet": "industry survey/marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2f6292ed79919",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2f5b3e9d2a3b9",
+    "from_addr": "edmato2005@gmail.com",
+    "subject": "Accepted: edward and Dustin Powers @ Fri Mar 27 2026 4:30pm - 5pm (PDT)",
+    "snippet": "calendar acceptance from external contact",
+    "label": "scheduling",
+    "reasoning": "calendar invite/response"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2e252b675df7b",
+    "from_addr": "liyq@junqibio.com",
+    "subject": "Thank You and Farewell // JUNQI Eric",
+    "snippet": "supplier contact resigning - announcing farewell",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2ca281e6df831",
+    "from_addr": "notifications@calendly.com",
+    "subject": "New Event: edward - 07:30pm Fri, Mar 27 2026 - 30 Minute Meeting",
+    "snippet": "Calendly new event notification",
+    "label": "scheduling",
+    "reasoning": "calendar event creation"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2bffec539baec",
+    "from_addr": "ivan@mail.notion.so",
+    "subject": "Notion 3.4, part 1",
+    "snippet": "Notion product update marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2bbc396bd70ea",
+    "from_addr": "marketing@puregroundingredients.com",
+    "subject": "Exclusive Discounts This Week",
+    "snippet": "supplier discount marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2bb34265c493d",
+    "from_addr": "eddie@ceres14.com",
+    "subject": "can you forward to sourcing or procurement please and thanks!",
+    "snippet": "supplier cold introduction",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2ba1769b52749",
+    "from_addr": "blogteam@eosworldwide.com",
+    "subject": "What Leaders Are Saying About Issues",
+    "snippet": "EOS book marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2b58951169be5",
+    "from_addr": "saul@adallennutrition.com",
+    "subject": "Introduction \u2013 Monk Fruit & Stevia Solutions for Heron Labs",
+    "snippet": "supplier reintroducing themselves",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2b4c11b8d56e6",
+    "from_addr": "news@send.zapier.com",
+    "subject": "Three updates to keep your work safe and organized",
+    "snippet": "Zapier marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2a774ae7ebe3e",
+    "from_addr": "nutritioncapitalnetwork@go02.informamarkets.com",
+    "subject": "Health & Nutrition Investing in 2026: Where Momentum Is Building",
+    "snippet": "industry newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2a3c3b9d93f29",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d291af525a03cb",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Andrew Collins from Andrew Collins",
+    "snippet": "sales contact form - chew product",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d26f0a56dd6229",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Daniel Ngo from Amending Soon",
+    "snippet": "sales contact form - lower sugar gummy concept",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d26f12a3eac5f3",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Daniel Ngo from Amending Soon",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d268f9623cbed4",
+    "from_addr": "brakiimavt@icloud.com",
+    "subject": "Inquiry: Magnesium Gummies Manufacturing",
+    "snippet": "prospect from MDBC community asking about magnesium gummies",
+    "label": "inquiry",
+    "reasoning": "explicit inquiry subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2640b4e06c836",
+    "from_addr": "ashley@eatzammies.com",
+    "subject": "Zammies X Heron Labs",
+    "snippet": "external contact canceling/rescheduling meeting",
+    "label": "unknown",
+    "reasoning": "unmatched - needs review"
+  },
+  {
+    "source": "gmail",
+    "id": "19d25e112671309e",
+    "from_addr": "adobesign@adobesign.com",
+    "subject": "Reminder: Waiting for you to sign MNDA Victory Lap_Blank",
+    "snippet": "Adobe Sign reminder",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d25acc66d82b32",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "MrBeast is joining us live! See how Slackbot powers his fast-growing company.",
+    "snippet": "Salesforce/Slack marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d25930b62a8bc5",
+    "from_addr": "events@send.zapier.com",
+    "subject": "Cursor + Zapier MCP webinar starts soon",
+    "snippet": "Zapier webinar marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d258faa6b29395",
+    "from_addr": "notabeneflavors@substack.com",
+    "subject": "Nota Bene: Unformulated",
+    "snippet": "Substack newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d254bd385ba639",
+    "from_addr": "mara.orl@zelevatesolutions.com",
+    "subject": "Honest question, Dustin",
+    "snippet": "cold pitch about Amazon services for YES Cacao",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2f9d141c23869",
+    "from_addr": "mara.orl@zelevatesolutions.com",
+    "subject": "Re: Honest question, Dustin",
+    "snippet": "cold pitch follow-up",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d441162142ce4c",
+    "from_addr": "mara.orl@zelevatesolutions.com",
+    "subject": "Re: Honest question, Dustin",
+    "snippet": "cold pitch final follow-up",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d252237062797f",
+    "from_addr": "nutritioncapitalnetwork@go02.informamarkets.com",
+    "subject": "LinkedIn Live - Deep Dive: Women's Health Market Opportunities",
+    "snippet": "industry webinar",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2515cb97156b7",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d243fdc4a3cd3d",
+    "from_addr": "notification@safetyculture.io",
+    "subject": "Your course is almost due!",
+    "snippet": "compliance training reminder",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d23d4499553b4a",
+    "from_addr": "contact@herreserve.co",
+    "subject": "Manufacturing Inquiry \u2014 Micronized Creatine Monohydrate Powder (DTC Women's Wellness)",
+    "snippet": "prospect from r/manufacturing - DTC creatine powder",
+    "label": "inquiry",
+    "reasoning": "explicit inquiry subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19d23ba30e12e393",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Heron assets logo",
+    "snippet": "Julie sharing asset/logo file internally",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d23c7d33652de0",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Heron assets logo",
+    "snippet": "Julie sharing David Gallardo info",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d23adb579d92a5",
+    "from_addr": "clinton@heronlabsinc.com",
+    "subject": "total_addressable_market_-_sheet1.pdf",
+    "snippet": "Clinton sharing TAM analysis PDF",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d23ed7852414d7",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: total_addressable_market_-_sheet1.pdf",
+    "snippet": "Dustin reply",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d23ac449147d5f",
+    "from_addr": "clinton@heronlabsinc.com",
+    "subject": "(no subject)",
+    "snippet": "Clinton internal email - empty subject",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d23abb5233a290",
+    "from_addr": "clinton@heronlabsinc.com",
+    "subject": "(no subject)",
+    "snippet": "Clinton sharing nutraceuticals market data",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d23aa5f2d4ad23",
+    "from_addr": "clinton@heronlabsinc.com",
+    "subject": "(no subject)",
+    "snippet": "Clinton internal - empty",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d21e23bf099aea",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d21143062feba2",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "Your Dev Workflow is About to Get a Major Upgrade",
+    "snippet": "Salesforce/Slack marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d20f4e7fc0256b",
+    "from_addr": "events@send.zapier.com",
+    "subject": "[Workshop] Stop babysitting your AI",
+    "snippet": "Zapier workshop marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d20989f7e27989",
+    "from_addr": "notabeneflavors@substack.com",
+    "subject": "How to Build an Apple Flavor",
+    "snippet": "Substack newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d202bc4fb44d8d",
+    "from_addr": "brief@artemis-international.com",
+    "subject": "NEW RESEARCH: Consumer Insights On Elderberry",
+    "snippet": "ingredient supplier research/marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d201afb28d3b8d",
+    "from_addr": "ericaflores.ff@dealspark2.com",
+    "subject": "Dustin",
+    "snippet": "cold pitch about growth services",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1fef7ff733b09",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1fe267c11588e",
+    "from_addr": "marketing@growinco.com",
+    "subject": "What does the first 90 days of a co-manufacturing project look like?",
+    "snippet": "industry marketing newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1e779277a162a",
+    "from_addr": "sales@heronlabsinc.com",
+    "subject": "Moderator's spam report for sales@heronlabsinc.com",
+    "snippet": "Google Groups moderation queue",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1d32f4bc5a448",
+    "from_addr": "quickbooks@notification.intuit.com",
+    "subject": "Invoice 260114-2 from Heron Labs, Inc. due 03/23/2026",
+    "snippet": "QuickBooks invoice for Heron's customer ($728)",
+    "label": "internal",
+    "reasoning": "account/system notification for operator"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1fb2347fa9b94",
+    "from_addr": "nickalasengland@gmail.com",
+    "subject": "Re: Invoice 260114-2 from Heron Labs, Inc. due 03/23/2026",
+    "snippet": "customer flagging discrepancy between order and sample",
+    "label": "follow_up",
+    "reasoning": "personal-email reply or fwd in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9da6d02c912bb",
+    "from_addr": "accounting@heronlabsinc.com",
+    "subject": "Re: Invoice 260114-2 from Heron Labs, Inc. due 03/23/2026",
+    "snippet": "Heron accounting confirming receipt",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1c531612b83a5",
+    "from_addr": "alventuramolina@energemz.com",
+    "subject": "Follow up",
+    "snippet": "EnerGemz customer checking in on R&D status",
+    "label": "follow_up",
+    "reasoning": "explicit 'following up' subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1c6c311be9021",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Fwd: Follow up",
+    "snippet": "Dustin forwarding to team",
+    "label": "internal",
+    "reasoning": "sender is internal team"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1b86b7c413a01",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Heron Manufacturing Weekly Standup in Otter",
+    "snippet": "internal team meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1aca422b51027",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1a38c2b948892",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Your upcoming meetings and 2 that you may have missed",
+    "snippet": "Otter weekly digest",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1903381ad3331",
+    "from_addr": "teamcalendly@send.calendly.com",
+    "subject": "\ud83c\udf89 You just booked a new meeting - make it count with Calendly Notetaker",
+    "snippet": "Calendly Notetaker upsell",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d18fe5ed1d81af",
+    "from_addr": "notifications@calendly.com",
+    "subject": "New Event: Edward Mato - 07:30pm Thu, Mar 26 2026 - 30 Minute Meeting",
+    "snippet": "Calendly new event notification",
+    "label": "scheduling",
+    "reasoning": "calendar event creation"
+  },
+  {
+    "source": "gmail",
+    "id": "19d118dfa1a9c81c",
+    "from_addr": "expowest@go02.informamarkets.com",
+    "subject": "Don't Miss Out: Stay Discovered Year-Round with Beacon",
+    "snippet": "Expo West Beacon profile marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1106a8d4f53e5",
+    "from_addr": "makispatakiass@gmail.com",
+    "subject": "Invoice paper trail for Krunchy Kids",
+    "snippet": "Krunchy Kids team confirming Dustin's compensation arrangement",
+    "label": "inquiry",
+    "reasoning": "personal-email new contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19d115450d353f28",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Invoice paper trail for Krunchy Kids",
+    "snippet": "Dustin confirming",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0d48e3beff7f3",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Recap for \"Heron Friday Wrap Up (Google Meet)\"",
+    "snippet": "Motion meeting recap notification",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0d4344cf7f889",
+    "from_addr": "noreplymetrcsupport@metrc.com",
+    "subject": "Attention: Your Case has been marked as Solved!",
+    "snippet": "Metrc support case resolution notification",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0d42115cbe2af",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Jorge Plascencia shared Heron Friday Wrap Up (Google Meet) in Otter",
+    "snippet": "Internal team meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0d0b65d927468",
+    "from_addr": "api-info@metrc.com",
+    "subject": "Metrc Connect Production Status [thread]",
+    "snippet": "Metrc account activation status for cannabis tracking",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0cf2e8c9d4a8f",
+    "from_addr": "events@send.zapier.com",
+    "subject": "We trained 70 marketers on Cursor, want in?",
+    "snippet": "Zapier marketing webinar",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0cdf7d80d53be",
+    "from_addr": "drive-shares-dm-noreply@google.com",
+    "subject": "Share request for \"Elefante x Uncle Arnies White Label Agreement - v1\"",
+    "snippet": "Google Drive share request from Julie",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0ca3a87a733b8",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "Auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0ca06c348af7d",
+    "from_addr": "eddie@ceres14.com",
+    "subject": "Supply Companies with Production Inputs and Reviews.",
+    "snippet": "Ceres14 cold supplier pitch",
+    "label": "spam_marketing",
+    "reasoning": "Ceres14 cold supplier pitch"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0c665df42e74f",
+    "from_addr": "nicky@elefanteinc.com",
+    "subject": "Treeform <> Uncle Arnie's",
+    "snippet": "Nicky introducing Uncle Arnie's to Treeform packaging supplier",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0c5c91fb5315e",
+    "from_addr": "nicky@elefanteinc.com",
+    "subject": "Ubest <> Uncle Arnie's",
+    "snippet": "Nicky introducing Uncle Arnie's to Ubest packaging supplier",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0cbe9a9e6e19a",
+    "from_addr": "ad1@ubestpackaging.com",
+    "subject": "Re: Ubest <> Uncle Arnie's",
+    "snippet": "Packaging supplier responding with options",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0ba9887cf4c45",
+    "from_addr": "lukas.lemmrich@getmidassignals.com",
+    "subject": "FYI Dustin",
+    "snippet": "Cold pitch about recruitment video for Future",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0b57feb6ddd7a",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0b47517447d82",
+    "from_addr": "marketing@growinco.com",
+    "subject": "What does the first 90 days of a co-manufacturing project look like?",
+    "snippet": "Industry marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d094640e719187",
+    "from_addr": "noreply@dochub.com",
+    "subject": "Want your refund faster? File 1040 early!",
+    "snippet": "Tax filing service marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d093841cc17a16",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: edward mato from Stage2",
+    "snippet": "Sales contact form - pectin energy gummy startup",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0a01f8353c020",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: edward mato from Stage2",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0f845654f54db",
+    "from_addr": "edmato2005@gmail.com",
+    "subject": "Re: New Contact: edward mato from Stage2",
+    "snippet": "Prospect responding about MOQs and long-term partnership",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d11542acbd1a00",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: edward mato from Stage2",
+    "snippet": "Dustin agreeing to discussion",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d13794839d38b1",
+    "from_addr": "edmato2005@gmail.com",
+    "subject": "Re: New Contact: edward mato from Stage2",
+    "snippet": "Prospect confirming",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d07afbc1977af2",
+    "from_addr": "marketing@puregroundingredients.com",
+    "subject": "Cool, Crisp, and Ready to Ship",
+    "snippet": "Supplier peppermint stock newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d07a569bbd242f",
+    "from_addr": "learnmore@gntusa.com",
+    "subject": "A colorful follow-up from Expo West",
+    "snippet": "Supplier post-Expo follow-up newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0722afdd97b70",
+    "from_addr": "ashley@eatzammies.com",
+    "subject": "Updated invitation: Zammies X Heron Labs @ Wed Mar 25, 2026 12pm - 12:30pm (PDT)",
+    "snippet": "Calendar invite update",
+    "label": "scheduling",
+    "reasoning": "calendar invite/response"
+  },
+  {
+    "source": "gmail",
+    "id": "19d071a4ceea0ebd",
+    "from_addr": "ashley@eatzammies.com",
+    "subject": "Invitation: Zammies X Heron Labs @ Wed Mar 25, 2026 12pm - 1pm (PDT)",
+    "snippet": "Calendar invite",
+    "label": "scheduling",
+    "reasoning": "calendar invite/response"
+  },
+  {
+    "source": "gmail",
+    "id": "19d06f6612c1be2e",
+    "from_addr": "snorman@northcentralco.com",
+    "subject": "Gummy Ingredients",
+    "snippet": "Cold supplier pitch for gummy ingredients",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0690540ddb77b",
+    "from_addr": "petehogg@me.com",
+    "subject": "Clinton's info",
+    "snippet": "External contact asking for Clinton's contact info",
+    "label": "inquiry",
+    "reasoning": "personal-email new contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19d069f42c92d125",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Clinton's info",
+    "snippet": "Dustin sharing Clinton's number",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d065e9ab49ed43",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "Streaming soon! See how Slackbot multiplies the output of every employee.",
+    "snippet": "Salesforce/Slack marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d065a5e3493a74",
+    "from_addr": "petehogg@me.com",
+    "subject": "Trough frame for gummy pour",
+    "snippet": "External contact asking Dustin for design feedback on gummy pour trough",
+    "label": "inquiry",
+    "reasoning": "personal-email new contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19d068e6d079d100",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Trough frame for gummy pour",
+    "snippet": "Dustin giving design feedback",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d06a898ac2cf12",
+    "from_addr": "petehogg@me.com",
+    "subject": "Re: Trough frame for gummy pour",
+    "snippet": "Continuing design discussion",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d06c8d014da88a",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Trough frame for gummy pour",
+    "snippet": "Dustin clarifying design",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0631404a641fe",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0342a7e4b6152",
+    "from_addr": "petehogg@me.com",
+    "subject": "Ghost Gummy Lab",
+    "snippet": "Pete sharing space plan after meeting Dustin",
+    "label": "inquiry",
+    "reasoning": "personal-email new contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19d02f7613bca282",
+    "from_addr": "dylan@voidsleep.us",
+    "subject": "Void Sleep Gummy Samples",
+    "snippet": "Customer asking about shipping schedule",
+    "label": "follow_up",
+    "reasoning": "Active customer (Void Sleep) chasing samples"
+  },
+  {
+    "source": "gmail",
+    "id": "19d09f5362799a96",
+    "from_addr": "dylan@voidsleep.us",
+    "subject": "Re: Void Sleep Gummy Samples",
+    "snippet": "Customer escalating - 'can someone please get back to me'",
+    "label": "escalate",
+    "reasoning": "Customer escalating tone - 'can someone please get back to me'"
+  },
+  {
+    "source": "gmail",
+    "id": "19d02943499f741e",
+    "from_addr": "nicole@partnerslate.com",
+    "subject": "Candies & Chocolates : Explore What's New at PartnerSlate! \ud83d\ude80",
+    "snippet": "PartnerSlate newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d025b51b7bf926",
+    "from_addr": "info@cambiumanalytica.com",
+    "subject": "New Test Available: Creatine + Creatinine Analysis",
+    "snippet": "Lab testing service marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d024f04830a08e",
+    "from_addr": "drive-shares-dm-noreply@google.com",
+    "subject": "Share request for \"UnkA Contract Revision\"",
+    "snippet": "Google Drive share request from Julie at Elefante",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0249aa1ce8719",
+    "from_addr": "drive-shares-dm-noreply@google.com",
+    "subject": "Share request for \"UnkA Contract Revision\"",
+    "snippet": "Google Drive share request from Nicky",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19d021cacc4a9171",
+    "from_addr": "expowest@go02.informamarkets.com",
+    "subject": "Stay Connected to Expo Trends Year-Round with Beacon",
+    "snippet": "Expo Beacon marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d01d4a7e4c69a1",
+    "from_addr": "adobesign@adobesign.com",
+    "subject": "Reminder: Waiting for you to sign MNDA Victory Lap_Blank",
+    "snippet": "Adobe Sign reminder",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19d01b18ebf5ae23",
+    "from_addr": "quickbooks@notification.intuit.com",
+    "subject": "Invoice for Heron Labs Inc.",
+    "snippet": "Resent invoice $1831 balance due to active customers Andrew/Nick on soursop gummies project",
+    "label": "reorder",
+    "reasoning": "Repeat invoice send for active customer order"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0195c330bd40b",
+    "from_addr": "Eli@isaganiyorke.com",
+    "subject": "Re: Accepted: Dustin Powers x Isagani Yorke @ Wed Mar 18, 2026 10:30am - 11am (CDT)",
+    "snippet": "External contact in call room - meeting",
+    "label": "scheduling",
+    "reasoning": "Calendar event acceptance + meeting room issue"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0196764479da1",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Accepted: Dustin Powers x Isagani Yorke @ Wed Mar 18, 2026 10:30am - 11am (CDT)",
+    "snippet": "Dustin reply about teams call issue",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d010bec083a643",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfe520ed006e3a",
+    "from_addr": "ashley@enteris.me",
+    "subject": "Re: Gummy Intro",
+    "snippet": "External prospect after meeting - wanting samples",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfe532aa23e5a2",
+    "from_addr": "mike.maki5648@gmail.com",
+    "subject": "Re: Gummy Intro",
+    "snippet": "Mike forwarding",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d02a2ed87f58a1",
+    "from_addr": "ashley@enteris.me",
+    "subject": "Re: Gummy Intro",
+    "snippet": "External proposing in-person meeting",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d02fb6ef08cb3c",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Gummy Intro",
+    "snippet": "Julie confirming availability",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0707c24d6c938",
+    "from_addr": "ashley@enteris.me",
+    "subject": "Re: Gummy Intro",
+    "snippet": "External asking about samples",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfdeeb6f256743",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "Auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfdd9454065c16",
+    "from_addr": "carol.staley@equipmentshare.com",
+    "subject": "Re: Invoices and statement -- Heron Labs Inc (169545)",
+    "snippet": "Vendor placed account on Do Not Rent / credit hold; warns of asset retrieval if 90+ days past due",
+    "label": "escalate",
+    "reasoning": "Vendor credit hold + asset retrieval threat \u2014 supplier escalation requiring human judgment"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfde49fce7ef1f",
+    "from_addr": "carol.staley@equipmentshare.com",
+    "subject": "Re: Invoices and statement -- Heron Labs Inc (169545)",
+    "snippet": "Vendor explaining 'Do Not Rent' status due to late payments",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d4a88c03b28b4e",
+    "from_addr": "carol.staley@equipmentshare.com",
+    "subject": "Re: Invoices and statement -- Heron Labs Inc (169545)",
+    "snippet": "Vendor demanding payment confirmation by Apr 8 to avoid asset retrieval",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfd3fb69cb3280",
+    "from_addr": "hello@forcebrands.com",
+    "subject": "Winning brands at Expo West hire fast. Here's how (16 days)",
+    "snippet": "Recruiting service marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfd24c23322470",
+    "from_addr": "carly@helmsmangroup.com",
+    "subject": "Will you be at MISTA Growth Hack next week?",
+    "snippet": "Vendor newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfca24a547b40d",
+    "from_addr": "sales.marketing@californianaturalcolor.com",
+    "subject": "Use of Spirulina has Expanded - Reformulate with Confidence",
+    "snippet": "Supplier marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfc62febff09e6",
+    "from_addr": "no-reply@slack.com",
+    "subject": "Download the desktop app",
+    "snippet": "Slack onboarding marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfc564e0682450",
+    "from_addr": "notabeneflavors@substack.com",
+    "subject": "Where a $7,000 Project Fee Actually Goes",
+    "snippet": "Substack newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfc2899b56413f",
+    "from_addr": "nutritioncapitalnetwork@go02.informamarkets.com",
+    "subject": "Applications close soon. Present to Investors in NYC!",
+    "snippet": "Investor pitch event marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfbe4614cff742",
+    "from_addr": "mike@getbridgemarketplace.com",
+    "subject": "The OTIF hack for your Walmart orders the finance team made",
+    "snippet": "Cold pitch about Walmart purchase order financing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfbe30dab96d51",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfa56365f9167f",
+    "from_addr": "quickbooks@notification.intuit.com",
+    "subject": "Invoice 260114-1 from Heron Labs, Inc. due 03/17/2026",
+    "snippet": "QuickBooks invoice for Heron's customer",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19d013b76ed947ef",
+    "from_addr": "aever770@gmail.com",
+    "subject": "Re: Invoice 260114-1 from Heron Labs Inc. due 03/17/2026",
+    "snippet": "This payment link is not working for some reason. I have tried multiple times is there another way to take care of this?",
+    "label": "escalate",
+    "reasoning": "Customer complaint that payment system is broken on a due-today invoice \u2014 operational urgency"
+  },
+  {
+    "source": "gmail",
+    "id": "19d01b293f22c489",
+    "from_addr": "accounting@heronlabsinc.com",
+    "subject": "Re: Invoice 260114-1 from Heron Labs, Inc. due 03/17/2026",
+    "snippet": "Heron accounting sending new payment link",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0249a0746f849",
+    "from_addr": "aever770@gmail.com",
+    "subject": "Re: Invoice 260114-1 from Heron Labs, Inc. due 03/17/2026",
+    "snippet": "Customer confirming ACH transfer sent",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d06de79f6b4554",
+    "from_addr": "aever770@gmail.com",
+    "subject": "Re: Invoice 260114-1 from Heron Labs Inc. due 03/17/2026",
+    "snippet": "Customer demanding current GMP certificate for soursop gummies they are reselling",
+    "label": "escalate",
+    "reasoning": "Customer escalating compliance request inside active payment thread \u2014 needs human response"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf8bc25284953e",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Invitation: Inner Sense <> Heron Intro Call @ Tue Mar 17, 2026 11am - 11:45am (PDT)",
+    "snippet": "Internal calendar invite for prospect intro",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf7fec9c96cf5c",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Sebastian Flores from Newbook Labs Inc",
+    "snippet": "Sales contact form submission",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf7ff6a2817857",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Sebastian Flores from Newbook Labs Inc",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf7959766954c5",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Recap for \"Heron Manufacturing Weekly Standup\"",
+    "snippet": "Motion meeting recap",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf7a8c19386771",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Fwd: Recap for \"Heron Manufacturing Weekly Standup\"",
+    "snippet": "Dustin forwarding internally",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf77b2851196a5",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Heron Manufacturing Weekly Standup in Otter",
+    "snippet": "Internal team meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf769f3b0af615",
+    "from_addr": "landon@helmsmangroup.com",
+    "subject": "RegulateCPG \u2013 Takes Expo West!",
+    "snippet": "Vendor Expo West marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf71a69f91382c",
+    "from_addr": "alerts@mail.zapier.com",
+    "subject": "Notice: Upcoming routine maintenance planned",
+    "snippet": "Zapier maintenance notification",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf6c42ddd49516",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf6add31b4cf16",
+    "from_addr": "marketing@growinco.com",
+    "subject": "How do you actually compare co-manufacturers?",
+    "snippet": "Industry marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf6437bdcaddea",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Your upcoming meetings and 2 that you may have missed",
+    "snippet": "Otter weekly digest",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cef14450dc1e26",
+    "from_addr": "invoice+statements+acct_14GBQ34YpZGElkrt@stripe.com",
+    "subject": "Your receipt from Calendly LLC #2056-1564",
+    "snippet": "Stripe receipt",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cecefeb70a7ec2",
+    "from_addr": "no-reply-EW6VlsPgwSOuBjBkrWgWYa18@slack.com",
+    "subject": "bpray9223@gmail.com's Workspace on Slack: new account details",
+    "snippet": "Slack workspace creation notification",
+    "label": "spam_marketing",
+    "reasoning": "Slack workspace creation system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cea4d5af6cd5f1",
+    "from_addr": "no-reply-izPdinsc8aBHXfiNgthlGHuy@slack.com",
+    "subject": "bpray9223 has invited you to work with them in Slack as a guest",
+    "snippet": "Slack guest invite from customer",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce9cca15028d54",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Meeting Summary for Heron Labs X Imagine8",
+    "snippet": "Otter summary of partner meeting",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce99bc15e35712",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "Auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce93cb892aa844",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Recap for \"Heron Friday Wrap Up (Google Meet)\"",
+    "snippet": "Motion meeting recap",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce935d1f5f01bc",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Jorge Plascencia shared Heron Friday Wrap Up (Google Meet) in Otter",
+    "snippet": "Internal team meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce8a991576abf6",
+    "from_addr": "thomas.jones@abstraxhops.com",
+    "subject": "Flavor samples with MTC oil",
+    "snippet": "Abstrax follow-up on flavor samples sent",
+    "label": "follow_up",
+    "reasoning": "active partner contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce8afa97c4cb5b",
+    "from_addr": "eddie@heronlabsinc.com",
+    "subject": "Re: Flavor samples with MTC oil",
+    "snippet": "Eddie confirming samples received",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce9106bfc204fb",
+    "from_addr": "thomas.jones@abstraxhops.com",
+    "subject": "Re: Flavor samples with MTC oil",
+    "snippet": "Abstrax answering questions about declarations",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfe37cb789e0f2",
+    "from_addr": "thomas.jones@abstraxhops.com",
+    "subject": "Re: Flavor samples with MTC oil",
+    "snippet": "Abstrax following up - waiting on spec sheets",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1e1c3970096a9",
+    "from_addr": "thomas.jones@abstraxhops.com",
+    "subject": "Fw: Flavor samples with MTC oil",
+    "snippet": "Abstrax apologizing for spec sheet delay",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce8a314b65da73",
+    "from_addr": "fpleimann@usgreens.net",
+    "subject": "Expo West + Greens Powders",
+    "snippet": "Supplier following up after Expo West meeting",
+    "label": "follow_up",
+    "reasoning": "Supplier post-Expo follow-up"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce8570ef3bb97b",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Exec Meeting Coach",
+    "snippet": "Motion meeting effectiveness coaching",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce8560cdac4e01",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Recap for \"Heron Labs X Imagine8\"",
+    "snippet": "Motion meeting recap",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce853bc40d0baf",
+    "from_addr": "c.rieder@imagine8.solutions",
+    "subject": "Heron Labs GummyCoin Platform Proposal",
+    "snippet": "Partner sending platform proposal after meeting",
+    "label": "follow_up",
+    "reasoning": "active partner contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce866562d6574a",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Heron Labs GummyCoin Platform Proposal",
+    "snippet": "Julie noting missing attachment",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf59af8d208fa7",
+    "from_addr": "c.rieder@imagine8.solutions",
+    "subject": "Re: Heron Labs GummyCoin Platform Proposal",
+    "snippet": "Partner asking if attachment received",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf77a2ff77fcbf",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Heron Labs GummyCoin Platform Proposal",
+    "snippet": "Julie confirming attachment received",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf78512f0fa267",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Fwd: Heron Labs GummyCoin Platform Proposal",
+    "snippet": "Julie forwarding",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce841fe85a6384",
+    "from_addr": "william@gmplabs.com",
+    "subject": "EXPO WEST 2026 - SUPPLEMENT MANUFACTURE",
+    "snippet": "Cold pitch from competing manufacturer met at Expo",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce831349314c85",
+    "from_addr": "yoojin@hyundaicorp.com",
+    "subject": "NPEW 2026 Follow up / Bereum Postbiotics for SuperGut",
+    "snippet": "Supplier post-Expo follow-up",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d6e20e62e67d2a",
+    "from_addr": "yoojin@hyundaicorp.com",
+    "subject": "RE: NPEW 2026 Follow up / Bereum Postbiotics for SuperGut",
+    "snippet": "Supplier follow-up",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce82599a6835dc",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Heron Labs X Imagine8 in Otter",
+    "snippet": "Internal partner meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce825427159110",
+    "from_addr": "nicole@partnerslate.com",
+    "subject": "Candies & Chocolates : Explore What's New at PartnerSlate! \ud83d\ude80",
+    "snippet": "PartnerSlate newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce7a08d760c01c",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "Join the list today for big savings, special perks, and your chance to win big",
+    "snippet": "Salesforce Dreamforce marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce74dd3715e893",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce4b4f9a2d9198",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Paul Daniels x Heron Labs gummies",
+    "snippet": "Julie discussing supplier sourcing for customer",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce4c19d109ef1d",
+    "from_addr": "pauldanielssolutions@gmail.com",
+    "subject": "Re: Paul Daniels x Heron Labs gummies",
+    "snippet": "Customer thanking Julie for sourcing help",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d08486d189274f",
+    "from_addr": "eddie@heronlabsinc.com",
+    "subject": "Re: Paul Daniels x Heron Labs gummies",
+    "snippet": "Eddie discussing technical challenges",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d08c852b35b564",
+    "from_addr": "pauldanielssolutions@gmail.com",
+    "subject": "Re: Paul Daniels x Heron Labs gummies",
+    "snippet": "Customer asking about manufacturing thresholds",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19d08c94c9d04bb3",
+    "from_addr": "pauldanielssolutions@gmail.com",
+    "subject": "Re: Paul Daniels x Heron Labs gummies",
+    "snippet": "Customer following up with formulation checklist",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce49df9a190231",
+    "from_addr": "notification@slack-mail.com",
+    "subject": "bpray9223 invited you to work together in Slack",
+    "snippet": "Slack invite from customer",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce4186da838475",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Recap for \"Aqualab/ Heron Labs, Isotherms\"",
+    "snippet": "Motion meeting recap",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce40b347c51c69",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Meeting Summary for Aqualab/ Heron Labs, Isotherms",
+    "snippet": "Otter summary of vendor meeting",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce3e2e4a00fed7",
+    "from_addr": "christopher@firstdscnt.com",
+    "subject": "Jar Invoice",
+    "snippet": "Jar supplier (First Descent) sending invoice for Brian Pray B&B Brands project; resale cert exchanged",
+    "label": "reorder",
+    "reasoning": "Active vendor invoice tied to a real customer production order"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf66999045b004",
+    "from_addr": "bpray9223@gmail.com",
+    "subject": "Re: Jar Invoice",
+    "snippet": "Customer attaching resale cert and asking for updated invoice",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfac216c301d30",
+    "from_addr": "christopher@firstdscnt.com",
+    "subject": "Re: Jar Invoice",
+    "snippet": "Vendor sending revised invoice",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfbdefb78a819d",
+    "from_addr": "bpray9223@gmail.com",
+    "subject": "Re: Jar Invoice",
+    "snippet": "Customer asking about credit card payment",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cfd45182aab522",
+    "from_addr": "christopher@firstdscnt.com",
+    "subject": "Re: Jar Invoice",
+    "snippet": "Vendor confirming credit card with 3% fee",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce3dabfc651ae4",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Aqualab/ Heron Labs, Isotherms in Otter",
+    "snippet": "Internal vendor meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce3c89a2c7501f",
+    "from_addr": "reminder@gong.io",
+    "subject": "Reminder: your meeting Aqualab/ Heron Labs, Isotherms is about to start",
+    "snippet": "Gong meeting reminder",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce37a0d5e77c79",
+    "from_addr": "events@send.zapier.com",
+    "subject": "OpenClaw x Claude Cowork with Zapier MCP",
+    "snippet": "Zapier marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce35f7940db1fc",
+    "from_addr": "quickbooks@notification.intuit.com",
+    "subject": "Invoice 260203-0 from Heron Labs Inc. due 03/12/2026",
+    "snippet": "Production deposit invoice issued to existing customer Brian Pray (B&B Brands)",
+    "label": "reorder",
+    "reasoning": "Active production deposit invoice for an existing customer order"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce33891c2e99fb",
+    "from_addr": "drive-shares-noreply@google.com",
+    "subject": "You've been added to the shared drive Certifications, Licenses, Permits - Heron",
+    "snippet": "Drive shared from Julie internally",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce2d1f65d90503",
+    "from_addr": "info@krunchykids.us",
+    "subject": "KKids Box Labels",
+    "snippet": "Krunchy Kids team sending labels",
+    "label": "follow_up",
+    "reasoning": "active partner contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce2b6d7d7fb29d",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "Join Marc Benioff to experience the new speed of work with Slackbot.",
+    "snippet": "Salesforce marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce28b324bbe978",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Alex Gelfand from Tuli Nutrition",
+    "snippet": "Sales contact form - prenatal gummies",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0a0a044f398b2",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Alex Gelfand from Tuli Nutrition",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0c7268a004a6e",
+    "from_addr": "retailradiusllc@gmail.com",
+    "subject": "Re: New Contact: Alex Gelfand from Tuli Nutrition",
+    "snippet": "Prospect negotiating R&D cost",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc235fb8a4682d",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: New Contact: Alex Gelfand from Tuli Nutrition",
+    "snippet": "Julie offering negotiated R&D rate",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce2665a884ffb4",
+    "from_addr": "nutritioncapitalnetwork@go02.informamarkets.com",
+    "subject": "Deadline Extended: Presenter Applications now close March 19",
+    "snippet": "Investor pitch event marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce25ded3eec223",
+    "from_addr": "nutritioncapitalnetwork@go02.informamarkets.com",
+    "subject": "What the 2026 Market Signals for Health & Nutrition Investors",
+    "snippet": "Industry newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce259a2cf9052f",
+    "from_addr": "paul@mandrel.tech",
+    "subject": "missed you at Rise & Roast/Expo West",
+    "snippet": "Cold pitch from inventory financing service",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce226d2941c1d8",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce21d5acaa9634",
+    "from_addr": "roniel.coronado@addium.io",
+    "subject": "Aqualab/ Heron Labs, Isotherms",
+    "snippet": "Aqualab vendor meeting reminder",
+    "label": "follow_up",
+    "reasoning": "active partner contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce2142056a5e9a",
+    "from_addr": "marketing@growinco.com",
+    "subject": "Do you actually need a co-manufacturer for this project?",
+    "snippet": "Industry marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce1f0d5a5dec77",
+    "from_addr": "can@chapterfoods.com",
+    "subject": "Natural Color Samples - Chapter Foods & Doehler",
+    "snippet": "Vendor sharing tracking number for color samples",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cdf10cb1b0d0b9",
+    "from_addr": "n.puliatch@gmail.com",
+    "subject": "Gummy Intro",
+    "snippet": "External contact intro Ashley/Heron",
+    "label": "inquiry",
+    "reasoning": "personal-email new contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19cdf14d843f9d26",
+    "from_addr": "ashley@enteris.me",
+    "subject": "Re: Gummy Intro",
+    "snippet": "Ashley setting up Zoom call",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf818a8fa26dfe",
+    "from_addr": "n.puliatch@gmail.com",
+    "subject": "Re: Gummy Intro",
+    "snippet": "Neil asking about call times",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf89d50389c873",
+    "from_addr": "ashley@enteris.me",
+    "subject": "Re: Gummy Intro",
+    "snippet": "Ashley proposing in-person meeting",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf8a28c9d93efc",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Re: Gummy Intro",
+    "snippet": "Nicky welcoming Ashley",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cde30db200a6a1",
+    "from_addr": "theconsumervc@substack.com",
+    "subject": "NEW EPISODE: Is Early-Stage Consumer VC Broken? with Manica Blain",
+    "snippet": "Substack newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cddc81ecc3c90a",
+    "from_addr": "adobesign@adobesign.com",
+    "subject": "Reminder: Waiting for you to sign MNDA Victory Lap_Blank",
+    "snippet": "Adobe Sign reminder",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cdda987b63ccbd",
+    "from_addr": "c.rieder@imagine8.solutions",
+    "subject": "Invitation: Heron Labs X Imagine8 @ Fri Mar 13, 2026 10am - 11am (PDT)",
+    "snippet": "Partner calendar invite",
+    "label": "scheduling",
+    "reasoning": "calendar invite/response"
+  },
+  {
+    "source": "gmail",
+    "id": "19cdcfcf9696b5de",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cdc7f31a86f528",
+    "from_addr": "no-reply@netlify.com",
+    "subject": "Run code at the edge, without adding servers",
+    "snippet": "Netlify marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cdba04878184cf",
+    "from_addr": "Eli@isaganiyorke.com",
+    "subject": "Dustin Powers x Isagani Yorke",
+    "snippet": "External contact sharing Teams meeting link",
+    "label": "scheduling",
+    "reasoning": "External sharing meeting link"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd9ef849ac2e37",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "Auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd9c664e58c345",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Safra Wellness \u2013 TR177272616082952 \u2013 ASIN B0GMRSR3KR",
+    "snippet": "Nicky sending GMP cert to Eurofins for customer",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d1d399a82aaf92",
+    "from_addr": "team@heronlabsinc.com",
+    "subject": "RE: Safra Wellness \u2013 TR177272616082952 \u2013 ASIN B0GMRSR3KR",
+    "snippet": "Eurofins replying that HACCP is not accepted",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d218979a162c44",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Re: Safra Wellness \u2013 TR177272616082952 \u2013 ASIN B0GMRSR3KR",
+    "snippet": "Nicky pushing back on Eurofins decision",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d9cebe83c8aad4",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Re: Safra Wellness \u2013 TR177272616082952 \u2013 ASIN B0GMRSR3KR",
+    "snippet": "Nicky updating that audit scheduled to expand GMP",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd92436cf354a0",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Krunchy kids invoicing",
+    "snippet": "Julie asking Krunchy Kids team about quantity for invoicing",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd91ab902ba253",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Meeting Summary for Olive oil phenols, bitter bloccker, blue zone gummies",
+    "snippet": "Otter summary of customer R&D meeting",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd8d4f9e242636",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Recap for \"Olive oil phenols, bitter bloccker, blue zone gummies\"",
+    "snippet": "Motion meeting recap",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd8b2c6469682c",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Olive oil phenols, bitter bloccker, blue zone gummies in Otter",
+    "snippet": "Internal R&D meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd80d7d19dfdfc",
+    "from_addr": "blogteam@eosworldwide.com",
+    "subject": "The Fastest Way to Get to the Real Issue",
+    "snippet": "EOS book marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd80cb5a037512",
+    "from_addr": "brief@artemis-international.com",
+    "subject": "Spotlight on Antioxidants for Inflammation",
+    "snippet": "Supplier marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd7da5078cda1f",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd5c47195ecda5",
+    "from_addr": "notification@safetyculture.io",
+    "subject": "You've been assigned a course!",
+    "snippet": "Compliance training assignment",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd5200529f2ebe",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Anna Sidor from Anna Sidor",
+    "snippet": "Sales contact form - chew product startup",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd49ef02ac6bbc",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Invitation: Heron x Premier Nutra Pharma @ Tue Mar 10, 2026 2pm - 2:45pm (PDT)",
+    "snippet": "Internal calendar invite for partner meeting",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd4158231460e1",
+    "from_addr": "daniel.anglin@addium.io",
+    "subject": "Invitation: Aqualab/ Heron Labs, Isotherms @ Thu Mar 12, 2026 2pm - 2:45pm (PDT)",
+    "snippet": "Aqualab vendor calendar invite",
+    "label": "scheduling",
+    "reasoning": "calendar invite/response"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd4117ff621f70",
+    "from_addr": "childofcoven@gmail.com",
+    "subject": "Custom Supplement Gummies Inquiry \u2013 Small Initial MOQ",
+    "snippet": "Prospect inquiry about custom gummy with small MOQ",
+    "label": "inquiry",
+    "reasoning": "explicit inquiry subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd4812055ebb83",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Custom Supplement Gummies Inquiry \u2013 Small Initial MOQ",
+    "snippet": "Dustin agreeing and offering a call",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cde2e7e3675115",
+    "from_addr": "childofcoven@gmail.com",
+    "subject": "Re: Custom Supplement Gummies Inquiry \u2013 Small Initial MOQ",
+    "snippet": "Prospect proposing call times",
+    "label": "inquiry",
+    "reasoning": "explicit inquiry subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd400cfc8ddc25",
+    "from_addr": "consultingfutures@gmail.com",
+    "subject": "(DRAFT for Review) - Uncle Arnies x Heron Labs \u2014 Meeting Recap + Next Steps",
+    "snippet": "Dustin's other email sending meeting recap",
+    "label": "internal",
+    "reasoning": "operator's personal email"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd3df641a88ec9",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Recap for \"Uncle Arnies\"",
+    "snippet": "Motion meeting recap",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd381139e692ba",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Accepted: Uncle Arnies @ Mon Mar 9, 2026 11am - 11:30am (PDT)",
+    "snippet": "Internal calendar acceptance",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd3766959facef",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Exec Meeting Coach",
+    "snippet": "Motion meeting effectiveness",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd3e06490365dd",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Exec Meeting Coach",
+    "snippet": "Motion meeting effectiveness",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd375c14b7da76",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Recap for \"Heron Manufacturing Weekly Standup\"",
+    "snippet": "Motion meeting recap",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd3705b8b94d82",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Julie Tran shared Heron Manufacturing Weekly Standup in Otter",
+    "snippet": "Internal team meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd359c77eb79ca",
+    "from_addr": "sales@chemgm.com",
+    "subject": "Pharmaceutical Raw Material Supply",
+    "snippet": "Cold supplier blast",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd355ce5a3ee67",
+    "from_addr": "team@mail.clickup.com",
+    "subject": "Ready to discover Super Agents? Join us on the 10th of Mar!",
+    "snippet": "ClickUp marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd2b42a9ba5f40",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd2492ebbbca1e",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Your upcoming meetings and 2 that you may have missed",
+    "snippet": "Otter weekly digest",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cce11c5825f17f",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Test",
+    "snippet": "Dustin testing email connectivity",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cce131430cb2e4",
+    "from_addr": "r.abuumeizer@global-list.com",
+    "subject": "Re: Test",
+    "snippet": "External confirming receipt",
+    "label": "internal",
+    "reasoning": "External confirming receipt - relationship admin"
+  },
+  {
+    "source": "gmail",
+    "id": "19cce18f9529466b",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Test",
+    "snippet": "Dustin asking for gummy details",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cce1c569e64b72",
+    "from_addr": "r.abuumeizer@global-list.com",
+    "subject": "Re: Test",
+    "snippet": "External sharing Amazon link",
+    "label": "internal",
+    "reasoning": "External sharing Amazon link in test thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cce304930b19f3",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Test",
+    "snippet": "Dustin declining due to sugar alcohols",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19ccdfbf20e8d4c6",
+    "from_addr": "theconsumervc@substack.com",
+    "subject": "Thanks for signing up for Consumer VC!",
+    "snippet": "Substack signup confirmation",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc945e12d32712",
+    "from_addr": "teamcalendly@send.calendly.com",
+    "subject": "After the meeting, Notetaker does the follow-up for you",
+    "snippet": "Calendly Notetaker upsell",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc911d8995b36a",
+    "from_addr": "jeff@modafoods.com",
+    "subject": "Address",
+    "snippet": "External contact wanting follow-up call about nootropic gummies",
+    "label": "inquiry",
+    "reasoning": "External wanting nootropic gummy follow-up call"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc7e5bca28e62f",
+    "from_addr": "no-reply@netlify.com",
+    "subject": "Less meetings, more Deploy Previews",
+    "snippet": "Netlify marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc644f2f0b103b",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Afterglow <> Heron meeting notes 3/6/26",
+    "snippet": "Julie sending pricing breakdown to Afterglow",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc6210424d00b7",
+    "from_addr": "can@chapterfoods.com",
+    "subject": "Applied Foods x Heron Labs | Intro by Chapter Foods",
+    "snippet": "Vendor introducing Heron to Applied Foods",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19d01e5746c8674b",
+    "from_addr": "can@chapterfoods.com",
+    "subject": "Re: Applied Foods x Heron Labs | Intro by Chapter Foods",
+    "snippet": "Vendor following up on intro",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc60b9b3ae04bd",
+    "from_addr": "quickbooks@notification.intuit.com",
+    "subject": "Invoice 260130 RD from Heron Labs, Inc. due 03/06/2026",
+    "snippet": "QuickBooks invoice for Afterglow R&D",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc567549154919",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Recap for \"Heron Friday Wrap Up (Google Meet)\"",
+    "snippet": "Motion meeting recap",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc56108fe9dc4d",
+    "from_addr": "no-reply@otter.ai",
+    "subject": "Jorge Plascencia shared Heron Friday Wrap Up (Google Meet) in Otter",
+    "snippet": "Internal team meeting recording",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc52cd4515ae9f",
+    "from_addr": "withlizett@gmail.com",
+    "subject": "Inquiry for Monchi Snacks",
+    "snippet": "Prospect asking about co-manufacturing for Mexican-American gummies",
+    "label": "inquiry",
+    "reasoning": "personal-email new contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd42087c64e23c",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Inquiry for Monchi Snacks",
+    "snippet": "Julie discussing fit and natural flavors",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd91d0c3e96c2a",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Inquiry for Monchi Snacks",
+    "snippet": "Julie asking specifications",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d2ffd39e8cf00a",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Inquiry for Monchi Snacks",
+    "snippet": "Julie asking about pricing model",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d301c8dd0cc63a",
+    "from_addr": "withlizett@gmail.com",
+    "subject": "Re: Inquiry for Monchi Snacks",
+    "snippet": "Customer responding about packaging preference",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc4b13050e18ef",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "Auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc49c4274ca094",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Megan Slater from Blox Snacks",
+    "snippet": "Sales contact form - protein gummy startup",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0a02e8af704e0",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Megan Slater from Blox Snacks",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc45fb91ae1b99",
+    "from_addr": "team@mail.clickup.com",
+    "subject": "Transform your workflow with ClickUp Super Agents",
+    "snippet": "ClickUp marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc44625e59bc5a",
+    "from_addr": "nicole@partnerslate.com",
+    "subject": "Candies & Chocolates : Explore What's New at PartnerSlate! \ud83d\ude80",
+    "snippet": "PartnerSlate newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc41a535b49637",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Tom\u00e1\u0161 Matula from Child of Coven",
+    "snippet": "Sales contact form - custom gummy",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0a081fe870a98",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Tom\u00e1\u0161 Matula from Child of Coven",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19d17486d4c3fad2",
+    "from_addr": "childofcoven@gmail.com",
+    "subject": "Re: New Contact: Tom\u00e1\u0161 Matula from Child of Coven",
+    "snippet": "Prospect proposing call times",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d38dc4760f5194",
+    "from_addr": "childofcoven@gmail.com",
+    "subject": "Re: New Contact: Tom\u00e1\u0161 Matula from Child of Coven",
+    "snippet": "Prospect re-sending after no response",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc3f90e3df1a20",
+    "from_addr": "assaf@unclearnies.com",
+    "subject": "Accepted: Uncle Arnies @ Mon Mar 9, 2026 11am - 11:30am (PDT)",
+    "snippet": "External calendar acceptance",
+    "label": "scheduling",
+    "reasoning": "calendar invite/response"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc3eb6c071e5d5",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Accepted: Uncle Arnies @ Mon Mar 9, 2026 11am - 11:30am (PDT)",
+    "snippet": "Julie calendar acceptance",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc3e28d00560f0",
+    "from_addr": "info@admin.manus.im",
+    "subject": "Manus Year One: Our First Annual Letter",
+    "snippet": "Manus annual letter / marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc3c8480727f3f",
+    "from_addr": "sales@heronlabsinc.com",
+    "subject": "Employment Verification Request - Order ID: 11235617",
+    "snippet": "Employment verification request from third party",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc376cc6428c98",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc1c51ad2c798a",
+    "from_addr": "sales@heronlabsinc.com",
+    "subject": "Moderator's spam report for sales@heronlabsinc.com",
+    "snippet": "Group moderation queue",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc1a5087dba22d",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Candice Armenta from Elara Ritual",
+    "snippet": "Sales contact form - daytime gummy startup",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19d0a04547fdc5b9",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Candice Armenta from Elara Ritual",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19dc234e9bd9d96d",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: New Contact: Candice Armenta from Elara Ritual",
+    "snippet": "Julie reconnecting with prospect",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbfc5e0c7d9b5c",
+    "from_addr": "Eddie@elefanteinc.com",
+    "subject": "Re: Gummy Texture Problems?",
+    "snippet": "Sister-company Eddie coordinating with Aqualab",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbfddde36a5658",
+    "from_addr": "Daniel.Anglin@aqualab.com",
+    "subject": "Re: Gummy Texture Problems?",
+    "snippet": "Aqualab proposing meeting times",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc08c7cce783c0",
+    "from_addr": "Eddie@elefanteinc.com",
+    "subject": "Re: Gummy Texture Problems?",
+    "snippet": "Eddie agreeing to Thursday",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd41d658b04c81",
+    "from_addr": "Daniel.Anglin@aqualab.com",
+    "subject": "Re: Gummy Texture Problems?",
+    "snippet": "Aqualab sending invite",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19ce82894e793cd4",
+    "from_addr": "Daniel.Anglin@aqualab.com",
+    "subject": "Re: Gummy Texture Problems?",
+    "snippet": "Aqualab sending isotherm resources after meeting",
+    "label": "follow_up",
+    "reasoning": "active partner / continuing thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbf4f9c6404045",
+    "from_addr": "learn@send.zapier.com",
+    "subject": "ChatGPT 5.4 is now live in Zapier",
+    "snippet": "Zapier feature marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbf2a60cefde28",
+    "from_addr": "theconsumervc@calendar.luma-mail.com",
+    "subject": "Thanks for joining Rise, Roast & Meet CPG",
+    "snippet": "Luma event reminder",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbef9e163e0ebc",
+    "from_addr": "eddie@ceres14.com",
+    "subject": "Outreach",
+    "snippet": "Cold supplier intro pitch",
+    "label": "spam_marketing",
+    "reasoning": "Cold supplier intro pitch"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbe91c8efcfbc7",
+    "from_addr": "alventuramolina@energemz.com",
+    "subject": "Check In",
+    "snippet": "Customer (EnerGemz) checking in on R&D",
+    "label": "follow_up",
+    "reasoning": "active partner contact"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbe85528e10caf",
+    "from_addr": "theconsumervc@calendar.luma-mail.com",
+    "subject": "\u23f0 Rise, Roast & Meet CPG is starting in 1 hour",
+    "snippet": "Luma event reminder",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbe7f33417a2f9",
+    "from_addr": "mgomez@gruposolave.com",
+    "subject": "Exploring Future Collaboration \u2013 Great Meeting You at Expo West 2026",
+    "snippet": "Supplier post-Expo follow-up",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbe50482d6667e",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbe17604bea7ca",
+    "from_addr": "marketing@growinco.com",
+    "subject": "Price stopped working. What's next?",
+    "snippet": "Industry marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbe0d6998a01c2",
+    "from_addr": "nickalasengland@gmail.com",
+    "subject": "Gr33n Soursop Gummies",
+    "snippet": "Customer: I have reached out to you all twice this week with no response. I would really appreciate an update on the gummies my team and I ordered.",
+    "label": "escalate",
+    "reasoning": "Customer complaint about being ignored on an active order \u2014 needs human judgment"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbec67f38e2c2e",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Gr33n Soursop Gummies",
+    "snippet": "Dustin apologizing and asking Nicky for status",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbec82236258d1",
+    "from_addr": "nickalasengland@gmail.com",
+    "subject": "Re: Gr33n Soursop Gummies",
+    "snippet": "Customer thanking for update",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbf1651431a087",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Re: Gr33n Soursop Gummies",
+    "snippet": "Nicky giving production timeline",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbf2a0f562daef",
+    "from_addr": "nickalasengland@gmail.com",
+    "subject": "Re: Gr33n Soursop Gummies",
+    "snippet": "Customer confirming",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbcef8671de6b5",
+    "from_addr": "noreply@expowest.com",
+    "subject": "Dustin, you have new networking requests",
+    "snippet": "Expo West networking marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbc86dfc645a38",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "(no subject)",
+    "snippet": "Dustin sharing Netlify URL",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbca3141ba410f",
+    "from_addr": "consultingfutures@gmail.com",
+    "subject": "Re:",
+    "snippet": "Dustin's other email - auth error message",
+    "label": "internal",
+    "reasoning": "operator's personal email"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbc7542964eafc",
+    "from_addr": "theconsumervc@calendar.luma-mail.com",
+    "subject": "Registration approved for Rise, Roast & Meet CPG",
+    "snippet": "Luma event registration",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbc2bdd6134c0d",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Contact Us: Dustin",
+    "snippet": "Dustin testing/sending self contact form",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbc2692677b0c5",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Contact Us:",
+    "snippet": "Dustin testing",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbc1e6ce75c7bd",
+    "from_addr": "support@luma.com",
+    "subject": "578089 is your Luma sign-in code",
+    "snippet": "Luma auth code",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbc1e435679f47",
+    "from_addr": "theconsumervc@calendar.luma-mail.com",
+    "subject": "Registration pending approval for Rise, Roast & Meet CPG",
+    "snippet": "Luma registration pending",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbbcd2aaf5c085",
+    "from_addr": "workspace-noreply@google.com",
+    "subject": "Regarding your account: Fix potential security issues",
+    "snippet": "Google Workspace security alert",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cbadbfa3836981",
+    "from_addr": "peachyxlabs@gmail.com",
+    "subject": "Creatine Gummies",
+    "snippet": "Prospect asking about creatine gummy manufacturing",
+    "label": "inquiry",
+    "reasoning": "explicit inquiry subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19cba0ee29d6522f",
+    "from_addr": "pureimagination@heronlabsinc.com",
+    "subject": "Heron Labs Confirmation - Send Mail as pureimagination@heronlabsinc.com",
+    "snippet": "Email account configuration confirmation",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cba088c58e3bda",
+    "from_addr": "nutritioncapitalnetwork@go02.informamarkets.com",
+    "subject": "Last Call: Presenter Applications Close March 9",
+    "snippet": "Investor pitch event marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb9f269de9c7c3",
+    "from_addr": "adobesign@adobesign.com",
+    "subject": "Reminder: Waiting for you to sign MNDA Victory Lap_Blank",
+    "snippet": "Adobe Sign reminder",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb9ed5663f268f",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Kevin Lotz from Seacoast",
+    "snippet": "Sales contact form - creatine gummy",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb9edf92cdf8ea",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Kevin Lotz from Seacoast",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb9e8327fad37f",
+    "from_addr": "team@mail.clickup.com",
+    "subject": "Ready to master ClickUp? Join our beginner webinar \ud83d\ude80",
+    "snippet": "ClickUp marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb9d3a71b604da",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Kaitlin Cushman from TasteFluent Consulting LLC",
+    "snippet": "Sales contact form - kosher gelatin gummy",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb9d42d58306bd",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Kaitlin Cushman from TasteFluent Consulting LLC",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb9d2bc3f3e71e",
+    "from_addr": "teamcalendly@send.calendly.com",
+    "subject": "Get secure meeting recaps, free with your plan",
+    "snippet": "Calendly Notetaker upsell",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb972044324eee",
+    "from_addr": "gogreenexport001@gmail.com",
+    "subject": "For Dustin/Custom Smell-proof Holographic Mylar Bag",
+    "snippet": "Cold supplier pitch from China",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb942bef40d163",
+    "from_addr": "CloudPlatform-noreply@google.com",
+    "subject": "[Product Update] Automatic enablement of new OpenTelemetry ingestion API",
+    "snippet": "Google Cloud product update",
+    "label": "spam_marketing",
+    "reasoning": "Google Cloud product update"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb92f82dd6cd54",
+    "from_addr": "EventNotice@xpressreg.net",
+    "subject": "What to know before you go to Natural Products Expo West",
+    "snippet": "Expo West registration confirmation",
+    "label": "spam_marketing",
+    "reasoning": "Expo registration noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb9291f15c3fb9",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb86dfbdc64ba7",
+    "from_addr": "no-reply@netlify.com",
+    "subject": "Deploy your first app in minutes",
+    "snippet": "Netlify onboarding marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb861e9fe470ea",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Contact Us:",
+    "snippet": "Dustin testing contact form",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb85f4207ad1d8",
+    "from_addr": "team@netlify.com",
+    "subject": "[Netlify] Your new Free team dustin-ysq-db4's team is ready on Netlify",
+    "snippet": "Netlify team creation",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb854b6bf676c8",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "EmailJS service_w159erj Test Email",
+    "snippet": "Dustin testing EmailJS",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb85327b8dd580",
+    "from_addr": "support@emailjs.com",
+    "subject": "Password Recovery",
+    "snippet": "EmailJS password reset",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb8516dbd12406",
+    "from_addr": "support@emailjs.com",
+    "subject": "Complete your EmailJS signup",
+    "snippet": "EmailJS signup confirmation",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb5d591620d285",
+    "from_addr": "bidspotter@mail.bidspotter.com",
+    "subject": "Upcoming BidSpotter Auctions - Don't Miss Out",
+    "snippet": "Auction newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb553bb4b24cde",
+    "from_addr": "eddie@heronlabsinc.com",
+    "subject": "Fwd: Let's connect at Natural Products Expo West!",
+    "snippet": "Eddie forwarding supplier intro",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb534aaa2b90cf",
+    "from_addr": "noreply@mail.manus.im",
+    "subject": "New Contact: Cameron Gawley from FlightPlan Ventures - Freak Candy",
+    "snippet": "Sales contact form - high-protein gummy",
+    "label": "inquiry",
+    "reasoning": "sales contact form submission"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb53553d6b0589",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: New Contact: Cameron Gawley from FlightPlan Ventures - Freak Candy",
+    "snippet": "Dustin's automated reply",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb519f05baa912",
+    "from_addr": "jt@elefanteinc.com",
+    "subject": "Fwd: Welcome to Metrc Connect",
+    "snippet": "Sister-company Julie forwarding Metrc account info",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb51264d5c9b60",
+    "from_addr": "api-info@metrc.com",
+    "subject": "Metrc Connect CA Sandbox [thread]",
+    "snippet": "Metrc CA sandbox activation",
+    "label": "internal",
+    "reasoning": "account/system notification"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf79994425c6b6",
+    "from_addr": "jt@elefanteinc.com",
+    "subject": "Re: Metrc Connect CA Sandbox [thread]",
+    "snippet": "Julie sending API proficiency evaluation",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb4dbb5ab08660",
+    "from_addr": "jt@heronlabsinc.com",
+    "subject": "Re: Looking for a GMP Gummy Chew manufacturer",
+    "snippet": "Julie discussing energy samples with prospect",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cc481040d859ac",
+    "from_addr": "steelcharger@yahoo.com",
+    "subject": "Re: Looking for a GMP Gummy Chew manufacturer",
+    "snippet": "Prospect Larry looking forward to samples",
+    "label": "follow_up",
+    "reasoning": "personal-email reply in active thread"
+  },
+  {
+    "source": "gmail",
+    "id": "19cd489d9aa6e277",
+    "from_addr": "nicky@heronlabsinc.com",
+    "subject": "Re: Looking for a GMP Gummy Chew manufacturer",
+    "snippet": "Nicky updating Larry on R&D timeline",
+    "label": "internal",
+    "reasoning": "sender is internal team / sister company"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb4d8ba8a039e9",
+    "from_addr": "a4arrocha@gmail.com",
+    "subject": "Any news?",
+    "snippet": "External contact asking about project status",
+    "label": "follow_up",
+    "reasoning": "explicit follow-up subject"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb4d2c72669e35",
+    "from_addr": "carly@helmsmangroup.com",
+    "subject": "Food Bites of The Week - Sugar, Sweet, and Chicken!",
+    "snippet": "Vendor newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb4cdd6bff724d",
+    "from_addr": "email@mail.salesforce.com",
+    "subject": "New Date: Slackbot Virtual Event \u2014 March 31",
+    "snippet": "Salesforce marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb4b7e652f85dd",
+    "from_addr": "googlecloud@google.com",
+    "subject": "[Live Webinar] Turn your infrastructure into an innovation engine",
+    "snippet": "Google Cloud webinar marketing",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb489a2ac81bf0",
+    "from_addr": "notabeneflavors@substack.com",
+    "subject": "The Terpene Gap",
+    "snippet": "Substack newsletter",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb40de4868b25a",
+    "from_addr": "can@chapterfoods.com",
+    "subject": "Natural Color Samples - Chapter Foods & Dohler",
+    "snippet": "Supplier sending DHL tracking number 2997836096 for sample shipment to Heron",
+    "label": "reorder",
+    "reasoning": "Active vendor sample shipment with tracking \u2014 order logistics"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb40256c2aed46",
+    "from_addr": "notifications@usemotion.app",
+    "subject": "Daily Meetings Brief (Gmail)",
+    "snippet": "Tool digest noise",
+    "label": "spam_marketing",
+    "reasoning": "marketing/tool noise sender"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb3ff75c6ef87e",
+    "from_addr": "EventNotice@xpressreg.net",
+    "subject": "What to know before you go to Natural Products Expo West",
+    "snippet": "Expo West registration",
+    "label": "spam_marketing",
+    "reasoning": "Expo registration noise"
+  },
+  {
+    "source": "gmail",
+    "id": "19c928bedcc1d72a",
+    "from_addr": "info@nutrotonic.com",
+    "subject": "Re: Certified Labs - Amazon Good Manufacturing Practice Certificate (GMP) (TRF TR176556514561478)",
+    "snippet": "Amazon threatening to remove all NutroTonic product by March 12 unless new GMP cert provided",
+    "label": "escalate",
+    "reasoning": "Regulatory/Amazon-removal deadline with revenue-loss risk \u2014 needs urgent human handling"
+  },
+  {
+    "source": "gmail",
+    "id": "19c66ca24ae305d3",
+    "from_addr": "bpray9223@gmail.com",
+    "subject": "Re: Samara Zeolite Gummies R&D",
+    "snippet": "Any chance we can accelerate that? Dustin had told me 2 weeks ago the revised samples were being completed so I was expecting to have them by now",
+    "label": "escalate",
+    "reasoning": "Customer pressing on missed timeline with threat to delay PO \u2014 firm complaint tone"
+  },
+  {
+    "source": "gmail",
+    "id": "19c8c0f83d4bf9b9",
+    "from_addr": "danny@710labs.com",
+    "subject": "Re: LBW Extract Samples",
+    "snippet": "Hope all is well. I am checking back in on the samples. Any eta when we should expect them? \u2014 third check-in after silence",
+    "label": "escalate",
+    "reasoning": "Customer chasing for the third time on missed sample commitment \u2014 escalation tone"
+  },
+  {
+    "source": "gmail",
+    "id": "19c92a5fd480c6f6",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Certified Labs - Amazon GMP (NutroTonic)",
+    "snippet": "Operator (Dustin) defending validity of certs; customer pushing back on Amazon removal threat",
+    "label": "escalate",
+    "reasoning": "Active regulatory/escalation thread requiring careful human response"
+  },
+  {
+    "source": "gmail",
+    "id": "19cf748595ae775a",
+    "from_addr": "info@nutrotonic.com",
+    "subject": "Re: Invoice 251229-2 from Heron Labs Inc. due 03/02/2026",
+    "snippet": "Done. Thank you. \u2014 customer confirms payment",
+    "label": "reorder",
+    "reasoning": "Active customer paying invoice for existing recurring order"
+  },
+  {
+    "source": "gmail",
+    "id": "19c54e4d2ceb183e",
+    "from_addr": "bpray9223@gmail.com",
+    "subject": "Samara Zeolite Gummies R&D",
+    "snippet": "Can you share an update on the new Zeolite samples... We are closing in on our reorder point and just want to make sure the timing aligns",
+    "label": "reorder",
+    "reasoning": "Existing customer planning a reorder \u2014 explicitly mentions reorder point and PO timing"
+  },
+  {
+    "source": "gmail",
+    "id": "19cacbf311463b41",
+    "from_addr": "quickbooks@notification.intuit.com",
+    "subject": "Invoice 251229-2 from Heron Labs Inc. due 03/02/2026",
+    "snippet": "Active invoice to NutroTonic for repeat manufacturing",
+    "label": "reorder",
+    "reasoning": "Active customer invoice for repeat order"
+  },
+  {
+    "source": "gmail",
+    "id": "19c970ce38d920e7",
+    "from_addr": "quickbooks@notification.intuit.com",
+    "subject": "Invoice 260225 RD from Heron Labs Inc. due 02/25/2026",
+    "snippet": "R&D invoice issued to active customers bzwang43/fkajee on protein gummies project",
+    "label": "reorder",
+    "reasoning": "Active customer R&D and production invoice"
+  },
+  {
+    "source": "gmail",
+    "id": "19c4970d429bcdef",
+    "from_addr": "nickalasengland@gmail.com",
+    "subject": "Re: Reminder: Invoice 260114 from Heron Labs Inc. was due 01/14/2026",
+    "snippet": "Hey just wanted to update you we plan to complete the payment soon. Just trying to time it up with the arrival of our bags",
+    "label": "reorder",
+    "reasoning": "Active customer coordinating payment timing on existing order"
+  },
+  {
+    "source": "gmail",
+    "id": "19c49c2561d41eb2",
+    "from_addr": "aever770@gmail.com",
+    "subject": "Re: Reminder: Invoice 260114 from Heron Labs Inc. was due 01/14/2026",
+    "snippet": "Hi team completely understand. The bags are in the US and on the way. I just completed the deposit for manufacturing",
+    "label": "reorder",
+    "reasoning": "Active customer confirming deposit for production"
+  },
+  {
+    "source": "gmail",
+    "id": "19cb0a80d8f47b9a",
+    "from_addr": "bpray9223@gmail.com",
+    "subject": "Invoice BB002 - Monthly Amazon Management",
+    "snippet": "Brian Pray sending monthly Amazon-management service invoice to Krunchy Kids/Dustin",
+    "label": "reorder",
+    "reasoning": "Active recurring service invoice for ongoing engagement"
+  },
+  {
+    "source": "gmail",
+    "id": "197eb2ae14ea683b",
+    "from_addr": "bpray9223@gmail.com",
+    "subject": "B&B Brands (Samara 888) - New RFQ (Saffron SKU)",
+    "snippet": "Existing customer Brian Pray issuing RFQ for new SKU (saffron); references prior Zeolite SKU pricing",
+    "label": "reorder",
+    "reasoning": "Repeat customer initiating new SKU order with prior production history"
+  },
+  {
+    "source": "gmail",
+    "id": "1946be12797971c1",
+    "from_addr": "danny@710labs.com",
+    "subject": "Re: LBW Functional Mushroom Gummy Project Order",
+    "snippet": "I wanted to see check in on getting our first production run of these LBW gummies. We are ready.",
+    "label": "reorder",
+    "reasoning": "Active customer requesting production-run kickoff for committed order"
+  },
+  {
+    "source": "gmail",
+    "id": "19c8da3871121997",
+    "from_addr": "dustin@heronlabsinc.com",
+    "subject": "Re: Invoice 260203 Z from Heron Labs Inc. due 02/12/2026",
+    "snippet": "Brian are you still not getting emails from Julie? \u2014 operator following up on customer payment",
+    "label": "reorder",
+    "reasoning": "Active customer payment dialogue"
+  },
+  {
+    "source": "gmail",
+    "id": "19c8dab82ff98fbd",
+    "from_addr": "bpray9223@gmail.com",
+    "subject": "Re: Invoice 260203 Z from Heron Labs Inc. due 02/12/2026",
+    "snippet": "Thank you - ACH has been initiated for this invoice",
+    "label": "reorder",
+    "reasoning": "Active customer confirming payment for production invoice"
+  }
+]

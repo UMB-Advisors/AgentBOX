@@ -2,6 +2,7 @@
 
 > **Created:** 2026-06-06
 > **Status:** v0.1.0 — first JP7.2 bring-up validated on `agentbox2`
+> **⚠ Amended by [Addendum 001 — Absorb MailBOX into the monorepo](./addendum-agentbox-absorb-monorepo-v0_1-2026-06-07.md)** (2026-06-07): the MailBOX stack is now **vendored** at `mailbox/`, not cloned; STAGE 0.5 syncs it; `hermes-gateway.service` added. Read the addendum alongside this runbook.
 > **Scope:** This repo (**AgentBOX**) is the source of truth for the unified
 > appliance = **MailBOX email stack + Hermes agent + gBrain**, on one Jetson.
 > The MailBOX app stack is a separate repo, **cloned** by the installer
