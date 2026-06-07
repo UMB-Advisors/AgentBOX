@@ -92,7 +92,17 @@ Creating events requires write access. Concrete change:
 - Hook into the **approve** action for `scheduling` drafts: on approve, create
   the event (status configurable: `tentative` vs `confirmed`), then send the
   reply. Still operator-gated — no unattended calendar writes.
-- Surface the created event back on the queue row (link to the event).
+- **Attendees (required):** the event must support adding other people. At
+  minimum auto-add the message **sender**; allow the operator to add/edit the
+  attendee list before approving. Sent on `events.insert` via the `attendees[]`
+  array. Covered by the `calendar.events` scope — **no extra scope needed**.
+  - **Invite semantics:** populating `attendees` + `sendUpdates=all` makes Google
+    send calendar **invitations** from the operator's account. So creating an
+    event with attendees IS an outbound action — it must sit behind the same
+    approve gate as the reply (it does). Operator can choose `sendUpdates`
+    (`all` / `none`) per event; default TBD (see open questions).
+- Surface the created event (and its attendees) back on the queue row (link to
+  the event).
 - Idempotency: guard against double-create on re-approve/retry (store the created
   `eventId` on the draft/message row).
 
@@ -103,8 +113,9 @@ Creating events requires write access. Concrete change:
 | `lib/oauth/google.ts` | — | scope constant + stale-scope detection | — |
 | `Settings → Integrations` | — | re-consent banner | — |
 | `components/QueueClient.tsx` + right-pane | scheduling badge, availability panel, manual override | — | created-event link |
-| `lib/calendar/calendar.ts` | — | — | `createEvent` (events.insert) |
-| approve action (`lib/inbox-actions.ts` / drafts approve path) | — | — | create event → then send; idempotency |
+| `lib/calendar/calendar.ts` | — | — | `createEvent` (events.insert, `attendees[]` + `sendUpdates`) |
+| approve action (`lib/inbox-actions.ts` / drafts approve path) | — | — | create event (w/ attendees) → then send; idempotency |
+| right-pane attendee editor | — | — | add/edit attendees (sender prefilled) before approve |
 | migrations | — | — | store `calendar_event_id` on draft/message |
 
 ## Phasing
@@ -117,7 +128,7 @@ Creating events requires write access. Concrete change:
 
 - Event default status on creation: **tentative** (safer — client still confirms) vs **confirmed**?
 - Who is the event organizer / which calendar (always operator `primary`, or per-account)?
-- Should v2 include attendees (invite the sender) — which adds email-sending semantics via Google — or just block the operator's time?
+- Attendee invites: default `sendUpdates` = `all` (Google emails the sender an invite on approve) vs `none` (operator's time blocked, no invite email)? Attendees themselves are **required** (decided) — this question is only about whether an invite email fires by default.
 - Re-consent rollout: force banner immediately, or soft window where readonly still works until each account reconnects?
 - Multi-account: scheduling availability/creation against which connected Google account when several are linked?
 
@@ -135,6 +146,8 @@ Creating events requires write access. Concrete change:
 
 **v2**
 - [ ] Approving a scheduling draft creates the event on the operator's calendar, then sends the reply.
+- [ ] Event supports **attendees**: sender auto-added; operator can add/edit attendees before approve; attendees written via `events.insert` `attendees[]` (no extra scope).
+- [ ] `sendUpdates` is operator-controllable (invite emails on/off per event).
 - [ ] Event creation is idempotent (no duplicate on retry/re-approve).
 - [ ] No unattended event creation — always behind approve.
 
