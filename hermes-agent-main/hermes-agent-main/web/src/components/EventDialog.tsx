@@ -30,6 +30,10 @@ export interface EventFormSeed {
   endTime: string;
   location: string;
   description: string;
+  /** Comma/whitespace-separated attendee emails (the raw input value). */
+  attendees: string;
+  /** Email an invite to attendees on save (Google sendUpdates=all). */
+  sendInvite: boolean;
 }
 
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -97,6 +101,14 @@ export function EventDialog({
   const set = <K extends keyof EventFormSeed>(key: K, value: EventFormSeed[K]) =>
     setForm((f) => (f ? { ...f, [key]: value } : f));
 
+  // Split the raw attendees field on commas/whitespace/semicolons; keep only
+  // things that look like an address. Server trims/lowercases/dedupes.
+  const attendeeList = (): string[] =>
+    form.attendees
+      .split(/[\s,;]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.includes("@"));
+
   const buildInput = (): GoogleCalEventInput => {
     if (form.allDay) {
       return {
@@ -108,6 +120,8 @@ export function EventDialog({
         end: addDays(form.endDate || form.startDate, 1),
         location: form.location,
         description: form.description,
+        attendees: attendeeList(),
+        send_updates: form.sendInvite,
       };
     }
     return {
@@ -119,6 +133,8 @@ export function EventDialog({
       timezone: TZ,
       location: form.location,
       description: form.description,
+      attendees: attendeeList(),
+      send_updates: form.sendInvite,
     };
   };
 
@@ -258,6 +274,23 @@ export function EventDialog({
               onChange={(e) => set("description", e.target.value)}
               className="flex w-full resize-y border border-midground/15 bg-background/40 px-3 py-2 font-courier text-sm transition-colors placeholder:text-midground/50 focus-visible:border-midground/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-midground/30"
             />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="ev-attendees">Guests</Label>
+            <Input
+              id="ev-attendees"
+              value={form.attendees}
+              placeholder="Add guests by email (comma-separated)"
+              onChange={(e) => set("attendees", e.target.value)}
+            />
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <Checkbox
+                checked={form.sendInvite}
+                onCheckedChange={(c) => set("sendInvite", Boolean(c))}
+              />
+              Email invite to guests
+            </label>
           </div>
 
           {/* Which calendar to add to — only when creating with 2+ accounts. */}

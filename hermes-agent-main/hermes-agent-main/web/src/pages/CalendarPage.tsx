@@ -114,6 +114,8 @@ export default function CalendarPage() {
         endTime: hm(end),
         location: "",
         description: "",
+        attendees: "",
+        sendInvite: false,
       });
       setDialogOpen(true);
     },
@@ -136,6 +138,9 @@ export default function CalendarPage() {
       endTime: hm(ev.end),
       location: ev.location,
       description: ev.description,
+      // Pre-load existing guests so editing other fields doesn't drop them.
+      attendees: ev.attendees.join(", "),
+      sendInvite: false,
     });
     setDialogOpen(true);
   }, []);
@@ -563,6 +568,7 @@ interface ParsedEvent {
   location: string;
   description: string;
   link: string;
+  attendees: string[];
 }
 
 function parseEvents(raw: GoogleCalEvent[]): ParsedEvent[] {
@@ -581,6 +587,7 @@ function parseEvents(raw: GoogleCalEvent[]): ParsedEvent[] {
       location: ev.location,
       description: ev.description,
       link: ev.link,
+      attendees: ev.attendees ?? [],
     });
   }
   return out;
