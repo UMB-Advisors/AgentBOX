@@ -1,0 +1,129 @@
+# docker-compose.dev.yml — STAQPRO-155
+#
+# Standalone dev stack for working on the dashboard locally without the
+# Jetson hardware. Runs Postgres + Ollama (CPU-only) + n8n + Qdrant on a
+# laptop. The Next.js dashboard is NOT containerized in dev — run it via
+# `npm run dev` from `dashboard/` for hot-reload + better stack traces.
+#
+# Bring up:
+#   cp .env.dev.example .env.dev
+#   docker compose -f docker-compose.dev.yml --env-file .env.dev up -d
+#   docker compose -f docker-compose.dev.yml --env-file .env.dev \
+#     --profile migrate run --rm mailbox-migrate
+#   psql postgresql://mailbox:mailbox@localhost:5432/mailbox \
+#     -f scripts/seed-dev-data.sql            # optional sample drafts
+#   cd dashboard && npm run dev
+#
+# Differences from prod docker-compose.yml:
+#   - Postgres / Ollama / n8n bind ports to localhost so dashboard's
+#     `npm run dev` can connect from the host
+#   - Ollama uses the CPU image (no NVIDIA runtime / Jetson tag)
+#   - n8n runs on http://localhost:5678 (no Caddy / TLS)
+#   - No dashboard / Caddy / ttyd services (skip the prod-only surface)
+
+name: mailbox-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mailbox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mailbox}
+      POSTGRES_DB: ${POSTGRES_DB:-mailbox}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./scripts/init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.17.1
+    environment:
+      MALLOC_CONF: narenas:1
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_dev_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/6333"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  ollama:
+    # CPU-only image (no NVIDIA runtime). Dev defaults to a small model;
+    # set OLLAMA_DEV_PULL_MODEL in .env.dev to override.
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_dev_models:/root/.ollama
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - bash -c 'cat < /dev/null > /dev/tcp/localhost/11434' 2>/dev/null || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n:2.14.2
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-mailbox}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-mailbox}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-mailbox}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-dev_only_not_for_prod_replace_me}
+      N8N_HOST: localhost
+      WEBHOOK_URL: http://localhost:5678/
+      N8N_EDITOR_BASE_URL: http://localhost:5678/
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_SECURE_COOKIE: "false"
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_dev_data:/home/node/.n8n
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mailbox-migrate:
+    profiles: ["migrate"]
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./dashboard:/app
+    environment:
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-mailbox}:${POSTGRES_PASSWORD:-mailbox}@postgres:5432/${POSTGRES_DB:-mailbox}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "npm install --no-audit --no-fund && npm run migrate"
+
+volumes:
+  postgres_dev_data:
+  qdrant_dev_data:
+  ollama_dev_models:
+  n8n_dev_data:

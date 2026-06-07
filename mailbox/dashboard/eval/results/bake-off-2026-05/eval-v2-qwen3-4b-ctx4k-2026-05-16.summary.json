@@ -1,0 +1,28 @@
+{
+  "provenance": {
+    "started_at": "2026-05-17T06:58:17.075Z",
+    "finished_at": "2026-05-17T07:14:07.055Z",
+    "run_tag": "eval-v2-qwen3-4b-ctx4k-2026-05-16",
+    "trace_set_dir": "eval/t2-traces/v1.1",
+    "trace_set_manifest_sha256": "38c1e1291861083d23f2a6566473588dd31b11ba4ecc6ffb162e14316d00f71c",
+    "endpoint": {
+      "model": "qwen3-4b-ctx4k",
+      "baseUrl": "http://mailbox1:8080",
+      "quantization": "Q4_K_M",
+      "context_length": 4096,
+      "runtime_sha": "4f13cb7",
+      "gguf_sha256": null
+    },
+    "prompt_assembly_sha": "bake-off-minimal-drafter-v0.1-2026-05-16:c2b3816fa7f9011a",
+    "trace_count": 100,
+    "ok_count": 59,
+    "error_count": 41
+  },
+  "aggregates": {
+    "function_call_success_rate": 0.3389830508474576,
+    "mean_tokens_per_second": 15.999174660198197,
+    "p50_latency_ms": 16326,
+    "p95_latency_ms": 22355,
+    "ok_rate": 0.59
+  }
+}

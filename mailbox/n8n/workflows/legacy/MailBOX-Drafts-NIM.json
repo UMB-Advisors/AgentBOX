@@ -1,0 +1,597 @@
+[
+  {
+    "updatedAt": "2026-04-25T08:57:38.478Z",
+    "createdAt": "2026-04-25T07:54:21.937Z",
+    "id": "eS75Xiji4mCnnjdL",
+    "name": "MailBOX-Drafts",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          0,
+          0
+        ],
+        "id": "6eda2237-f96f-4f02-b4c5-8fc0cef21543",
+        "name": "Every 5 Min Drafts"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT \n  id,\n  message_id,\n  thread_id,\n  from_addr,\n  to_addr,\n  subject,\n  received_at,\n  body,\n  classification,\n  confidence\nFROM mailbox.inbox_messages\nWHERE classification = 'action_required'\n  AND draft_id IS NULL\nORDER BY received_at DESC\nLIMIT 5;",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          160,
+          0
+        ],
+        "id": "0699daca-936c-436a-a46c-eea0ceb65beb",
+        "name": "Find Pending Drafts",
+        "credentials": {
+          "postgres": {
+            "id": "JFX4tvrffvKnTouV",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "0558fa9e-00b5-4b4a-930b-2962e92639af",
+                "name": "inbox_message_id",
+                "value": "={{ $('Find Pending Drafts').item.json.id }}",
+                "type": "string"
+              },
+              {
+                "id": "f0a4298a-5adf-4eb4-aa5f-bd2b58ecfb39",
+                "name": "draft_subject",
+                "value": "=Re: {{ $('Find Pending Drafts').item.json.subject }}",
+                "type": "string"
+              },
+              {
+                "id": "1a4d8897-4458-4d2a-be95-b52103fc72da",
+                "name": "draft_body",
+                "value": "={{ $json.choices[0].message.content }}",
+                "type": "string"
+              },
+              {
+                "id": "999332e5-5271-4750-a58e-0b0f7c5966df",
+                "name": "model",
+                "value": "={{ $json.model }}",
+                "type": "string"
+              },
+              {
+                "id": "8537d33c-ea32-4af6-a202-1674f5823854",
+                "name": "input_tokens",
+                "value": "={{ $json.usage.prompt_tokens }}",
+                "type": "string"
+              },
+              {
+                "id": "9c6352a1-cd7c-4b12-9a6e-869a22f9c95c",
+                "name": "output_tokens",
+                "value": "={{ $json.usage.completion_tokens }}",
+                "type": "string"
+              },
+              {
+                "id": "7a45f50f-dbc6-45db-bce2-652d79048c52",
+                "name": "cost_usd",
+                "value": "0.000000",
+                "type": "string"
+              },
+              {
+                "id": "15b814be-ea18-40a8-bed0-ebffabce7df2",
+                "name": "status",
+                "value": "pending",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          464,
+          0
+        ],
+        "id": "48855827-cbbb-456d-9caa-7ebb435e83db",
+        "name": "Merge Draft"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"model\": \"meta/llama-3.3-70b-instruct\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": {{ JSON.stringify(`You are a professional email assistant for ${$json.to_addr}. You write clear, concise, polite reply drafts.\n\nGuidelines:\n- Match the formality of the incoming email\n- Keep responses focused and actionable\n- If commitments are needed, propose specifics (dates, deliverables)\n- If clarification is needed, ask one specific question\n- Never invent facts about the recipient's calendar, prior commitments, or relationships\n- Sign off with the recipient's first name from the email address\n- Do NOT include subject lines — only body text\n- Do NOT include \"Best regards\" boilerplate unless contextually warranted`) }}\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify(`Draft a reply to this email.\n\nFrom: ${$json.from_addr}\nSubject: ${$json.subject}\nReceived: ${$json.received_at}\n\nBody:\n${$json.body}`) }}\n    }\n  ],\n  \"max_tokens\": 500,\n  \"temperature\": 0.7,\n  \"stream\": false\n}",
+          "options": {
+            "timeout": 60000
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          320,
+          0
+        ],
+        "id": "5d29d4b6-2b18-4c8a-a88a-af275c0eb4e7",
+        "name": "Generate Draft (NIM)",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "9MVyw1snxpimtA3X",
+            "name": "NVIDIA NIM (Header Auth)"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "schema": {
+            "__rl": true,
+            "value": "mailbox",
+            "mode": "list",
+            "cachedResultName": "mailbox"
+          },
+          "table": {
+            "__rl": true,
+            "value": "drafts",
+            "mode": "list",
+            "cachedResultName": "drafts"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "inbox_message_id": "={{ $json.inbox_message_id }}",
+              "input_tokens": "={{ $json.input_tokens }}",
+              "output_tokens": "={{ $json.output_tokens }}",
+              "cost_usd": "={{ $json.cost_usd }}",
+              "draft_subject": "={{ $json.draft_subject }}",
+              "draft_body": "={{ $json.draft_body }}",
+              "model": "={{ $json.model }}",
+              "status": "={{ $json.status }}"
+            },
+            "matchingColumns": [
+              "id"
+            ],
+            "schema": [
+              {
+                "id": "id",
+                "displayName": "id",
+                "required": false,
+                "defaultMatch": true,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true,
+                "removed": true
+              },
+              {
+                "id": "inbox_message_id",
+                "displayName": "inbox_message_id",
+                "required": true,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "draft_subject",
+                "displayName": "draft_subject",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "draft_body",
+                "displayName": "draft_body",
+                "required": true,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "model",
+                "displayName": "model",
+                "required": true,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "input_tokens",
+                "displayName": "input_tokens",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "output_tokens",
+                "displayName": "output_tokens",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "cost_usd",
+                "displayName": "cost_usd",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "status",
+                "displayName": "status",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "created_at",
+                "displayName": "created_at",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "dateTime",
+                "canBeUsedToMatch": true,
+                "removed": true
+              },
+              {
+                "id": "updated_at",
+                "displayName": "updated_at",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "dateTime",
+                "canBeUsedToMatch": true,
+                "removed": true
+              },
+              {
+                "id": "error_message",
+                "displayName": "error_message",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true,
+                "removed": true
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {
+            "outputColumns": [
+              "id"
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          608,
+          0
+        ],
+        "id": "b109e0c1-57e4-4d24-9e5c-dd245c60374f",
+        "name": "Insert Draft",
+        "credentials": {
+          "postgres": {
+            "id": "JFX4tvrffvKnTouV",
+            "name": "Postgres account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "schema": {
+            "__rl": true,
+            "value": "mailbox",
+            "mode": "list",
+            "cachedResultName": "mailbox"
+          },
+          "table": {
+            "__rl": true,
+            "value": "inbox_messages",
+            "mode": "list",
+            "cachedResultName": "inbox_messages"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "id": "={{ $('Merge Draft').item.json.inbox_message_id }}",
+              "confidence": 0,
+              "draft_id": "={{ $json.id }}"
+            },
+            "matchingColumns": [
+              "id"
+            ],
+            "schema": [
+              {
+                "id": "id",
+                "displayName": "id",
+                "required": false,
+                "defaultMatch": true,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true,
+                "removed": false
+              },
+              {
+                "id": "message_id",
+                "displayName": "message_id",
+                "required": true,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "thread_id",
+                "displayName": "thread_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "from_addr",
+                "displayName": "from_addr",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "to_addr",
+                "displayName": "to_addr",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "subject",
+                "displayName": "subject",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "received_at",
+                "displayName": "received_at",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "dateTime",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "snippet",
+                "displayName": "snippet",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "body",
+                "displayName": "body",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "classification",
+                "displayName": "classification",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "confidence",
+                "displayName": "confidence",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "classified_at",
+                "displayName": "classified_at",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "dateTime",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "model",
+                "displayName": "model",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "created_at",
+                "displayName": "created_at",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "dateTime",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "draft_id",
+                "displayName": "draft_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          816,
+          0
+        ],
+        "id": "171d6565-4579-43d7-b080-925fa288706f",
+        "name": "Update rows in a table",
+        "credentials": {
+          "postgres": {
+            "id": "JFX4tvrffvKnTouV",
+            "name": "Postgres account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Every 5 Min Drafts": {
+        "main": [
+          [
+            {
+              "node": "Find Pending Drafts",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Find Pending Drafts": {
+        "main": [
+          [
+            {
+              "node": "Generate Draft (NIM)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Generate Draft (NIM)": {
+        "main": [
+          [
+            {
+              "node": "Merge Draft",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Draft": {
+        "main": [
+          [
+            {
+              "node": "Insert Draft",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Insert Draft": {
+        "main": [
+          [
+            {
+              "node": "Update rows in a table",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "staticData": {
+      "node:Every 5 Min Drafts": {
+        "recurrenceRules": []
+      }
+    },
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "versionId": "afea2c29-bcdb-4e7a-964c-9fca36b1ffa0",
+    "activeVersionId": "afea2c29-bcdb-4e7a-964c-9fca36b1ffa0",
+    "versionCounter": 23,
+    "triggerCount": 1,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-04-25T07:54:21.937Z",
+        "createdAt": "2026-04-25T07:54:21.937Z",
+        "role": "workflow:owner",
+        "workflowId": "eS75Xiji4mCnnjdL",
+        "projectId": "t1WwSJrClLDtMIQQ",
+        "project": {
+          "updatedAt": "2026-04-23T23:33:49.012Z",
+          "createdAt": "2026-04-12T23:13:25.060Z",
+          "id": "t1WwSJrClLDtMIQQ",
+          "name": "Dustin Powers <dustin@heronlabsinc.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null
+        }
+      }
+    ]
+  }
+]

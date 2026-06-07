@@ -1,0 +1,21 @@
+# STAQPRO-340 — real trace data is operator-local. Committed in this repo:
+#   - README.md per version dir
+#   - manifest.example.json (synthetic schema reference)
+#   - The build script (scripts/build-trace-set.ts) and types
+#     (lib/eval/trace-set.ts) — those live outside this dir.
+#
+# Operator-generated, NOT committed:
+#   - manifest.json (the real one, SHA-pinned against real traces)
+#   - *.trace.json (real customer-bodied traces)
+#
+# Rationale: real bodies (even PII-scrubbed per lib/rag/scrub.ts) violate the
+# project privacy constraint that bars committed customer email content. The
+# operator regenerates the JSONL from the source appliance DB before each
+# eval run (see t2-traces/v1.0/README.md).
+
+*.trace.json
+manifest.json
+
+# Don't ignore the schema-reference manifest. The negation comes after the
+# include so .gitignore's last-match-wins rule keeps it tracked.
+!manifest.example.json

@@ -1,0 +1,83 @@
+id,source,from_addr,subject,true_label,pred_label,confidence,json_parse_ok,latency_ms,match
+910,db,la.sales@mcmaster.com,RE: We Stopped Shipping Orders,escalate,escalate,0.95,True,3867,True
+911,db,accounting@heronlabsinc.com,Re: We Stopped Shipping Orders,internal,escalate,0.95,True,2924,False
+912,db,jt@heronlabsinc.com,Re: EnerGemz Gummy Manufacturing,follow_up,follow_up,0.9,True,3345,True
+913,db,la.sales@mcmaster.com,We Stopped Shipping Orders,escalate,escalate,0.8,True,1391,True
+914,db,bpray9223@gmail.com,Re: Invoice 260203 Z from Heron Labs Inc. due 02/12/2026,reorder,reorder,0.95,True,3500,True
+915,db,eddie@heronlabsinc.com,Re: Kevin meet Clinton/Dustin [Gummies],follow_up,scheduling,0.9,True,3307,False
+916,db,email@mail.salesforce.com,Save $1300. Two weeks left.,spam_marketing,spam_marketing,0.95,True,4306,True
+917,db,info@admin.manus.im,What if your trading tools could build their own dashboards?,spam_marketing,spam_marketing,0.95,True,3306,True
+918,db,notifications@usemotion.app,Daily Meetings Brief (Gmail),spam_marketing,unknown,0.3,True,1511,False
+919,db,isabelle@toranagroup.com,Re: Julie <> Isabelle,scheduling,scheduling,0.95,True,2506,True
+920,db,jt@heronlabsinc.com,Re: Docs for TikTok Shop - Darlin' Wellness,follow_up,follow_up,0.95,True,3348,True
+921,db,eddie@heronlabsinc.com,Re: LBW Extract Samples,follow_up,follow_up,0.95,True,3674,True
+922,db,jt@heronlabsinc.com,Re: Paul Daniels x Heron Labs gummies,follow_up,follow_up,0.9,True,3107,True
+923,db,dylanharrison4494@gmail.com,Re: New Contact: Dylan Harrison from HeroChews,inquiry,inquiry,0.95,True,3224,True
+924,db,dylanharrison4494@gmail.com,Re: New Contact: Dylan Harrison from HeroChews,inquiry,inquiry,0.95,True,3188,True
+925,db,jt@heronlabsinc.com,Re: New Contact: Dylan Harrison from HeroChews,follow_up,follow_up,0.95,True,3219,True
+926,db,sagar@getflightmode.com,Re: Flightmode,follow_up,follow_up,0.9,True,3344,True
+927,db,jt@heronlabsinc.com,Re: Julie <> Isabelle,scheduling,scheduling,0.9,True,1981,True
+928,db,bpray9223@gmail.com,Re: Invoice 260203 Z from Heron Labs Inc. due 02/12/2026,escalate,escalate,0.9,True,3424,True
+969,db,roni@heronlabsinc.com,Re: Invoice 260203 Z from Heron Labs Inc. due 02/12/2026,internal,internal,0.9,True,1252,True
+19dcc2c2df179950,gmail,jt@heronlabsinc.com,Declined: RnD Planning 2.0 @ Mon Apr 27 2026 10:15am - 10:45am (PDT),scheduling,scheduling,0.9,True,1452,True
+19dbe311fe1c7d61,gmail,em@em1.cloudflare.com,Free Plan purchased for heronlabsinc.com,internal,spam_marketing,0.95,True,1607,False
+19db072e3277c5b8,gmail,info@admin.manus.im,What if your daily research ran itself?,spam_marketing,inquiry,0.9,True,1899,False
+19db0230f2fcdb74,gmail,notifications@usemotion.app,Daily Meetings Brief (Gmail),spam_marketing,scheduling,0.9,True,1487,False
+19dae2b9244c4c53,gmail,bzwang43@gmail.com,Protein Gummies & Heron Labs 4/16/20 Meeting Notes & Next Steps,follow_up,follow_up,0.9,True,1649,True
+19dacc2d8dd18884,gmail,Sales@puregroundingredients.com,New Stock Items - Pure Ground Ingredients,spam_marketing,spam_marketing,0.95,True,1603,True
+19da71ff8867b1e6,gmail,flores.sebastian4@gmail.com,Inquiry: Manufacturing partner for functional caffeine jelly beans (Zaps),inquiry,inquiry,0.95,True,1899,True
+19d9d95241fbd96e,gmail,nicky@heronlabsinc.com,Invitation: Moving strategy meeting,scheduling,scheduling,0.95,True,1617,True
+19d964c2ad24a1eb,gmail,noreply@mail.manus.im,New Contact: Andrew Collins from Andrew Collins,inquiry,unknown,0.7,True,1273,False
+19d940b2f0d01414,gmail,sales@heronlabsinc.com,Gummy Manufacturing - Heron Labs,inquiry,inquiry,0.9,True,1510,True
+19d933ee6c6a6d75,gmail,EurofinsCertification@ft.eurofinsus.com,TR177461881463076 - B&B Brands Inc.,escalate,escalate,0.95,True,1672,True
+19d932f191403378,gmail,clinton@heronlabsinc.com,Invitation: Business loans/funding @ Mon Apr 20 2026 10am - 11am,scheduling,spam_marketing,0.9,True,1512,False
+19d88a6c66f9ea65,gmail,supplysidefoodbeveragejournal@go02.informamarkets.com,Live session: Transforming food waste into profit,spam_marketing,spam_marketing,0.95,True,1780,True
+19d87ac27e0affcd,gmail,no-reply@otter.ai,Julie Tran shared Heron Manufacturing Weekly Standup in Otter,internal,unknown,0.3,True,1320,False
+19d64dadeaf2c276,gmail,joey@teicor.com,Invitation: Joey Spanjers / Dustin Powers @ Thu Apr 9 2026 1:00pm - 1:30pm CDT,scheduling,scheduling,0.9,True,1571,True
+19d5d2d0967d7b99,gmail,noreply@domainnameverification.net,Verification of your email address,internal,unknown,0.3,True,1604,False
+19d4afd24e967ee4,gmail,jake@appliedfoods.com,"Meeting at SupplySide Connect, NJ",unknown,scheduling,0.95,True,1716,False
+19d49de0d6222275,gmail,jake@appliedfoods.com,New AFS Contact & Updates,unknown,inquiry,0.9,True,1454,False
+19d45fafc5c5d2eb,gmail,noreply@mail.manus.im,New Contact: Anna Sidor from Anna Sidor,inquiry,inquiry,0.9,True,1332,True
+19d44d679781f0ac,gmail,online@odoo.com,Activate heron-labs-live.odoo.com,spam_marketing,escalate,0.7,True,1346,False
+19d4033fa168e715,gmail,camron@vertosa.com,Invitation: Elefante <> Vertosa: Team visit @ Wed Apr 1 2026 12pm - 2pm (PDT),scheduling,scheduling,0.95,True,1554,True
+19d3ff205448ede8,gmail,nicky@heronlabsinc.com,Updated invitation: Ashley visits Heron @ Mon Mar 30 2026 3pm - 4pm (PDT),internal,scheduling,0.95,True,1726,False
+19d3f7373615b0ec,gmail,email@mail.salesforce.com,"Tomorrow: See how Anthropic, MrBeast, and Salesforce are using Slack to move faster",spam_marketing,spam_marketing,0.95,True,1947,True
+19d3133424e77644,gmail,christopher@firstdscnt.com,Re: Packaging supplier Jar - GMP docs request,unknown,follow_up,0.9,True,1468,False
+19d2f6292ed79919,gmail,notifications@usemotion.app,Daily Meetings Brief (Gmail),spam_marketing,unknown,0.3,True,1361,False
+19d2f5b3e9d2a3b9,gmail,edmato2005@gmail.com,Accepted: edward and Dustin Powers @ Fri Mar 27 2026 4:30pm - 5pm (PDT),scheduling,scheduling,0.95,True,1659,True
+19d2e252b675df7b,gmail,liyq@junqibio.com,Thank You and Farewell // JUNQI Eric,unknown,unknown,0.7,True,1652,True
+19d2ca281e6df831,gmail,notifications@calendly.com,"New Event: edward - 07:30pm Fri, Mar 27 2026 - 30 Minute Meeting",scheduling,scheduling,0.95,True,1516,True
+19d2640b4e06c836,gmail,ashley@eatzammies.com,Zammies X Heron Labs,unknown,unknown,0.3,True,1264,True
+19d23d4499553b4a,gmail,contact@herreserve.co,Manufacturing Inquiry — Micronized Creatine Monohydrate Powder (DTC Women's Wellness),inquiry,inquiry,0.95,True,1767,True
+19d23adb579d92a5,gmail,clinton@heronlabsinc.com,total_addressable_market_-_sheet1.pdf,internal,unknown,0.3,True,1428,False
+19d093841cc17a16,gmail,noreply@mail.manus.im,New Contact: edward mato from Stage2,inquiry,scheduling,0.9,True,1454,False
+19d071a4ceea0ebd,gmail,ashley@eatzammies.com,"Invitation: Zammies X Heron Labs @ Wed Mar 25, 2026 12pm - 1pm (PDT)",scheduling,scheduling,0.95,True,1542,True
+19d0342a7e4b6152,gmail,petehogg@me.com,Ghost Gummy Lab,inquiry,unknown,0.3,True,1367,False
+19d01d4a7e4c69a1,gmail,adobesign@adobesign.com,Reminder: Waiting for you to sign MNDA Victory Lap_Blank,internal,scheduling,0.8,True,1341,False
+19d01b18ebf5ae23,gmail,quickbooks@notification.intuit.com,Invoice for Heron Labs Inc.,reorder,reorder,0.95,True,1542,True
+19d0195c330bd40b,gmail,Eli@isaganiyorke.com,"Re: Accepted: Dustin Powers x Isagani Yorke @ Wed Mar 18, 2026 10:30am - 11am (CDT)",scheduling,scheduling,0.9,True,1489,True
+19cfdd9454065c16,gmail,carol.staley@equipmentshare.com,Re: Invoices and statement -- Heron Labs Inc (169545),escalate,escalate,0.95,True,1454,True
+19ce3e2e4a00fed7,gmail,christopher@firstdscnt.com,Jar Invoice,reorder,escalate,0.7,True,1432,False
+19ce35f7940db1fc,gmail,quickbooks@notification.intuit.com,Invoice 260203-0 from Heron Labs Inc. due 03/12/2026,reorder,escalate,0.75,True,1420,False
+19ce2d1f65d90503,gmail,info@krunchykids.us,KKids Box Labels,follow_up,unknown,0.3,True,1359,False
+19cdda987b63ccbd,gmail,c.rieder@imagine8.solutions,"Invitation: Heron Labs X Imagine8 @ Fri Mar 13, 2026 10am - 11am (PDT)",scheduling,scheduling,0.95,True,1560,True
+19cdba04878184cf,gmail,Eli@isaganiyorke.com,Dustin Powers x Isagani Yorke,scheduling,scheduling,0.95,True,1442,True
+19cd91ab902ba253,gmail,no-reply@otter.ai,"Meeting Summary for Olive oil phenols, bitter bloccker, blue zone gummies",spam_marketing,scheduling,0.9,True,1897,False
+19cd8b2c6469682c,gmail,no-reply@otter.ai,"Julie Tran shared Olive oil phenols, bitter bloccker, blue zone gummies in Otter",spam_marketing,unknown,0.3,True,1453,False
+19cd5200529f2ebe,gmail,noreply@mail.manus.im,New Contact: Anna Sidor from Anna Sidor,inquiry,spam_marketing,0.95,True,1460,False
+19ccdfbf20e8d4c6,gmail,theconsumervc@substack.com,Thanks for signing up for Consumer VC!,spam_marketing,spam_marketing,0.9,True,1464,True
+19cc52cd4515ae9f,gmail,withlizett@gmail.com,Inquiry for Monchi Snacks,inquiry,inquiry,0.9,True,2587,True
+19cc3f90e3df1a20,gmail,assaf@unclearnies.com,"Accepted: Uncle Arnies @ Mon Mar 9, 2026 11am - 11:30am (PDT)",scheduling,scheduling,0.95,True,1544,True
+19cbe0d6998a01c2,gmail,nickalasengland@gmail.com,Gr33n Soursop Gummies,escalate,follow_up,0.95,True,2746,False
+19cb9ed5663f268f,gmail,noreply@mail.manus.im,New Contact: Kevin Lotz from Seacoast,inquiry,inquiry,0.95,True,1386,True
+19cb86dfbdc64ba7,gmail,no-reply@netlify.com,Deploy your first app in minutes,spam_marketing,spam_marketing,0.95,True,1616,True
+19cb534aaa2b90cf,gmail,noreply@mail.manus.im,New Contact: Cameron Gawley from FlightPlan Ventures - Freak Candy,inquiry,follow_up,0.8,True,1328,False
+19cb51264d5c9b60,gmail,api-info@metrc.com,Metrc Connect CA Sandbox [thread],internal,internal,0.9,True,1723,True
+19cb40de4868b25a,gmail,can@chapterfoods.com,Natural Color Samples - Chapter Foods & Dohler,reorder,scheduling,0.8,True,1461,False
+19c928bedcc1d72a,gmail,info@nutrotonic.com,Re: Certified Labs - Amazon Good Manufacturing Practice Certificate (GMP) (TRF TR176556514561478),escalate,escalate,0.95,True,2767,True
+19c54e4d2ceb183e,gmail,bpray9223@gmail.com,Samara Zeolite Gummies R&D,reorder,follow_up,0.8,True,1312,False
+19cacbf311463b41,gmail,quickbooks@notification.intuit.com,Invoice 251229-2 from Heron Labs Inc. due 03/02/2026,reorder,reorder,0.9,True,1571,True
+19c970ce38d920e7,gmail,quickbooks@notification.intuit.com,Invoice 260225 RD from Heron Labs Inc. due 02/25/2026,reorder,reorder,0.95,True,1446,True
+19cb0a80d8f47b9a,gmail,bpray9223@gmail.com,Invoice BB002 - Monthly Amazon Management,reorder,reorder,0.9,True,1447,True
+197eb2ae14ea683b,gmail,bpray9223@gmail.com,B&B Brands (Samara 888) - New RFQ (Saffron SKU),reorder,follow_up,0.95,True,2753,False
+1946be12797971c1,gmail,danny@710labs.com,Re: LBW Functional Mushroom Gummy Project Order,reorder,follow_up,0.8,True,1291,False

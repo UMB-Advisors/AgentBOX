@@ -1,0 +1,121 @@
+name: Publish images (GHCR)
+
+# MBOX-184 / MBOX-347 — build + publish the two locally-built services
+# (mailbox-dashboard and caddy) to GHCR as versioned + digest-pinned multi-arch
+# images.
+#
+# This is the safe, non-destructive half of the OTA story: it only PUBLISHES
+# images. The dashboard's read-only "OTA updates" /status panel resolves the
+# latest published digest by reading the GHCR registry directly at runtime
+# (lib/queries-update.ts, MBOX-347) and compares it against the digests of the
+# running containers — there is NO committed manifest file and NO CI commit
+# back to master (the old record-manifest [skip ci] push was removed in
+# MBOX-347 because it re-derived over git a fact the registry already serves and
+# drove the MBOX-163 invisible-drift class). The "Update now" apply
+# orchestration (pull→recreate→migrate→smoke→commit/rollback + per-update audit
+# log) is a separate, deferred follow-up — NOT in this workflow.
+#
+# Gating: this runs via workflow_run AFTER the existing "CI" workflow
+# (.github/workflows/ci.yml — the dashboard typecheck + test job) completes
+# SUCCESSFULLY on master. That reuses the existing test gate without
+# duplicating the test job here. Tag pushes (v*) trigger a publish directly
+# (a tag is an explicit release intent; CI also runs on the underlying commit).
+
+on:
+  # Publish after CI passes on master (the digest comparison cares about
+  # master, which is what the appliance pulls — see CLAUDE.md "Deploy flow").
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [master]
+  # Explicit release tags publish directly.
+  push:
+    tags: ['v*']
+  # Manual re-publish (e.g. after rotating the packages token).
+  workflow_dispatch:
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read # checkout only — no commit back to master (MBOX-347)
+  packages: write # push images to GHCR
+
+env:
+  REGISTRY: ghcr.io
+  # GHCR requires a lowercase org/repo path. The org is UMB-Advisors → lowercase.
+  IMAGE_NS: ghcr.io/umb-advisors
+
+jobs:
+  # Skip the entire publish when the gating CI run did not succeed. For
+  # tag-push and manual dispatch there is no triggering workflow_run, so the
+  # conclusion is empty and the job proceeds.
+  publish:
+    name: build + push ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: mailbox-dashboard
+            context: dashboard
+            dockerfile: dashboard/Dockerfile
+          - service: mailbox-caddy
+            context: caddy
+            dockerfile: caddy/Dockerfile
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      # Multi-arch: the appliance is ARM64 (Jetson Orin Nano); the pending
+      # customer-#2 hardware may be x86. Build both so a single digest-pinned
+      # ref works on either. QEMU emulates arm64 on the amd64 runner.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051  # v5
+        with:
+          images: ${{ env.IMAGE_NS }}/${{ matrix.service }}
+          tags: |
+            type=sha,format=long
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # The dashboard image installs @umb-advisors/* from GitHub Packages
+          # during `npm ci`; reuse the MBOX-337 packages-token pattern. The
+          # caddy build ignores this arg (no ARG declared in caddy/Dockerfile).
+          build-args: |
+            GITHUB_PACKAGES_TOKEN=${{ secrets.GH_PACKAGES_TOKEN }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      # MBOX-347 — no manifest record/commit step. The latest published digest
+      # is read live from GHCR by the dashboard at runtime
+      # (lib/queries-update.ts); the build+push above is the entire workflow.

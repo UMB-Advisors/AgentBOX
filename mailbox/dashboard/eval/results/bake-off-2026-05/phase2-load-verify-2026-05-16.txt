@@ -1,0 +1,21 @@
+===== Ctrl-A qwen3:4b-ctx4k =====
+file: qwen3-4b-ctx4k.gguf
+  VRAM: [N/A], [N/A]
+  SMOKE: latency=1034ms tokens_out=16 out="<think>
+Okay, the user wants me to reply with the single word "READY"
+===== Ctrl-B Qwen3-4B-Instruct-2507 =====
+file: Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+  VRAM: [N/A], [N/A]
+  SMOKE: latency=204ms tokens_out=2 out="READY"
+===== C2 Qwen3.5-4B =====
+file: Qwen3.5-4B-Q4_K_M.gguf
+  HEALTH: TIMEOUT after 90s
+Error response from daemon: No such container: llamacpp-verify
+===== C1 Nemotron-3-Nano-4B =====
+file: NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf
+  HEALTH: TIMEOUT after 90s
+Error response from daemon: No such container: llamacpp-verify
+===== C3 Gemma-4-E4B =====
+file: gemma-4-E4B-it-Q4_K_M.gguf
+  HEALTH: TIMEOUT after 90s
+Error response from daemon: No such container: llamacpp-verify

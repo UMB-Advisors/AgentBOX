@@ -1,0 +1,254 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+    - postgres_data:/var/lib/postgresql/data
+    - ./scripts/init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+  qdrant:
+    image: qdrant/qdrant:v1.17.1
+    environment:
+      MALLOC_CONF: narenas:1
+    volumes:
+    - qdrant_data:/qdrant/storage
+    healthcheck:
+      test:
+      - CMD
+      - bash
+      - -c
+      - echo > /dev/tcp/localhost/6333
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    runtime: nvidia
+    environment:
+      # 5m (was 24h): let nomic-embed-text unload between RAG calls so the
+      # ~436MB GPU it holds is freed for Qwen3's working set under burst
+      # load. Mitigates STAQPRO-206 root cause #1 (llama runner OOM-killed
+      # when classify-generate + RAG-embed hit concurrently).
+      OLLAMA_KEEP_ALIVE: 5m
+      # Serialize per-model inference. Trades latency for safety on
+      # 8GB unified VRAM (STAQPRO-206 root cause #1).
+      OLLAMA_NUM_PARALLEL: 1
+    volumes:
+    - ollama_models:/root/.ollama
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - bash -c 'cat < /dev/null > /dev/tcp/localhost/11434' 2>/dev/null || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+  llama-cpp:
+    image: local/llama-cpp:cuda-jetson
+    runtime: nvidia
+    container_name: mailbox-llama-cpp-1
+    # STAQPRO-338 / DR-25: dustynv/llama_cpp:r36.4.0 retagged.
+    # Image has empty entrypoint + bash cmd; override entrypoint to the
+    # server binary so docker-compose `command:` provides only args.
+    entrypoint: ["/usr/local/bin/llama-server"]
+    command:
+      - "--model"
+      - "/models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+      - "--ctx-size"
+      - "4096"
+      - "--flash-attn"
+      - "--cache-type-k"
+      - "q8_0"
+      - "--cache-type-v"
+      - "q8_0"
+      - "--n-gpu-layers"
+      - "99"
+      - "--no-mmap"
+      - "--slots"
+      - "--parallel"
+      - "2"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+    environment:
+      LLAMA_LOG_LEVEL: "info"
+    volumes:
+      - ./llama-cpp-models:/models:ro
+    # No ports: block — internal docker network only, matches M2's tighter
+    # binding model. Workstation access is via tailnet+ssh tunnel.
+    restart: unless-stopped
+    depends_on: []
+  n8n:
+    image: n8nio/n8n:2.14.2
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: ${DOMAIN}
+      WEBHOOK_URL: https://${DOMAIN}/
+      N8N_EDITOR_BASE_URL: https://${DOMAIN}/
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      N8N_SECURE_COOKIE: 'true'
+      # Disable n8n's anonymous usage telemetry (RudderStack + PostHog).
+      # The SPA otherwise proxies telemetry through /rest/telemetry/* which
+      # gets gated by Caddy basic_auth and floods the browser console with
+      # 401s on every page load. Appliance is single-tenant; no telemetry
+      # value to us, only noise. STAQPRO-237 follow-up.
+      N8N_DIAGNOSTICS_ENABLED: 'false'
+      # Caddy fronts n8n with one upstream hop. Without this, n8n's internal
+      # express-rate-limit middleware refuses the X-Forwarded-For header
+      # (Express trust proxy = false default) and floods logs every webhook
+      # call. STAQPRO-228.
+      N8N_PROXY_HOPS: '1'
+    volumes:
+    - n8n_data:/home/node/.n8n
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -qO- http://localhost:5678/healthz || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+  caddy:
+    build: ./caddy
+    ports:
+    - 80:80
+    - 443:443
+    volumes:
+    - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    - caddy_data:/data
+    - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN}
+      CADDY_EMAIL: ${CADDY_EMAIL}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      MAILBOX_BASIC_AUTH_USER: ${MAILBOX_BASIC_AUTH_USER}
+      MAILBOX_BASIC_AUTH_HASH: ${MAILBOX_BASIC_AUTH_HASH}
+    depends_on:
+      n8n:
+        condition: service_healthy
+    restart: unless-stopped
+  mailbox-dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: mailbox-dashboard
+    restart: unless-stopped
+    environment:
+      POSTGRES_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      N8N_WEBHOOK_URL: http://n8n:5678/webhook/mailbox-send
+      NODE_ENV: production
+      PORT: "3001"
+      # STAQPRO-148 — KB upload original-bytes storage. Sha256-keyed file
+      # lifecycle handled by lib/rag/kb-ingest.ts. Survives container
+      # recreation via the mailbox_kb_uploads named volume below.
+      KB_STORAGE_DIR: /var/lib/mailbox/kb
+      # STAQPRO-199 followup — PR #35's 6000-char default still 500'd nomic on
+      # dense-token replies (~1.36 tok/char × 6000 ≈ 8160 tok, at the 8192
+      # ceiling once prefix tokens land). Empirical smoke (2026-05-02) showed
+      # 1/30 fail at 6000. Lower to 4500 (~6120 tok worst-case) for headroom.
+      EMBED_MAX_CHARS: "4500"
+      # Cloud LLM credentials — read by lib/drafting/router.ts and forwarded to
+      # n8n in /api/internal/draft-prompt response (apiKey field). Per dashboard
+      # n8n Boundary Contract, these are NOT n8n credentials — they live as env
+      # on the dashboard service and are passed per-request. Discovered missing
+      # 2026-05-04 — cloud route silently 401'd against ollama.com because the
+      # dashboard container env was empty; only local route ever worked.
+      OLLAMA_CLOUD_API_KEY: ${OLLAMA_CLOUD_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # STAQPRO-221 — operator email for H2 voice-priming. Empty/unset = the
+      # dashboard logs a once-per-30-min warning and falls back to inbound-only
+      # retrieval (the existing pre-221 path). All other RAG_RETRIEVE_TOP_K_*
+      # and RAG_MIN_INBOUND_CHARS tunables fall through to retrieve.ts defaults.
+      MAILBOX_OPERATOR_EMAIL: ${MAILBOX_OPERATOR_EMAIL:-}
+      # STAQPRO-338 / DR-25 - runtime selector + llama-cpp endpoint.
+      # Defaults preserve Ollama behavior on appliances that don't set these.
+      LOCAL_INFERENCE_RUNTIME: ${LOCAL_INFERENCE_RUNTIME:-ollama}
+      LLAMA_CPP_BASE_URL: ${LLAMA_CPP_BASE_URL:-http://llama-cpp:8080}
+      LLAMA_CPP_MODEL: ${LLAMA_CPP_MODEL:-qwen3-4b-instruct-2507}
+    volumes:
+      - mailbox_kb_uploads:/var/lib/mailbox/kb
+    depends_on:
+      postgres:
+        condition: service_healthy
+      n8n:
+        condition: service_started
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3001/dashboard/queue"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  mailbox-migrate:
+    profiles: ["migrate"]
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./dashboard:/app
+    environment:
+      POSTGRES_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - default
+    command: sh -c "npm install --no-audit --no-fund && npm run migrate"
+  mailbox-qdrant-bootstrap:
+    # STAQPRO-188 — one-shot idempotent Qdrant collection bootstrap. Runs to
+    # completion and exits. Re-running is safe (PUT collection + payload
+    # indexes are idempotent in Qdrant 1.13+).
+    profiles: ["qdrant-bootstrap"]
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./dashboard:/app
+    environment:
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    networks:
+      - default
+    command: sh -c "npm install --no-audit --no-fund && npm run qdrant:bootstrap"
+volumes:
+  postgres_data: null
+  qdrant_data: null
+  # STAQPRO-148 — original KB upload bytes (sha256-keyed). Backed up alongside
+  # other named volumes; deletes via DELETE /api/kb-documents are idempotent
+  # against missing files (fs.rm with force:true).
+  mailbox_kb_uploads: null
+  ollama_models: null
+  n8n_data: null
+  caddy_data: null
+  caddy_config: null

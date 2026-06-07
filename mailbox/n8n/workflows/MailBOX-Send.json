@@ -1,0 +1,460 @@
+{
+  "active": true,
+  "connections": {
+    "Already Sent?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Mark Sent",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Acquire Send Lock",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Acquire Send Lock": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Lock Acquired?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Lock Acquired?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Gmail Reply",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Respond Already Attempted",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Gmail Reply": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Mark Sent",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "If draft loaded": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Already Sent?",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Respond Not Found",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Load Draft": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "If draft loaded",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Mark Sent": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Respond Success",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Webhook (mailbox-send)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Load Draft",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": "Webhook receives a draft_id, loads the draft, IF guard skips Gmail Reply when sent_gmail_message_id is set. Otherwise: CAS-acquires a send lock via send_attempt_at IS NULL update (STAQPRO-IDEM-2026-05-22 — closes the Mark-Sent-partial-failure dupe class), then Gmail Reply, then Mark Sent. Lock-not-acquired branch returns 409 'already attempted; verify in Gmail Sent.'",
+  "id": "mailbox-send",
+  "isArchived": false,
+  "meta": {
+    "aiBuilderAssisted": true
+  },
+  "name": "MailBOX-Send",
+  "nodes": [
+    {
+      "id": "3c0e8e7f-57c2-4ed2-b411-52c955f4f0a9",
+      "name": "Webhook (mailbox-send)",
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {},
+        "path": "mailbox-send",
+        "responseMode": "responseNode"
+      },
+      "position": [
+        208,
+        320
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "webhookId": "67fe1e04-39f4-4154-a33d-712366a7b124"
+    },
+    {
+      "alwaysOutputData": true,
+      "id": "c4b66934-9a16-4654-bbb0-3baa5a358761",
+      "name": "Load Draft",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT\n  d.id            AS draft_id,\n  d.draft_subject AS draft_subject,\n  d.draft_body    AS draft_body,\n  d.status        AS status,\n  d.sent_gmail_message_id,\n  d.inbox_message_id,\n  m.message_id,\n  m.thread_id,\n  m.from_addr,\n  m.to_addr,\n  m.subject       AS original_subject\nFROM mailbox.drafts d\nJOIN mailbox.inbox_messages m ON d.inbox_message_id = m.id\nWHERE d.id = {{ Number($json.body.draft_id) }}\n  AND d.status IN ('approved', 'edited');"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
+      "position": [
+        432,
+        320
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5
+    },
+    {
+      "id": "2a8c9a2b-54aa-4be2-a68d-d0104f0750a4",
+      "name": "If draft loaded",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "draft-id-exists",
+              "leftValue": "={{ $json.draft_id }}",
+              "operator": {
+                "operation": "exists",
+                "singleValue": true,
+                "type": "number"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        640,
+        320
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1
+    },
+    {
+      "id": "7cc15921-6f3e-4448-9b02-5277968f486b",
+      "name": "Already Sent?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "3637b290-697e-47c0-94ff-042159161c65",
+              "leftValue": "={{ $json.sent_gmail_message_id }}",
+              "operator": {
+                "operation": "notEmpty",
+                "singleValue": true,
+                "type": "string"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        848,
+        320
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3
+    },
+    {
+      "id": "51102b37-86ec-47db-aa19-5173850d395e",
+      "name": "Mark Sent",
+      "parameters": {
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": true,
+              "display": true,
+              "displayName": "id",
+              "id": "id",
+              "required": true,
+              "type": "number"
+            },
+            {
+              "canBeUsedToMatch": false,
+              "display": true,
+              "displayName": "status",
+              "id": "status",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": false,
+              "display": true,
+              "displayName": "updated_at",
+              "id": "updated_at",
+              "required": false,
+              "type": "dateTime"
+            },
+            {
+              "canBeUsedToMatch": false,
+              "display": true,
+              "displayName": "error_message",
+              "id": "error_message",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": false,
+              "display": true,
+              "displayName": "sent_gmail_message_id",
+              "id": "sent_gmail_message_id",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": false,
+              "display": true,
+              "displayName": "send_attempt_at",
+              "id": "send_attempt_at",
+              "required": false,
+              "type": "dateTime"
+            }
+          ],
+          "value": {
+            "error_message": null,
+            "id": "={{ $('Load Draft').item.json.draft_id }}",
+            "send_attempt_at": null,
+            "sent_gmail_message_id": "={{ $('Gmail Reply').item?.json?.id ?? $('Load Draft').item.json.sent_gmail_message_id }}",
+            "status": "sent",
+            "updated_at": "={{ $now.toISO() }}"
+          }
+        },
+        "operation": "update",
+        "options": {},
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "mailbox"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "drafts"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
+      "position": [
+        1600,
+        320
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5
+    },
+    {
+      "id": "f15757fb-639f-403a-9460-acebc3fc915d",
+      "name": "Respond Success",
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, draft_id: $('Load Draft').item.json.draft_id, sent_at: $now.toISO() } }}"
+      },
+      "position": [
+        1808,
+        320
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1
+    },
+    {
+      "id": "d4f4705f-8d43-425b-9892-60f819acfdd4",
+      "name": "Gmail Reply",
+      "parameters": {
+        "emailType": "text",
+        "message": "={{ $('Load Draft').item.json.draft_body }}",
+        "messageId": "={{ $('Load Draft').item.json.message_id }}",
+        "operation": "reply",
+        "options": {
+          "appendAttribution": false
+        },
+        "resource": "message"
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "vEz5mz0uaAtlK8yz",
+          "name": "Gmail account"
+        }
+      },
+      "position": [
+        1408,
+        240
+      ],
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "webhookId": "4e1978ac-2548-4c2a-9f5f-25a7da78fef4"
+    },
+    {
+      "id": "b4cdd84a-5515-4175-a83e-8e18e57977fe",
+      "name": "Respond Not Found",
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, error: 'Draft not found, or not in approved/edited status', draft_id: $('Webhook (mailbox-send)').item.json.body.draft_id } }}"
+      },
+      "position": [
+        1088,
+        480
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1
+    },
+    {
+      "alwaysOutputData": true,
+      "id": "a1c11ea7-5e2f-4f7d-87aa-1d2db98c2026",
+      "name": "Acquire Send Lock",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "-- STAQPRO-IDEM-2026-05-22: CAS-acquire the send lock BEFORE Gmail Reply.\n-- Sets send_attempt_at = NOW() iff it's currently NULL. If 0 rows return,\n-- a prior attempt is in flight (or crashed mid-send) — refuse to re-fire\n-- Gmail Reply. Operator must verify in Gmail Sent + clear send_attempt_at\n-- manually before another retry can proceed.\nUPDATE mailbox.drafts\nSET send_attempt_at = NOW(),\n    updated_at      = NOW()\nWHERE id = {{ Number($('Load Draft').item.json.draft_id) }}\n  AND status IN ('approved', 'edited')\n  AND send_attempt_at IS NULL\nRETURNING id;"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
+      "position": [
+        1056,
+        320
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5
+    },
+    {
+      "id": "b2e34e3b-7a18-4ad3-9c5e-9c3e5cf3a226",
+      "name": "Lock Acquired?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "lock-row-returned",
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "operation": "exists",
+                "singleValue": true,
+                "type": "number"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        1216,
+        320
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3
+    },
+    {
+      "id": "c3e72d52-8b4a-4f9c-b3c5-30a18a4c2226",
+      "name": "Respond Already Attempted",
+      "parameters": {
+        "options": {
+          "responseCode": 409
+        },
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, error: 'send_attempt_at already set — possible duplicate. Verify in Gmail Sent, then clear mailbox.drafts.send_attempt_at to retry.', draft_id: $('Load Draft').item.json.draft_id } }}"
+      },
+      "position": [
+        1344,
+        480
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}

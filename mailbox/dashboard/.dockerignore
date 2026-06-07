@@ -1,0 +1,35 @@
+node_modules
+.next
+out
+build
+.git
+.gitignore
+.gitattributes
+
+# planning + docs (not needed in image)
+.planning
+n8n-workflows
+*.md
+DEPLOY.md
+README.md
+
+# secrets (compose injects env at runtime)
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# this file + Dockerfile are not needed inside the image
+.dockerignore
+Dockerfile
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
