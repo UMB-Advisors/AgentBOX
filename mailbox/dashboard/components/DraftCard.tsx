@@ -145,11 +145,23 @@ export function DraftCard({
                 ))}
               </span>
             )}
-            <span
-              className={`ml-auto shrink-0 font-mono text-[10px] uppercase tracking-wide ${indicator.labelColor}`}
-            >
-              {indicator.label}
-            </span>
+            {/* MBOX-460 — scheduling rows get a distinct bordered chip so the
+                operator can spot calendar/meeting asks at a glance. Other
+                categories keep the plain label. Sent view is unaffected. */}
+            {mode !== 'sent' && m.classification === 'scheduling' ? (
+              <span
+                className="ml-auto shrink-0 rounded-sm border border-accent-blue/40 bg-accent-blue/10 px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide text-accent-blue"
+                title="Scheduling — calendar availability used to draft proposed times"
+              >
+                {indicator.label}
+              </span>
+            ) : (
+              <span
+                className={`ml-auto shrink-0 font-mono text-[10px] uppercase tracking-wide ${indicator.labelColor}`}
+              >
+                {indicator.label}
+              </span>
+            )}
           </div>
         </div>
       </button>
