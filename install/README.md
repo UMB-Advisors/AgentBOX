@@ -25,12 +25,12 @@ Jetson Orin Nano Super 8GB
 │   ├── n8n            MailBOX{,-Classify,-Draft,-Send,-Digest} workflows
 │   ├── caddy          HTTPS + basic_auth
 │   └── mailbox-dashboard   approval queue + internal API
-└── Hermes (host, client-mode)
-    ├── hermes-agent   cloud inference (no local weights) + tools
+└── Hermes (host)
+    ├── hermes-agent   local Qwen3-4B (shared ollama :11435) + cloud fallback + tools
     └── gbrain (MCP)   pglite memory, embeddings via the shared ollama
 ```
 
-Exactly one local LLM runtime (ollama) holds the only heavy weights (`qwen3:4b-ctx4k` + `nomic-embed-text`). Hermes reasons via cloud (weight-free) — that's what keeps AgentBOX inside the 8 GB envelope.
+Exactly one local LLM runtime (ollama) holds the only heavy weights (`qwen3:4b-instruct`/`-ctx4k` + `nomic-embed-text`), shared by both the MailBOX drafter and Hermes. Hermes runs on that local Qwen3-4B by default (provider `custom:local-qwen3-4b` → `:11435`) with OpenRouter/OpenAI as cloud fallback — reusing the one runtime instead of loading its own weights is what keeps AgentBOX inside the 8 GB envelope.
 
 ## Components
 
