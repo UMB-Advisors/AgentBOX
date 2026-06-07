@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@nous-research/ui/ui/components/card";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
+import { Link } from "react-router-dom";
 import { api, shopifyAuthStartUrl } from "@/lib/api";
 import type { ShopifyAccount } from "@/lib/api";
 import { usePageHeader } from "@/contexts/usePageHeader";
@@ -97,6 +98,16 @@ export default function SettingsShopifyPage() {
   const [removing, setRemoving] = useState<string | null>(null);
   const [shopInput, setShopInput] = useState("");
 
+  // Inline OAuth-app setup (shown when the box has no Shopify app configured).
+  const [appClientId, setAppClientId] = useState("");
+  const [appClientSecret, setAppClientSecret] = useState("");
+  const [savingApp, setSavingApp] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // The redirect URL the operator must whitelist in the Shopify app. The backend
+  // builds it from the request host, so it always matches how you're browsing.
+  const callbackUrl = `${window.location.origin}/api/shopify/auth/callback`;
+
   // Read the OAuth-callback banner once on mount (and strip the query params).
   useEffect(() => {
     setBanner(readBannerFromUrl());
@@ -119,6 +130,30 @@ export default function SettingsShopifyPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const appCredsValid =
+    appClientId.trim() !== "" && appClientSecret.trim() !== "";
+
+  // Save the Shopify app credentials to the box .env. save_env_value also updates
+  // os.environ live, so client_configured() flips true on the next refresh — no
+  // gateway restart needed.
+  const saveAppCredentials = useCallback(async () => {
+    if (!appClientId.trim() || !appClientSecret.trim()) return;
+    setSavingApp(true);
+    setSaveError(null);
+    try {
+      await api.setEnvVar("SHOPIFY_APP_CLIENT_ID", appClientId.trim());
+      await api.setEnvVar("SHOPIFY_APP_CLIENT_SECRET", appClientSecret.trim());
+      setAppClientSecret("");
+      await refresh();
+    } catch (e) {
+      setSaveError(
+        e instanceof Error ? e.message : "Failed to save Shopify credentials",
+      );
+    } finally {
+      setSavingApp(false);
+    }
+  }, [appClientId, appClientSecret, refresh]);
 
   const normalizedShop = shopInput.trim().toLowerCase();
   const shopValid = SHOP_RE.test(normalizedShop);
@@ -180,27 +215,91 @@ export default function SettingsShopifyPage() {
           <Spinner className="text-2xl text-primary" />
         </div>
       ) : !clientConfigured ? (
-        <Card className="border-dashed">
+        <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
               <ShoppingBag className="h-4 w-4 text-text-secondary" />
-              <CardTitle>Shopify isn't set up on this box yet</CardTitle>
+              <CardTitle>Set up the Shopify connector</CardTitle>
             </div>
             <CardDescription>
-              No Shopify OAuth app is installed, so stores can't be connected
-              yet.
+              Enter your Shopify app's API credentials to enable connecting
+              stores. You only do this once per box.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col items-start gap-4">
-            <p className="text-sm text-text-secondary">
-              The operator needs to set SHOPIFY_APP_CLIENT_ID and
-              SHOPIFY_APP_CLIENT_SECRET on the box before any store can be
-              connected here. Once those are set, the Connect button below
-              becomes available.
-            </p>
-            <Button disabled title="No Shopify OAuth app installed on the box">
-              Connect Shopify store
+          <CardContent className="flex flex-col items-start gap-3">
+            <ol className="list-decimal space-y-1 pl-4 text-xs text-text-secondary">
+              <li>
+                In{" "}
+                <a
+                  href="https://partners.shopify.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary underline"
+                >
+                  Shopify Partners
+                </a>{" "}
+                create an app, then open its{" "}
+                <span className="font-mono">API credentials</span>.
+              </li>
+              <li>
+                Add this redirect URL to the app's allowed redirection URLs:
+                <code className="mt-1 block break-all rounded bg-muted/30 px-2 py-1 font-mono text-[11px]">
+                  {callbackUrl}
+                </code>
+              </li>
+              <li>Paste the Client ID and Client secret below.</li>
+            </ol>
+
+            <label className="w-full max-w-sm text-xs text-text-secondary">
+              Client ID
+              <input
+                type="text"
+                value={appClientId}
+                onChange={(e) => setAppClientId(e.target.value)}
+                placeholder="Shopify app client ID"
+                spellCheck={false}
+                autoCapitalize="none"
+                autoCorrect="off"
+                className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+              />
+            </label>
+
+            <label className="w-full max-w-sm text-xs text-text-secondary">
+              Client secret
+              <input
+                type="password"
+                value={appClientSecret}
+                onChange={(e) => setAppClientSecret(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && appCredsValid && !savingApp)
+                    void saveAppCredentials();
+                }}
+                placeholder="Shopify app client secret"
+                spellCheck={false}
+                autoCapitalize="none"
+                autoCorrect="off"
+                className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+              />
+            </label>
+
+            {saveError && (
+              <p className="text-xs text-destructive">{saveError}</p>
+            )}
+
+            <Button
+              onClick={() => void saveAppCredentials()}
+              disabled={!appCredsValid || savingApp}
+              prefix={savingApp ? <Spinner /> : undefined}
+            >
+              Save &amp; enable Shopify
             </Button>
+            <p className="text-xs text-text-tertiary">
+              Stored in this box's environment — you can edit it later on the{" "}
+              <Link to="/env" className="text-primary underline">
+                Keys
+              </Link>{" "}
+              page.
+            </p>
           </CardContent>
         </Card>
       ) : (

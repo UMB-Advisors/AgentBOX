@@ -6,6 +6,7 @@ import {
   KeyRound,
   MessageSquare,
   Pencil,
+  Plug,
   Save,
   Settings,
   Trash2,
@@ -89,6 +90,7 @@ const CATEGORY_META_ICONS: Record<string, typeof KeyRound> = {
   provider: Zap,
   tool: KeyRound,
   messaging: MessageSquare,
+  integration: Plug,
   setting: Settings,
 };
 
@@ -510,10 +512,11 @@ export default function EnvPage() {
       { id: "section-providers", label: "Providers" },
     ];
     if (vars) {
-      const categories = ["tool", "messaging", "setting"];
+      const categories = ["tool", "messaging", "integration", "setting"];
       const CATEGORY_LABELS: Record<string, string> = {
         tool: "Tools",
         messaging: "Messaging",
+        integration: "Integrations",
         setting: "Settings",
       };
       for (const cat of categories) {
@@ -685,9 +688,10 @@ export default function EnvPage() {
     const CATEGORY_META_LABELS: Record<string, string> = {
       tool: t.app.nav.keys,
       messaging: t.common.messaging,
+      integration: "Integrations",
       setting: t.app.nav.config,
     };
-    const otherCategories = ["tool", "messaging", "setting"];
+    const otherCategories = ["tool", "messaging", "integration", "setting"];
     const nonProvider = otherCategories.map((cat) => {
       const entries = Object.entries(vars).filter(
         ([, info]) => info.category === cat && (showAdvanced || !info.advanced),

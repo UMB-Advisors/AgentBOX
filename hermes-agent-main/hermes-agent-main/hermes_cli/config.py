@@ -3244,6 +3244,23 @@ OPTIONAL_ENV_VARS = {
         "password": False,
         "category": "setting",
     },
+    # ── Integrations (storefront / connector OAuth apps) ──────────────────
+    # Surfaced on the dashboard Keys page and settable inline from
+    # Settings → Shopify, so a connector can be set up without SSHing to the box.
+    "SHOPIFY_APP_CLIENT_ID": {
+        "description": "Shopify OAuth app client ID — enables connecting Shopify stores for blog content",
+        "prompt": "Shopify app client ID",
+        "url": "https://partners.shopify.com",
+        "password": False,
+        "category": "integration",
+    },
+    "SHOPIFY_APP_CLIENT_SECRET": {
+        "description": "Shopify OAuth app client secret",
+        "prompt": "Shopify app client secret",
+        "url": "https://partners.shopify.com",
+        "password": True,
+        "category": "integration",
+    },
 }
 
 # Tool Gateway env vars are always visible — they're useful for
