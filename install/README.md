@@ -35,7 +35,7 @@ Exactly one local LLM runtime (ollama) holds the only heavy weights (`qwen3:4b-c
 ## Components
 
 AgentBOX is the **orchestration layer**. It composes:
-- **MailBOX** — the email-appliance stack (separate repo; cloned by the installer).
+- **MailBOX** — the email-appliance stack (vendored in this monorepo at `mailbox/`; synced into place by the installer, not cloned — UMB-105).
 - **hermes-agent** + **gbrain** — the agent + memory (installed host-side, client mode).
 
 ## Install
