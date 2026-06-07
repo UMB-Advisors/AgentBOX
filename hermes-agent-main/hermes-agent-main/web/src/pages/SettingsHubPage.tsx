@@ -10,6 +10,7 @@ import {
   Mail,
   MessageSquare,
   Package,
+  Plug,
   Puzzle,
   Settings,
   ShoppingBag,
@@ -64,6 +65,12 @@ const CONNECTION_ITEMS: HubItem[] = [
     label: "Shopify stores",
     icon: ShoppingBag,
     description: "Connect Shopify stores for blog content",
+  },
+  {
+    path: "/connections",
+    label: "Model providers",
+    icon: Plug,
+    description: "Sign in to OpenAI, Anthropic, Nous & more",
   },
 ];
 
