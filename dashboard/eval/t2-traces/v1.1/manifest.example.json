@@ -1,0 +1,24 @@
+{
+  "format_version": "v1",
+  "set_version": "v1.1",
+  "generated_at": "2026-05-15T00:00:00.000Z",
+  "source_appliance": "mailbox1",
+  "count": 2,
+  "set_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "entries": [
+    {
+      "filename": "0000000000000001.trace.json",
+      "inbox_message_id": "EXAMPLE-msg-id-0001",
+      "workflow_category": "draft-reply",
+      "classification": "inquiry",
+      "trace_sha256": "0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "filename": "0000000000000002.trace.json",
+      "inbox_message_id": "EXAMPLE-msg-id-0002",
+      "workflow_category": "draft-reply",
+      "classification": "reorder",
+      "trace_sha256": "0000000000000000000000000000000000000000000000000000000000000002"
+    }
+  ]
+}

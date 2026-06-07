@@ -1,0 +1,60 @@
+# Environment files — never commit
+.env
+.env.local
+.env.*.local
+.env.backup*
+.env.swp
+.env.swo
+*.env.bak
+
+# Secrets
+secrets-*.md
+secrets/
+*-secrets.*
+*.key
+*.pem
+credentials.*
+
+# Backups and snapshots
+*.bak
+*.bak.*
+*.backup
+*.backup-*
+*.tar.gz
+*.tar.zst
+backups/
+
+# Node / Next.js build artifacts
+node_modules/
+.next/
+dist/
+build/
+*.log
+npm-debug.log*
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Claude Code / agent runtime artifacts (worktrees, scheduled_tasks.lock, etc.)
+.claude/
+
+# Large binaries that shouldn't be in git
+*.zst
+ollama-linux-*
+.planning/.next-call-count
+
+# Customer-#2 USB-stick install payload (separate nested git repo at /mailbox/).
+# This is the snapshot that gets copied onto a USB stick and bootstrapped on a
+# fresh Jetson via scripts/jetson-bootstrap-ssh.sh. It carries its own .git/ and
+# must never be committed into this repo.
+/mailbox/
+
+# RAG eval harness output (STAQPRO-198) — per-run JSON contains customer
+# email content (draft + actual reply). Operator-only; never commit.
+dashboard/eval-results/

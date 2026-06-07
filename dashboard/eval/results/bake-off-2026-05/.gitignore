@@ -1,0 +1,13 @@
+# STAQPRO-342 — per-trace JSONL outputs contain PII-scrubbed customer reply
+# bodies + model outputs derived from them. Same privacy posture as the
+# trace-set JSONL (see ../t2-traces/.gitignore). Committed in this repo:
+#   - This .gitignore
+#   - Markdown reports (phase2-load-verify-*.md, sweep-summary-*.md,
+#     report.md) — no customer content, only aggregate metrics
+#   - summary.json files (aggregate metrics + provenance, no per-trace content)
+#
+# NOT committed:
+#   - *.jsonl (one BakeOffPerTraceResult per line — contains model outputs
+#     derived from customer inbounds via the bake-off prompt)
+
+*.jsonl

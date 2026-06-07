@@ -1,0 +1,761 @@
+{
+  "active": false,
+  "connections": {
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Mark Start",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Call Ollama": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Normalize",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Drop Spam?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Live Gate",
+            "type": "main"
+          }
+        ],
+        []
+      ]
+    },
+    "Insert Classification Log": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Drop Spam?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Insert Draft Stub": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Pack Draft Id",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Live Gate": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Onboarding Live?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Load Inbox Row": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Build Prompt",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Mark Start": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Call Ollama",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Shape Log Row",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Onboarding Live?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Insert Draft Stub",
+            "type": "main"
+          }
+        ],
+        []
+      ]
+    },
+    "Pack Draft Id": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Trigger Draft Sub",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Shape Log Row": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Insert Classification Log",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "When Called by Main": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Load Inbox Row",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": null,
+  "id": "MlbxClsfySub0001",
+  "isArchived": false,
+  "meta": null,
+  "name": "MailBOX-Classify",
+  "nodes": [
+    {
+      "id": "trg00000-0000-0000-0000-000000000001",
+      "name": "When Called by Main",
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "position": [
+        0,
+        0
+      ],
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
+      "id": "pgr00000-0000-0000-0000-000000000002",
+      "name": "Load Inbox Row",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ String($json.id) }}"
+        },
+        "query": "SELECT id, message_id, thread_id, from_addr, to_addr, subject, received_at, snippet, body, in_reply_to, \"references\" FROM mailbox.inbox_messages WHERE id = $1 LIMIT 1"
+      },
+      "position": [
+        220,
+        0
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "id": "htp00000-0000-0000-0000-000000000003",
+      "name": "Build Prompt",
+      "parameters": {
+        "jsonBody": "={\n  \"from\": {{ JSON.stringify($json.from_addr || '') }},\n  \"subject\": {{ JSON.stringify($json.subject || '') }},\n  \"body\": {{ JSON.stringify($json.body || $json.snippet || '') }}\n}",
+        "method": "POST",
+        "options": {
+          "timeout": 5000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/classification-prompt"
+      },
+      "position": [
+        440,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
+    },
+    {
+      "id": "set00000-0000-0000-0000-000000000004",
+      "name": "Mark Start",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "merge-inbox-id",
+              "name": "inbox_message_id",
+              "type": "number",
+              "value": "={{ $('Load Inbox Row').item.json.id }}"
+            },
+            {
+              "id": "merge-prompt",
+              "name": "prompt",
+              "type": "string",
+              "value": "={{ $json.prompt }}"
+            },
+            {
+              "id": "merge-model",
+              "name": "model",
+              "type": "string",
+              "value": "={{ $json.model }}"
+            },
+            {
+              "id": "merge-started",
+              "name": "started_at_ms",
+              "type": "number",
+              "value": "={{ $now.toMillis() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        660,
+        0
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "htp00000-0000-0000-0000-000000000005",
+      "name": "Call Ollama",
+      "parameters": {
+        "jsonBody": "={\n  \"model\": {{ JSON.stringify($json.model) }},\n  \"prompt\": {{ JSON.stringify($json.prompt) }},\n  \"stream\": false,\n  \"format\": \"json\",\n  \"think\": false,\n  \"options\": { \"temperature\": 0, \"num_predict\": 64 }\n}",
+        "method": "POST",
+        "options": {
+          "timeout": 180000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/llm/api/generate"
+      },
+      "position": [
+        880,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
+    },
+    {
+      "id": "htp00000-0000-0000-0000-000000000006",
+      "name": "Normalize",
+      "parameters": {
+        "jsonBody": "={\n  \"raw\": {{ JSON.stringify($json.response || $json.thinking || '') }},\n  \"from\": {{ JSON.stringify($('Load Inbox Row').item.json.from_addr || '') }},\n  \"to\": {{ JSON.stringify($('Load Inbox Row').item.json.to_addr || '') }}\n}",
+        "method": "POST",
+        "options": {
+          "timeout": 5000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/classification-normalize"
+      },
+      "position": [
+        1100,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
+    },
+    {
+      "id": "set00000-0000-0000-0000-000000000007",
+      "name": "Shape Log Row",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "log-inbox-id",
+              "name": "inbox_message_id",
+              "type": "number",
+              "value": "={{ $('Mark Start').item.json.inbox_message_id }}"
+            },
+            {
+              "id": "log-category",
+              "name": "category",
+              "type": "string",
+              "value": "={{ $json.category }}"
+            },
+            {
+              "id": "log-confidence",
+              "name": "confidence",
+              "type": "number",
+              "value": "={{ $json.confidence }}"
+            },
+            {
+              "id": "log-model",
+              "name": "model_version",
+              "type": "string",
+              "value": "={{ $('Mark Start').item.json.model }}"
+            },
+            {
+              "id": "log-latency",
+              "name": "latency_ms",
+              "type": "number",
+              "value": "={{ $now.toMillis() - $('Mark Start').item.json.started_at_ms }}"
+            },
+            {
+              "id": "log-raw",
+              "name": "raw_output",
+              "type": "string",
+              "value": "={{ ($json.raw_output || '').slice(0, 8000) }}"
+            },
+            {
+              "id": "log-parseok",
+              "name": "json_parse_ok",
+              "type": "boolean",
+              "value": "={{ $json.json_parse_ok }}"
+            },
+            {
+              "id": "log-thinkstrip",
+              "name": "think_stripped",
+              "type": "boolean",
+              "value": "={{ $json.think_stripped }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        1320,
+        0
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
+      "id": "pgi00000-0000-0000-0000-000000000008",
+      "name": "Insert Classification Log",
+      "parameters": {
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "display": true,
+              "displayName": "inbox_message_id",
+              "id": "inbox_message_id",
+              "required": true,
+              "type": "number"
+            },
+            {
+              "display": true,
+              "displayName": "category",
+              "id": "category",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "confidence",
+              "id": "confidence",
+              "required": true,
+              "type": "number"
+            },
+            {
+              "display": true,
+              "displayName": "model_version",
+              "id": "model_version",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "latency_ms",
+              "id": "latency_ms",
+              "required": false,
+              "type": "number"
+            },
+            {
+              "display": true,
+              "displayName": "raw_output",
+              "id": "raw_output",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "json_parse_ok",
+              "id": "json_parse_ok",
+              "required": true,
+              "type": "boolean"
+            },
+            {
+              "display": true,
+              "displayName": "think_stripped",
+              "id": "think_stripped",
+              "required": true,
+              "type": "boolean"
+            }
+          ],
+          "value": {
+            "category": "={{ $json.category }}",
+            "confidence": "={{ Number($json.confidence) }}",
+            "inbox_message_id": "={{ $json.inbox_message_id }}",
+            "json_parse_ok": "={{ $json.json_parse_ok }}",
+            "latency_ms": "={{ Number($json.latency_ms) }}",
+            "model_version": "={{ $json.model_version }}",
+            "raw_output": "={{ $json.raw_output }}",
+            "think_stripped": "={{ $json.think_stripped }}"
+          }
+        },
+        "options": {},
+        "schema": {
+          "__rl": true,
+          "cachedResultName": "mailbox",
+          "mode": "list",
+          "value": "mailbox"
+        },
+        "table": {
+          "__rl": true,
+          "cachedResultName": "classification_log",
+          "mode": "list",
+          "value": "classification_log"
+        }
+      },
+      "position": [
+        1540,
+        0
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "id": "ifn00000-0000-0000-0000-000000000009",
+      "name": "Drop Spam?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "spam-check",
+              "leftValue": "={{ $('Shape Log Row').item.json.category }}",
+              "operator": {
+                "operation": "notEquals",
+                "type": "string"
+              },
+              "rightValue": "spam_marketing"
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        1760,
+        0
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "htp00000-0000-0000-0000-000000000010",
+      "name": "Live Gate",
+      "parameters": {
+        "method": "GET",
+        "options": {
+          "timeout": 5000
+        },
+        "url": "http://mailbox-dashboard:3001/dashboard/api/onboarding/live-gate"
+      },
+      "position": [
+        1980,
+        -100
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
+    },
+    {
+      "id": "ifn00000-0000-0000-0000-000000000011",
+      "name": "Onboarding Live?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "live-check",
+              "leftValue": "={{ $json.live }}",
+              "operator": {
+                "operation": "equals",
+                "type": "boolean"
+              },
+              "rightValue": true
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        2200,
+        -100
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
+      "id": "pgi00000-0000-0000-0000-000000000012",
+      "name": "Insert Draft Stub",
+      "parameters": {
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "display": true,
+              "displayName": "inbox_message_id",
+              "id": "inbox_message_id",
+              "required": true,
+              "type": "number"
+            },
+            {
+              "display": true,
+              "displayName": "draft_body",
+              "id": "draft_body",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "model",
+              "id": "model",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "status",
+              "id": "status",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "from_addr",
+              "id": "from_addr",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "to_addr",
+              "id": "to_addr",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "subject",
+              "id": "subject",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "body_text",
+              "id": "body_text",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "received_at",
+              "id": "received_at",
+              "required": false,
+              "type": "dateTime"
+            },
+            {
+              "display": true,
+              "displayName": "message_id",
+              "id": "message_id",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "thread_id",
+              "id": "thread_id",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "in_reply_to",
+              "id": "in_reply_to",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "references",
+              "id": "references",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "classification_category",
+              "id": "classification_category",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "display": true,
+              "displayName": "classification_confidence",
+              "id": "classification_confidence",
+              "required": false,
+              "type": "number"
+            },
+            {
+              "display": true,
+              "displayName": "auto_send_blocked",
+              "id": "auto_send_blocked",
+              "required": false,
+              "type": "boolean"
+            }
+          ],
+          "value": {
+            "auto_send_blocked": "={{ $('Shape Log Row').item.json.category === 'escalate' }}",
+            "body_text": "={{ $('Load Inbox Row').item.json.body }}",
+            "classification_category": "={{ $('Shape Log Row').item.json.category }}",
+            "classification_confidence": "={{ Number($('Shape Log Row').item.json.confidence) }}",
+            "draft_body": "",
+            "from_addr": "={{ $('Load Inbox Row').item.json.from_addr }}",
+            "in_reply_to": "={{ $('Load Inbox Row').item.json.in_reply_to }}",
+            "inbox_message_id": "={{ $('Mark Start').item.json.inbox_message_id }}",
+            "message_id": "={{ $('Load Inbox Row').item.json.message_id }}",
+            "model": "pending",
+            "received_at": "={{ $('Load Inbox Row').item.json.received_at }}",
+            "references": "={{ $('Load Inbox Row').item.json[\"references\"] }}",
+            "status": "pending",
+            "subject": "={{ $('Load Inbox Row').item.json.subject }}",
+            "thread_id": "={{ $('Load Inbox Row').item.json.thread_id }}",
+            "to_addr": "={{ $('Load Inbox Row').item.json.to_addr }}"
+          }
+        },
+        "options": {},
+        "schema": {
+          "__rl": true,
+          "cachedResultName": "mailbox",
+          "mode": "list",
+          "value": "mailbox"
+        },
+        "table": {
+          "__rl": true,
+          "cachedResultName": "drafts",
+          "mode": "list",
+          "value": "drafts"
+        }
+      },
+      "position": [
+        2420,
+        -100
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "id": "set00000-0000-0000-0000-000000000013",
+      "name": "Pack Draft Id",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "tdsub-draft-id",
+              "name": "draft_id",
+              "type": "number",
+              "value": "={{ Number($json.id) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        2640,
+        -100
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "exw00000-0000-0000-0000-000000000014",
+      "name": "Trigger Draft Sub",
+      "parameters": {
+        "mode": "each",
+        "options": {},
+        "workflowId": {
+          "__rl": true,
+          "cachedResultName": "MailBOX-Draft",
+          "mode": "id",
+          "value": "MlbxDraftSub0001"
+        }
+      },
+      "position": [
+        2860,
+        -100
+      ],
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}

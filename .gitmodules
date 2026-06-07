@@ -1,0 +1,4 @@
+[submodule "vendor/thumbox-common"]
+	path = vendor/thumbox-common
+	url = https://github.com/UMB-Advisors/thumbox-appliance-common.git
+	branch = main

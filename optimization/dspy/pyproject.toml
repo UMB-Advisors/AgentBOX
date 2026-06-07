@@ -1,0 +1,45 @@
+# optimization/dspy — DSPy GEPA offline prompt optimizer.
+#
+# Scoped to this subtree only. Repo root remains Node-only; this Python
+# toolchain is invoked manually by an operator (see README.md) and never runs
+# on the appliance.
+#
+# Tooling: uv (`uv sync` to materialize the env). Pinned to a known-good
+# DSPy 2.x line; bump only after re-running the unit tests.
+
+[project]
+name = "mailbox-dspy-optimizer"
+version = "0.1.0"
+description = "DSPy GEPA optimizer for the MailBox One drafting pipeline (STAQPRO-343)."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+
+# DSPy: GEPA was promoted to the top-level `dspy.GEPA` namespace in 2.6 and
+# remains stable through the 3.x series. We pin against `dspy` (the modern
+# distribution name) with a floor at 3.x — the `dspy-ai` meta-package re-exports
+# the same surface but is now a shim. The pin is intentionally a floor; the
+# resolved version is recorded in `uv.lock`.
+dependencies = [
+  "dspy>=3.0.0,<4.0.0",
+  "httpx>=0.27.0,<1.0.0",
+  "pydantic>=2.7.0,<3.0.0",
+  "numpy>=1.26.0,<3.0.0",
+  "pyyaml>=6.0.0,<7.0.0",
+  "click>=8.1.0,<9.0.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0,<9.0.0",
+  "pytest-asyncio>=0.23.0,<1.0.0",
+]
+
+[tool.uv]
+# Keep this subtree self-contained — uv won't recurse to a workspace at the
+# repo root.
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+asyncio_mode = "auto"

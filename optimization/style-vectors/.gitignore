@@ -1,0 +1,29 @@
+# Contrast pairs + trace JSONL fetched from the appliance are NOT committed.
+# Per project policy: "All email content and knowledge base stored only on
+# local appliance. No bulk corpus sent to cloud" — committing scrubbed real
+# email bodies would publish customer content to the public repo even after
+# PII scrubbing (names + email addresses survive scrubPII).
+traces/
+*.trace.json
+trace-set/
+pairs.json
+*.pairs.json
+
+# Spike outputs (extracted style vectors, eval JSONL with re-emitted body
+# text, steer-demo dumps). The eval JSONL inherits trace privacy.
+outputs/
+!outputs/.gitkeep
+*.npy
+*.meta.json
+*.jsonl
+
+# Python toolchain artifacts.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# uv lockfile IS committed; intermediate caches are not.
+.uv/

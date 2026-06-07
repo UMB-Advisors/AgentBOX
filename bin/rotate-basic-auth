@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# bin/rotate-basic-auth — thin wrapper for canonical version.
+#
+# Cutover MBOX-324 (2026-05-23): canonical script lives in the
+# thumbox-appliance-common submodule. Default env vars in the canonical
+# script preserve MailBOX behavior (CADDY_CONTAINER=mailbox-caddy-1,
+# REPO_PATH=~/mailbox, BASIC_AUTH_ENV_NAME=MAILBOX_BASIC_AUTH_HASH,
+# OP_VAULT=MailBOX), so existing invocations are byte-compatible:
+#
+#   ./bin/rotate-basic-auth mailbox1
+#   ./bin/rotate-basic-auth --dry-run mailbox1
+#   ./bin/rotate-basic-auth --update-1password 'mailbox.heronlabsinc.com' mailbox1
+#
+# Canonical source:
+#   github.com/UMB-Advisors/thumbox-appliance-common/bin/rotate-basic-auth
+# Pin: vendor/thumbox-common @ v0.1.0
+#
+# Operator setup: after a fresh clone or pull, run:
+#   git submodule update --init
+# (already in the deploy flow per CLAUDE.md.)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CANONICAL="${SCRIPT_DIR}/../vendor/thumbox-common/bin/rotate-basic-auth"
+
+if [[ ! -x "${CANONICAL}" ]]; then
+  echo "ERROR: canonical rotate-basic-auth not found at:" >&2
+  echo "       ${CANONICAL}" >&2
+  echo "" >&2
+  echo "Run: git submodule update --init" >&2
+  exit 2
+fi
+
+exec "${CANONICAL}" "$@"

@@ -1,0 +1,48 @@
+# scheduling.gbnf — MBOX-120 constrained-decoding grammar for `scheduling` drafts.
+#
+# DESIGN — constrain the BONES, not the prose.
+# Same philosophy as reorder.gbnf (see that file's header and the arxiv
+# 2603.03305 caveat): enforce only the STRUCTURE a scheduling reply always
+# has, and leave every word of the prose decoded FREELY by the model.
+#
+# Structure enforced (the "bones"):
+#   1. a greeting line                  (free text, one line)
+#   2. a free-form body                 (one-or-more sentences, NOT constrained)
+#   3. a structured proposed-time slot  (a proposed time + a timezone are
+#                                         REQUIRED as labelled tokens, but their
+#                                         VALUES are free text — the model fills
+#                                         them, including bracketed [confirm with
+#                                         operator: ...] placeholders)
+#   4. a signoff line                   (free text, one line)
+#
+# What is deliberately NOT constrained: word choice, how many slots the body
+# proposes in prose, tone, the literal values after the time/timezone labels.
+# The grammar can refuse a reply that omits the proposed-time slot entirely; it
+# can NOT force a specific phrasing. Structure is cheap and safe to enforce;
+# prose is where constrained decoding hurts, so we leave it alone.
+#
+# Default OFF behind CONSTRAINED_DECODING_ENABLED (see grammar-dispatch.ts).
+# Only the llama.cpp local runtime consumes `grammar`; Ollama ignores it.
+
+root      ::= greeting nl body nl propose nl signoff
+
+greeting  ::= line
+
+# Body: one or more free-text lines. Word choice is entirely up to the model.
+body      ::= line (nl line)*
+
+# Proposed-time slot: both labels are required tokens, their values are free.
+# The model supplies a concrete time (or a [confirm with operator: ...]
+# placeholder) and the timezone it is quoted in.
+propose   ::= when-line nl tz-line
+when-line ::= ("Proposed" | "Proposed time" | "How about" | "Suggested") ": " value
+tz-line   ::= ("Timezone" | "TZ" | "Time zone" | "All times") ": " value
+
+signoff   ::= line
+
+# A line is one or more printable chars (no embedded newline). `value` is the
+# same free-text token used after a structured label.
+line      ::= char+
+value     ::= char+
+char      ::= [^\n]
+nl        ::= "\n"

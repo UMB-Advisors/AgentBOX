@@ -1,0 +1,215 @@
+{
+  "active": false,
+  "connections": {
+    "Call LLM": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Finalize Draft",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Get Prompt": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Mark Start",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Mark Start": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Call LLM",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "When Called by Classify": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Get Prompt",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": null,
+  "id": "MlbxDraftSub0001",
+  "isArchived": false,
+  "meta": null,
+  "name": "MailBOX-Draft",
+  "nodes": [
+    {
+      "id": "trg00000-0000-0000-0000-000000000101",
+      "name": "When Called by Classify",
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "position": [
+        0,
+        0
+      ],
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1
+    },
+    {
+      "id": "htp00000-0000-0000-0000-000000000102",
+      "name": "Get Prompt",
+      "parameters": {
+        "jsonBody": "={\n  \"draft_id\": {{ Number($json.draft_id) }}\n}",
+        "method": "POST",
+        "options": {
+          "timeout": 5000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/draft-prompt"
+      },
+      "position": [
+        220,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
+    },
+    {
+      "id": "set00000-0000-0000-0000-000000000103",
+      "name": "Mark Start",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "draft-id",
+              "name": "draft_id",
+              "type": "number",
+              "value": "={{ Number($json.draft_id) }}"
+            },
+            {
+              "id": "draft-baseurl",
+              "name": "baseUrl",
+              "type": "string",
+              "value": "={{ $json.baseUrl }}"
+            },
+            {
+              "id": "draft-apikey",
+              "name": "apiKey",
+              "type": "string",
+              "value": "={{ $json.apiKey || '' }}"
+            },
+            {
+              "id": "draft-model",
+              "name": "model",
+              "type": "string",
+              "value": "={{ $json.model }}"
+            },
+            {
+              "id": "draft-source",
+              "name": "source",
+              "type": "string",
+              "value": "={{ $json.source }}"
+            },
+            {
+              "id": "draft-display",
+              "name": "display_label",
+              "type": "string",
+              "value": "={{ $json.display_label }}"
+            },
+            {
+              "id": "draft-messages",
+              "name": "messages",
+              "type": "array",
+              "value": "={{ $json.messages }}"
+            },
+            {
+              "id": "draft-maxtokens",
+              "name": "max_tokens",
+              "type": "number",
+              "value": "={{ Number($json.max_tokens) }}"
+            },
+            {
+              "id": "draft-temp",
+              "name": "temperature",
+              "type": "number",
+              "value": "={{ Number($json.temperature) }}"
+            },
+            {
+              "id": "draft-started",
+              "name": "started_at_ms",
+              "type": "number",
+              "value": "={{ $now.toMillis() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        440,
+        0
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "htp00000-0000-0000-0000-000000000104",
+      "name": "Call LLM",
+      "parameters": {
+        "jsonBody": "={\n  \"model\": {{ JSON.stringify($('Mark Start').item.json.model) }},\n  \"messages\": {{ JSON.stringify($('Mark Start').item.json.messages) }},\n  \"stream\": false,\n  \"options\": {\n    \"temperature\": {{ Number($('Mark Start').item.json.temperature) }},\n    \"num_predict\": {{ Number($('Mark Start').item.json.max_tokens) }}\n  }\n}",
+        "jsonHeaders": "={\n  \"Authorization\": {{ JSON.stringify('Bearer ' + ($('Mark Start').item.json.apiKey || 'local')) }}\n}",
+        "method": "POST",
+        "options": {
+          "timeout": 90000
+        },
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "specifyHeaders": "json",
+        "url": "={{ $('Mark Start').item.json.baseUrl }}/api/chat"
+      },
+      "position": [
+        660,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
+    },
+    {
+      "id": "htp00000-0000-0000-0000-000000000105",
+      "name": "Finalize Draft",
+      "parameters": {
+        "jsonBody": "={\n  \"draft_id\": {{ Number($('Mark Start').item.json.draft_id) }},\n  \"body\": {{ JSON.stringify($json.message && $json.message.content ? $json.message.content : '') }},\n  \"source\": {{ JSON.stringify($('Mark Start').item.json.source) }},\n  \"model\": {{ JSON.stringify($('Mark Start').item.json.model) }},\n  \"input_tokens\": {{ Number($json.prompt_eval_count || 0) }},\n  \"output_tokens\": {{ Number($json.eval_count || 0) }}\n}",
+        "method": "POST",
+        "options": {
+          "timeout": 5000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/draft-finalize"
+      },
+      "position": [
+        880,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}

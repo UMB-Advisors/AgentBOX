@@ -1,0 +1,48 @@
+# optimization/style-vectors — contrastive activation-steering (style-vector) spike.
+#
+# Scoped to this subtree only. Repo root remains Node-only; this Python
+# toolchain is invoked manually by an operator (see README.md) and never runs
+# on the appliance — it relies on HuggingFace transformers forward hooks
+# (a research path that has no llama.cpp equivalent) purely to PROVE the
+# approach. The production path would need a llama.cpp decoder hook, which is
+# the open feasibility / kill question this spike exists to answer (MBOX-118).
+#
+# Tooling: uv (`uv sync` to materialize the env). torch wheel resolution is
+# left to uv's default index — operators on the Jetson should not run this
+# here; run it on a CUDA workstation or CPU-only for the tiny-model smoke.
+
+[project]
+name = "mailbox-style-vectors"
+version = "0.1.0"
+description = "Contrastive activation-steering (style-vector) spike for the MailBox One drafter (MBOX-118)."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+
+# transformers + torch carry the forward-hook + generation surface the spike
+# needs. pydantic models the metadata payloads; click drives the CLI; pyyaml
+# + numpy mirror the dspy subtree's serialization story. Pins are floors with
+# conservative upper bounds; the resolved versions are recorded in uv.lock.
+dependencies = [
+  "torch>=2.2.0,<3.0.0",
+  "transformers>=4.40.0,<5.0.0",
+  "numpy>=1.26.0,<3.0.0",
+  "pydantic>=2.7.0,<3.0.0",
+  "click>=8.1.0,<9.0.0",
+  "pyyaml>=6.0.0,<7.0.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0,<9.0.0",
+  "pytest-asyncio>=0.23.0,<1.0.0",
+]
+
+[tool.uv]
+# Keep this subtree self-contained — uv won't recurse to a workspace at the
+# repo root.
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+asyncio_mode = "auto"

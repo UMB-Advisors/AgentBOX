@@ -1,0 +1,26 @@
+# Local trace JSONL fetched from the appliance is NOT to be committed.
+# Per project policy: "All email content and knowledge base stored only on
+# local appliance. No bulk corpus sent to cloud" — committing scrubbed real
+# email bodies would publish customer content to the public repo even after
+# PII scrubbing (names + email addresses + URLs survive scrubPII).
+traces/
+*.trace.json
+trace-set/
+
+# GEPA run outputs (compiled program JSON, lift reports, intermediate
+# checkpoints) may contain few-shot exemplars that quote real customer email
+# fragments verbatim. Operator decides what to copy out of outputs/ into the
+# committed prompts/ directory (templates/instructions only, no exemplars).
+outputs/
+!outputs/.gitkeep
+
+# Python toolchain artifacts.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# uv lockfile IS committed; intermediate caches are not.
+.uv/

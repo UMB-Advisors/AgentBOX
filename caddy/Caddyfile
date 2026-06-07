@@ -1,0 +1,143 @@
+{
+  # Let's Encrypt account email — used for cert expiry warnings.
+  # STAQPRO-237: hoisted to global so the per-site tls block stays focused
+  # on the DNS-01 challenge config.
+  email {$CADDY_EMAIL}
+}
+
+# Per-customer hostname. Two flavors are supported by this template:
+#   1. Customer-owned domain (M1 / Heron Labs): DOMAIN=mailbox.heronlabsinc.com
+#   2. Shared Staqs subdomain (NC-25, customers 2+, STAQPRO-183):
+#        DOMAIN=<customer-slug>.mailbox.<staqs-shared-domain>
+#      The A record is created by scripts/provision-customer-dns.sh before
+#      first boot and points at the appliance's LAN IP. Caddy then solves
+#      the cert via DNS-01 (LAN IP works because the challenge never needs
+#      to reach the appliance from the public internet).
+{$DOMAIN} {
+  # Cloudflare DNS-01. Same CLOUDFLARE_API_TOKEN used by the provisioner;
+  # scope is Zone → DNS → Edit on the parent zone only. STAQPRO-183.
+  tls {
+    dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+  }
+
+  # Single auth gate covers all paths EXCEPT /mcp-server/*, which uses its
+  # own n8n-issued JWT Bearer auth (see STAQPRO-203). Hoisted to the site
+  # scope so /dashboard/* and / (n8n editor) share one auth realm —
+  # without this, browsers re-prompt every time a request crosses between
+  # the two handle blocks (split-realm trap surfaced 2026-05-01).
+  #
+  # Set MAILBOX_BASIC_AUTH_USER + MAILBOX_BASIC_AUTH_HASH in .env, AND
+  # ensure both vars are passed through to the caddy container in
+  # docker-compose.yml's caddy.environment block (not just the .env file).
+  # Generate a hash with:  docker run --rm caddy:2 caddy hash-password
+  # The hash contains literal `$` chars — escape every `$` to `$$` in
+  # the .env file or docker-compose silently truncates the value.
+  #
+  # FAIL-CLOSED: Caddy refuses to start if either env var is empty
+  # ("account 0: username and password are required" → crash loop).
+  # This is intentional — an appliance with deployed customer data must
+  # not silently fall through to unauthenticated proxying. If you're
+  # provisioning a fresh appliance, set the env vars BEFORE first boot.
+  #
+  # /mcp-server/* bypass rationale (STAQPRO-203): n8n's instance-level
+  # MCP server (added in 2.13+) authenticates with its own JWT Bearer
+  # token — Caddy's basic_auth header would shadow that and break the
+  # handshake. The bypass leaves auth to n8n, same security model as
+  # n8n Cloud. The MCP token is per-client, revocable in the n8n UI
+  # at Settings > Instance-level MCP > Connected clients.
+  # Exempt n8n's SPA-polled paths from basic_auth so the editor doesn't
+  # think the backend is offline:
+  #   /mcp-server/* — n8n's MCP server with its own JWT (STAQPRO-203)
+  #   /healthz      — n8n SPA polls this; 401 here triggers a "session
+  #                   expired, please sign in" modal that traps the user
+  #                   in a login loop even after they've signed in
+  #   /assets/*     — n8n's lazy-loaded SPA module bundles. Browser
+  #                   doesn't always carry basic_auth on dynamic imports
+  #                   / preloads, so these 401 from background fetches
+  #                   even when the user is authenticated.
+  @protected not path /mcp-server/* /healthz /assets/*
+  basic_auth @protected {
+    {env.MAILBOX_BASIC_AUTH_USER} {env.MAILBOX_BASIC_AUTH_HASH}
+  }
+
+  # Convenience: bare /dashboard → /dashboard/queue
+  redir /dashboard /dashboard/queue 308
+
+  # Root → dashboard queue. Without this, / falls through to n8n's
+  # reverse_proxy and users hit n8n's /signin page (n8n's own app
+  # auth, layered behind Caddy's basic_auth). The appliance's
+  # customer-facing surface is the approval queue, not the n8n editor.
+  redir / /dashboard/queue 308
+
+  # Dashboard approval queue. STAQPRO-131: behind the basic_auth above.
+  handle /dashboard/* {
+    # flush_interval -1: flush every write immediately so SSE (the
+    # /dashboard/chat token stream, MBOX-284/287) reaches the browser as
+    # tokens generate. Without it Caddy buffers the stream; during a long
+    # generation no bytes flow, the idle TCP connection is dropped, and the
+    # browser shows ERR_CONNECTION_TIMED_OUT. Harmless for normal responses.
+    reverse_proxy mailbox-dashboard:3001 {
+      flush_interval -1
+    }
+  }
+
+  # n8n editor + any other paths (incl. /webhook/*) — same auth gate.
+  # STAQPRO-161 (post-DR-22 KILL): the prior /webhook/* bypass is gone.
+  # The dashboard's only webhook caller (MailBOX-Send approve→send loop)
+  # uses internal docker DNS at http://n8n:5678/webhook/mailbox-send and
+  # never traverses Caddy, so this gate doesn't break that loop. With
+  # Pub/Sub push retired (DR-22), no external party needs to reach the
+  # webhook surface; gating it closes the last public attack vector.
+  handle {
+    reverse_proxy n8n:5678
+  }
+}
+
+# ── LAN discovery listener (STAQPRO-410) ────────────────────────────────────
+# Reached via mDNS at `mailbox.local` (or whatever MAILBOX_LAN_HOSTNAME
+# is set to). The avahi-daemon record in /etc/avahi/services/mailbox.service
+# advertises this host on the LAN multicast group.
+#
+# TLS: `tls internal` uses Caddy's local CA. Browsers will show a
+# one-time cert warning until the operator imports Caddy's root cert,
+# or until v2 wires `mkcert -install` into factory-bootstrap.sh. This
+# is acceptable for the first-boot onboarding flow — the customer is
+# standing next to the box, not navigating a phishing page.
+#
+# Coexistence: this block has its own site address, so Caddy serves
+# both the public hostname ({$DOMAIN}) and the LAN hostname on the
+# same :443 binding. SNI routing handles the split.
+#
+# M1 / M2 inertness: when this branch deploys to M1/M2 (mailbox.heronlabsinc.com
+# / mailbox.staqs.io), MAILBOX_LAN_HOSTNAME defaults to `mailbox.local`.
+# M1/M2 do not run avahi-daemon (their hostnames stay `mailbox1`/`mailbox2`,
+# and factory-bootstrap.sh refuses to run on them) so this site block
+# is dormant — nothing on the LAN resolves `mailbox.local` to either
+# appliance. The block listens but answers no one. This is the
+# designed-inert behavior the plan promises.
+{$MAILBOX_LAN_HOSTNAME} {
+  tls internal
+
+  @protected not path /mcp-server/* /healthz /assets/*
+  basic_auth @protected {
+    {env.MAILBOX_BASIC_AUTH_USER} {env.MAILBOX_BASIC_AUTH_HASH}
+  }
+
+  redir /dashboard /dashboard/queue 308
+  redir / /dashboard/queue 308
+
+  handle /dashboard/* {
+    # flush_interval -1: flush every write immediately so SSE (the
+    # /dashboard/chat token stream, MBOX-284/287) reaches the browser as
+    # tokens generate. Without it Caddy buffers the stream; during a long
+    # generation no bytes flow, the idle TCP connection is dropped, and the
+    # browser shows ERR_CONNECTION_TIMED_OUT. Harmless for normal responses.
+    reverse_proxy mailbox-dashboard:3001 {
+      flush_interval -1
+    }
+  }
+
+  handle {
+    reverse_proxy n8n:5678
+  }
+}

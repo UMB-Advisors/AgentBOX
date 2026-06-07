@@ -1,0 +1,238 @@
+{
+  "active": true,
+  "connections": {
+    "IMAP Email": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Build Inbox Payload",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Build Inbox Payload": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Insert Inbox (HTTP)",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Insert Inbox (HTTP)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Only If Newly Inserted",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Only If Newly Inserted": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Run Classify Sub",
+            "type": "main"
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "description": "MBOX-357 (P1 T5) — IMAP ingress, per DR-56 Option A (one n8n workflow per transport). The emailReadImap TRIGGER node watches the operator's IMAP INBOX (IDLE + internal UID tracking → only NEW mail; no native thread model). Build Inbox Payload flattens the mailparser-resolved fields to the strings the dashboard expects and tags provider:'imap'. The dashboard's /api/internal/inbox-messages then runs ImapSmtpProvider.normalize() SERVER-SIDE — the load-bearing step is thread_id synthesis (sha256 of the References/In-Reply-To chain root), which n8n cannot compute. Dedup is the DB's (account_id, message_id) upsert; 'created=false' (a re-fetch) short-circuits at Only If Newly Inserted. Classify/draft/queue/send are shared, provider-agnostic. ON IMPORT: (1) create + link an IMAP credential ('MailBox IMAP'); (2) set Build Inbox Payload's account_email to THIS IMAP account's address so multi-provider appliances file it under the right inbox (omit only on a single-account appliance where the IMAP account IS the default). RESIDUAL on-box check (DR-56 note): confirm emailReadImap polls + hands off reliably against a test mailbox before relying on it.",
+  "id": "MailBoxImap000001",
+  "isArchived": false,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "name": "MailBOX-Imap",
+  "nodes": [
+    {
+      "id": "a1c00000-0000-0000-0000-000000000001",
+      "name": "IMAP Email",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "format": "resolved",
+        "mailbox": "INBOX",
+        "postProcessAction": "nothing",
+        "options": {
+          "customEmailConfig": "[\"UNSEEN\"]"
+        }
+      },
+      "credentials": {
+        "imap": {
+          "id": "REPLACE_ON_IMPORT_IMAP",
+          "name": "MailBox IMAP"
+        }
+      }
+    },
+    {
+      "id": "a1c00000-0000-0000-0000-000000000002",
+      "name": "Build Inbox Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b0000001-0000-0000-0000-000000000001",
+              "name": "provider",
+              "type": "string",
+              "value": "imap"
+            },
+            {
+              "id": "b0000001-0000-0000-0000-000000000002",
+              "name": "account_email",
+              "type": "string",
+              "value": "imap@example.com"
+            },
+            {
+              "id": "b0000001-0000-0000-0000-000000000003",
+              "name": "message_id",
+              "type": "string",
+              "value": "={{ $json.messageId || '' }}"
+            },
+            {
+              "id": "b0000001-0000-0000-0000-000000000004",
+              "name": "from_addr",
+              "type": "string",
+              "value": "={{ $json.from && $json.from.value && $json.from.value[0] ? $json.from.value[0].address : ($json.from && $json.from.text ? $json.from.text : '') }}"
+            },
+            {
+              "id": "b0000001-0000-0000-0000-000000000005",
+              "name": "to_addr",
+              "type": "string",
+              "value": "={{ $json.to && $json.to.value && $json.to.value[0] ? $json.to.value[0].address : ($json.to && $json.to.text ? $json.to.text : '') }}"
+            },
+            {
+              "id": "b0000001-0000-0000-0000-000000000006",
+              "name": "subject",
+              "type": "string",
+              "value": "={{ $json.subject || '' }}"
+            },
+            {
+              "id": "b0000001-0000-0000-0000-000000000007",
+              "name": "received_at",
+              "type": "string",
+              "value": "={{ $json.date || '' }}"
+            },
+            {
+              "id": "b0000001-0000-0000-0000-000000000008",
+              "name": "body",
+              "type": "string",
+              "value": "={{ $json.text || $json.textPlain || '' }}"
+            },
+            {
+              "id": "b0000001-0000-0000-0000-000000000009",
+              "name": "in_reply_to",
+              "type": "string",
+              "value": "={{ $json.inReplyTo || '' }}"
+            },
+            {
+              "id": "b0000001-0000-0000-0000-00000000000a",
+              "name": "references",
+              "type": "string",
+              "value": "={{ Array.isArray($json.references) ? $json.references.join(' ') : ($json.references || '') }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1c00000-0000-0000-0000-000000000003",
+      "name": "Insert Inbox (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/inbox-messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"provider\": {{ JSON.stringify($json.provider || \"imap\") }},\n  \"account_email\": {{ JSON.stringify($json.account_email || \"\") }},\n  \"message_id\": {{ JSON.stringify($json.message_id || \"\") }},\n  \"from_addr\": {{ JSON.stringify($json.from_addr || \"\") }},\n  \"to_addr\": {{ JSON.stringify($json.to_addr || \"\") }},\n  \"subject\": {{ JSON.stringify($json.subject || \"\") }},\n  \"received_at\": {{ JSON.stringify($json.received_at || \"\") }},\n  \"body\": {{ JSON.stringify($json.body || \"\") }},\n  \"in_reply_to\": {{ JSON.stringify($json.in_reply_to || \"\") }},\n  \"references\": {{ JSON.stringify($json.references || \"\") }}\n}",
+        "options": {
+          "timeout": 5000
+        }
+      }
+    },
+    {
+      "id": "a1c00000-0000-0000-0000-000000000004",
+      "name": "Only If Newly Inserted",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c0000001-0000-0000-0000-000000000001",
+              "leftValue": "={{ $json.created }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1c00000-0000-0000-0000-000000000005",
+      "name": "Run Classify Sub",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "MlbxClsfySub0001"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}
