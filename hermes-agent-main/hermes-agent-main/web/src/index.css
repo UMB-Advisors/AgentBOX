@@ -164,6 +164,14 @@ code { font-size: 0.875rem; }
   /* Remap foreground to midground so `text-foreground` / `bg-foreground`
      stay visible — in LENS_0, `--foreground` itself has alpha 0. */
   --color-foreground: var(--midground);
+  /* DS surfaces (DialogContent/Label/Input/DialogTitle) paint text with
+     `text-foreground-base`, which resolves to the raw white `--foreground-base`
+     — invisible on the Carbon light canvas (regression from the c96f95a reskin,
+     which flipped midground dark-on-light but left foreground-base #ffffff).
+     Route it through midground like `--color-foreground` so dialog/label/input
+     text is legible app-wide. Dark themes (Hermes Teal) set a light midground,
+     so this stays readable there too. */
+  --color-foreground-base: var(--midground);
 
   /* Single brand/accent. Resolves to the theme's `--brand` hue, falling back
      to the midground so themes that don't set a brand stay monochrome.
