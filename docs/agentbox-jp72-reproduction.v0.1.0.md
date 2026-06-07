@@ -31,8 +31,10 @@ human steps: recovery jumper, Gmail OAuth, 1Password unlock).
 | 3–4 | canonical DB schema; models (`qwen3:4b-instruct`, `qwen3:4b-ctx4k`, `nomic-embed-text:v1.5`) |
 | 5 | dashboard + n8n (+caddy). **Dashboard image:** build from source (needs a real `GITHUB_PACKAGES_TOKEN`) **or** preload (`DASHBOARD_IMAGE` / `docker save\|load mailbox-dashboard:local`) |
 | 6 | n8n Postgres credential + import + activate the 4 workflows |
-| 7 | **Hermes**: install + **pin v0.15.1** (`HERMES_REF`), deploy `config/hermes/config.yaml.template`, **gBrain** (vendored src + pglite brain), build dashboard web dist |
-| 8 | **boot-to-ready**: install `systemd/{agentbox,hermes-dashboard}.service` + enable-linger |
+| 7 | **Hermes**: install + **pin v0.15.1** (`HERMES_REF`), deploy `config/hermes/config.yaml.template`, **gBrain** (vendored src + pglite brain) |
+| 7.5 | build + install the **custom** dashboard web dist from vendored `hermes-agent-main/web` (stock build only as fallback) |
+| 7.6 | **overlay the AgentBOX-custom backend** onto the stock Hermes install — `web_server.py` + `google_*/shopify_*` helpers + `dashboard_auth/public_paths.py`. Without this, stock Hermes has no `/api/google/*` routes and **Connect Google 404s**. File set = git-derived SoT in `bin/lib/custom-backend-files.sh`; same set `bin/deploy-dashboard.sh` pushes for post-`hermes update` repairs |
+| 8 | **boot-to-ready**: install `systemd/{agentbox,hermes-dashboard,hermes-gateway}.service` + enable-linger |
 
 ## Why these JP7.2 / version specifics
 
@@ -48,7 +50,13 @@ cd ~/mailbox && docker compose ps                                      # 5 healt
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9119/        # 200
 hermes -z 'Reply with one word: BANANA' --yolo --accept-hooks          # BANANA
 hermes mcp list                                                        # gbrain ✓ enabled
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9119/api/google/auth/start  # 303 (custom backend live; 401/404 = stock)
 ```
+If `/api/google/auth/start` returns 401/404, the custom backend overlay (STAGE 7.6)
+didn't take — re-run the installer, or from a dev machine:
+`REMOTE=<user>@<box> RDIR=/home/<user>/.hermes/hermes-agent/hermes_cli bin/deploy-dashboard.sh`.
+Connecting an account also needs `google_client_secret.json` in `$HERMES_HOME/` and
+the box's callback URL registered in the GCP OAuth client (operator step).
 The `:9119` dashboard is loopback-bound by design; view it over the tailnet via an SSH tunnel:
 `ssh -L 9120:127.0.0.1:9119 <user>@<box>` → http://localhost:9120
 
