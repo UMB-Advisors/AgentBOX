@@ -6,6 +6,7 @@ import type { Category } from '@/lib/classification/prompt';
 import type { ActionItem, DraftWithMessage } from '@/lib/types';
 import { ActionButtons, type ActionKind } from './ActionButtons';
 import { ActionItemsPanel } from './ActionItemsPanel';
+import { CalendarEventComposer } from './CalendarEventComposer';
 import { ClassificationOverride } from './ClassificationOverride';
 import { CrossAccountPanel } from './CrossAccountPanel';
 import { EditDiff } from './EditDiff';
@@ -254,6 +255,12 @@ export function DraftDetail({
         <div className="mt-2">
           <CrossAccountPanel key={draft.id} draftId={draft.id} />
         </div>
+        {/* MBOX-460 v2 — operator-composed calendar event for scheduling drafts.
+            Decoupled from approve/send; idempotent per draft. Hidden on read-only
+            (archive/sent) views and for non-scheduling drafts. */}
+        {!readOnly && draft.message.classification === 'scheduling' && (
+          <CalendarEventComposer key={draft.id} draft={draft} />
+        )}
       </div>
       <div className="border-t border-border px-5 py-3">
         <EmailContext message={draft.message} history={draft.thread_history} />
