@@ -77,6 +77,14 @@ export interface AutoSendRules {
   updated_at: Generated<string>;
 }
 
+export interface Businesses {
+  created_at: Generated<string>;
+  description: Generated<string>;
+  id: Generated<number>;
+  name: string;
+  updated_at: Generated<string>;
+}
+
 export interface ChatConversations {
   account_id: Generated<number>;
   created_at: Generated<string>;
@@ -111,6 +119,29 @@ export interface ClassificationLog {
   model_version: string;
   raw_output: string | null;
   think_stripped: Generated<boolean>;
+}
+
+export interface CrmContacts {
+  company: Generated<string>;
+  created_at: Generated<string>;
+  emails: Generated<Json>;
+  external_id: string | null;
+  id: Generated<number>;
+  name: string;
+  notes: Generated<string>;
+  phones: Generated<Json>;
+  socials: Generated<Json>;
+  source: Generated<string>;
+  tags: Generated<Json>;
+  updated_at: Generated<string>;
+}
+
+export interface Departments {
+  business_id: number | null;
+  created_at: Generated<string>;
+  id: Generated<number>;
+  name: string;
+  updated_at: Generated<string>;
 }
 
 export interface DigestSends {
@@ -380,6 +411,19 @@ export interface SystemState {
   id: Generated<number>;
 }
 
+export interface TeamMembers {
+  created_at: Generated<string>;
+  department_id: number | null;
+  email: Generated<string>;
+  id: Generated<number>;
+  kind: Generated<string>;
+  name: string;
+  notes: Generated<string>;
+  status: Generated<string>;
+  title: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface UserFilterPreferences {
   id: Generated<number>;
   key: string;
@@ -421,9 +465,12 @@ export interface DB {
   alert_sends: AlertSends;
   auto_send_audit: AutoSendAudit;
   auto_send_rules: AutoSendRules;
+  businesses: Businesses;
   chat_conversations: ChatConversations;
   chat_messages: ChatMessages;
   classification_log: ClassificationLog;
+  crm_contacts: CrmContacts;
+  departments: Departments;
   digest_sends: DigestSends;
   draft_feedback: DraftFeedback;
   drafts: Drafts;
@@ -443,6 +490,7 @@ export interface DB {
   sent_history: SentHistory;
   state_transitions: StateTransitions;
   system_state: SystemState;
+  team_members: TeamMembers;
   user_filter_preferences: UserFilterPreferences;
   v_drafting_metrics: VDraftingMetrics;
   v_override_rate: VOverrideRate;
