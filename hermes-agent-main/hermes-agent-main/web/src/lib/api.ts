@@ -351,6 +351,8 @@ export const api = {
       schedule: string;
       name?: string;
       deliver?: string;
+      model?: string | null;
+      provider?: string | null;
       department_id?: number | null;
       department_name?: string | null;
       employee_id?: number | null;
@@ -370,6 +372,8 @@ export const api = {
       schedule?: string;
       name?: string;
       deliver?: string;
+      model?: string | null;
+      provider?: string | null;
       department_id?: number | null;
       department_name?: string | null;
       employee_id?: number | null;
@@ -1341,6 +1345,9 @@ export interface CronJob {
   enabled: boolean;
   state?: string | null;
   deliver?: string | null;
+  // Per-job model override (null = box default at run time) + its pinned provider.
+  model?: string | null;
+  provider?: string | null;
   last_run_at?: string | null;
   next_run_at?: string | null;
   last_error?: string | null;
