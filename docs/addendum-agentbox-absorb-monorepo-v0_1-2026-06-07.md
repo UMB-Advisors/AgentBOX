@@ -35,12 +35,19 @@ From bare hardware, use **`/agentbox-flash`** as before.
 *populates* it from the vendored `mailbox/` instead of cloning, so the runtime
 dir and the repo stay in sync on every install/re-run.
 
-## Updated stage 0.5 / 8 (replaces those rows in the v0.1.0 table)
+## Updated stages (replace/extend those rows in the v0.1.0 table)
 
 | Stage | Action |
 |---|---|
+| 0.1 | **MAXN power mode + optional disk encryption** (ported from legacy `first-boot.sh`, UMB-113). MAXN detected by name (r39 = `MAXN_SUPER` id 2, not id 0) + persisted via `set-maxn-power.service`. LUKS is **opt-in + non-interactive**: runs only in production with `DATA_PARTITION=…` **and** `LUKS_CONFIRM=ENCRYPT`; skipped on `--prototype`; idempotent (skips an already-LUKS partition). |
 | 0.5 | **sync the vendored MailBOX stack** (`$REPO/mailbox` → `$STACK_DIR`); apply `config/docker-compose.override.yml.template` (loopback publishes) |
 | 8 | **boot-to-ready**: install `systemd/{agentbox,hermes-dashboard,hermes-gateway}.service` + enable-linger |
+
+> **LUKS note:** the legacy guide encrypted interactively during first-boot. The
+> absorbed installer keeps this off the default path (it would be destructive on
+> an existing data partition) — encrypt a fresh box with
+> `DATA_PARTITION=/dev/nvme0n1p4 LUKS_CONFIRM=ENCRYPT ./install/agentbox-install.sh`.
+> Requires `nvidia-l4t-security-utils` (`gen_luks.sh`) on JP7.2/r39.
 
 ## hermes-gateway.service
 

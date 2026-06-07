@@ -1,3 +1,21 @@
+> [!CAUTION]
+> **DEPRECATED — legacy MailBOX-only (JetPack 6.2.2) first-boot guide.**
+> This describes the standalone MailBOX appliance via `scripts/first-boot.sh` on
+> JP6.2.2. It does **not** apply to the unified AgentBOX appliance (JP7.2 / r39),
+> which is built by `install/agentbox-install.sh` and adds Hermes + gBrain.
+> It also predates the absorb (UMB-105) and contradicts the current flow in
+> several places (JetPack version, Docker install method, Ollama image, the
+> forbidden bare `qwen3:4b` pull, dashboard port `:3000` → `:3001`).
+>
+> **Canonical install docs:**
+> - [`../../install/README.md`](../../install/README.md) — AgentBOX installer overview
+> - [`../../docs/agentbox-jp72-reproduction.v0.1.0.md`](../../docs/agentbox-jp72-reproduction.v0.1.0.md) + [Addendum 001](../../docs/addendum-agentbox-absorb-monorepo-v0_1-2026-06-07.md)
+>
+> Retained only for JP6-era reference (LUKS-at-rest + MAXN power-mode + NVMe
+> partitioning detail being reconciled into the AgentBOX installer — UMB-113).
+
+---
+
 1. Flash JetPack 6.2.2 onto the Jetson
 
   This is manual — the script does not flash the device.

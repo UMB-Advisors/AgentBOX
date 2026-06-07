@@ -43,6 +43,58 @@ if ! docker info 2>/dev/null | grep -qiE 'Runtimes:.*nvidia'; then
   fi
 fi
 
+# ── STAGE 0.1: MAXN power mode + optional disk encryption (UMB-113) ─────────
+# Ported from the legacy first-boot.sh (Stages 4–5), adapted for JP7.2/r39.
+log "STAGE 0.1 — power mode + disk encryption"
+# MAXN/Super Mode: on r39 the max mode is NAME=MAXN_SUPER (id 2), NOT id 0 (the
+# r36 value). Detect the id by NAME from nvpmodel.conf (matches MAXN + MAXN_SUPER),
+# set it, and persist via systemd (the conf default is a lower-wattage mode).
+if command -v nvpmodel >/dev/null; then
+  MAXN_ID="$(grep -oP '^< POWER_MODEL ID=\K[0-9]+(?= NAME=MAXN)' /etc/nvpmodel.conf 2>/dev/null | head -1 || true)"
+  if [ -n "$MAXN_ID" ]; then
+    if nvpmodel -q 2>/dev/null | grep -qi MAXN; then
+      log "  power mode already MAXN (id $MAXN_ID)"
+    else
+      log "  setting MAXN power mode (nvpmodel -m $MAXN_ID)"
+      sudo nvpmodel -m "$MAXN_ID" >/dev/null 2>&1 || log "  WARN: nvpmodel set failed"
+    fi
+    if [ ! -f /etc/systemd/system/set-maxn-power.service ]; then
+      printf '[Unit]\nDescription=Set Jetson Orin to MAXN power mode\nAfter=multi-user.target\n\n[Service]\nType=oneshot\nExecStart=/usr/bin/nvpmodel -m %s\nRemainAfterExit=yes\n\n[Install]\nWantedBy=multi-user.target\n' "$MAXN_ID" \
+        | sudo tee /etc/systemd/system/set-maxn-power.service >/dev/null \
+        && sudo systemctl daemon-reload && sudo systemctl enable set-maxn-power.service >/dev/null 2>&1 \
+        && log "  set-maxn-power.service enabled (persists across reboot)" \
+        || log "  WARN: could not persist MAXN via systemd"
+    fi
+  else
+    log "  WARN: MAXN mode id not found in /etc/nvpmodel.conf — set manually (nvpmodel -q --verbose)"
+  fi
+else
+  log "  nvpmodel absent — skipping power mode (non-Jetson host?)"
+fi
+# LUKS encryption-at-rest (Jetson-native gen_luks.sh, OP-TEE/fTPM-bound).
+# DESTRUCTIVE — runs only in production with DATA_PARTITION set AND the explicit
+# LUKS_CONFIRM=ENCRYPT gate. Idempotent: skips a partition already LUKS.
+if [ "$PROTOTYPE" = 1 ]; then
+  log "  --prototype: skipping LUKS (bench)"
+elif [ -z "${DATA_PARTITION:-}" ]; then
+  log "  LUKS: DATA_PARTITION unset — skipping (set DATA_PARTITION=/dev/nvmeXnYpZ + LUKS_CONFIRM=ENCRYPT to enable)"
+else
+  [ -b "$DATA_PARTITION" ] || die "DATA_PARTITION=$DATA_PARTITION is not a block device"
+  if sudo cryptsetup isLuks "$DATA_PARTITION" 2>/dev/null; then
+    log "  LUKS: $DATA_PARTITION already encrypted — skipping"
+  else
+    [ "${LUKS_CONFIRM:-}" = "ENCRYPT" ] || die "refusing to encrypt $DATA_PARTITION without LUKS_CONFIRM=ENCRYPT (destructive)"
+    command -v cryptsetup >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq cryptsetup-bin tpm2-tools; }
+    [ -f /usr/sbin/gen_luks.sh ] || sudo apt-get install -y -qq nvidia-l4t-security-utils || true
+    [ -f /usr/sbin/gen_luks.sh ] || die "gen_luks.sh missing (nvidia-l4t-security-utils) — required for TPM-bound LUKS; see docs/agentbox-jp72-reproduction"
+    [ -e /dev/tpm0 ] || [ -e /dev/tpmrm0 ] || log "  WARN: no TPM device — key binding may not work, continuing"
+    log "  encrypting $DATA_PARTITION via gen_luks.sh (TPM-bound)…"
+    sudo /usr/sbin/gen_luks.sh "$DATA_PARTITION" || die "gen_luks.sh failed"
+    sudo cryptsetup luksDump "$DATA_PARTITION" >/dev/null || die "LUKS header not found after gen_luks"
+    log "  LUKS applied to $DATA_PARTITION"
+  fi
+fi
+
 # ── STAGE 0.5: MailBOX stack (VENDORED in this monorepo; sync into place) ──
 # AgentBOX absorbs the MailBOX stack — it lives at $REPO/mailbox (no external
 # clone). Sync the source-controlled stack into $STACK_DIR (the runtime
