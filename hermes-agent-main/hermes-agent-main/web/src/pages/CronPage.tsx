@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { Clock, Pause, Pencil, Play, Trash2, X, Zap } from "lucide-react";
+import { Clock, Pause, Pencil, Play, Sparkles, Trash2, X, Zap } from "lucide-react";
 import cronstrue from "cronstrue";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -7,10 +7,16 @@ import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { H2 } from "@nous-research/ui/ui/components/typography/h2";
 import { api } from "@/lib/api";
-import type { CronJob, ProfileInfo, ModelOptionProvider } from "@/lib/api";
+import type {
+  CronJob,
+  ProfileInfo,
+  ModelOptionProvider,
+  CronTemplateProposal,
+} from "@/lib/api";
 import { crmApi } from "@/lib/crm";
 import type { Department, TeamMember } from "@/lib/crm";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
+import { CronTemplateBuilder } from "@/components/CronTemplateBuilder";
 import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { useConfirmDelete } from "@nous-research/ui/hooks/use-confirm-delete";
 import { useModalBehavior } from "@/hooks/useModalBehavior";
@@ -283,6 +289,26 @@ export default function CronPage() {
     setCreateModalOpen(true);
   }, []);
 
+  // Interactive, LLM-assisted "build from a template" flow. The builder hands
+  // back a draft (and a matched Department from the template category); we drop
+  // it into the normal create form so the user can review and save as usual.
+  const [templateBuilderOpen, setTemplateBuilderOpen] = useState(false);
+  const applyProposal = useCallback(
+    (p: CronTemplateProposal, departmentId: string) => {
+      setEditingKey(null);
+      setName(p.name || "");
+      setPrompt(p.prompt || "");
+      setSchedule(p.schedule || "");
+      setDeliver(p.deliver || "local");
+      setModel("");
+      setDepartmentId(departmentId || "");
+      setEmployeeId("");
+      setTemplateBuilderOpen(false);
+      setCreateModalOpen(true);
+    },
+    [],
+  );
+
   const openEdit = useCallback((job: CronJob) => {
     setEditingKey(getJobKey(job));
     setEditingProfile(getJobProfile(job));
@@ -481,16 +507,23 @@ export default function CronPage() {
     ),
   });
 
-  // Put "Create" button in page header
+  // Put "From template" + "Create" buttons in page header
   useLayoutEffect(() => {
     setEnd(
-      <Button
-        className="uppercase"
-        size="sm"
-        onClick={openCreate}
-      >
-        {t.common.create}
-      </Button>,
+      <div className="flex items-center gap-2">
+        <Button
+          ghost
+          className="uppercase"
+          size="sm"
+          prefix={<Sparkles className="size-3.5" />}
+          onClick={() => setTemplateBuilderOpen(true)}
+        >
+          From template
+        </Button>
+        <Button className="uppercase" size="sm" onClick={openCreate}>
+          {t.common.create}
+        </Button>
+      </div>,
     );
     return () => {
       setEnd(null);
@@ -513,6 +546,14 @@ export default function CronPage() {
     <div className="flex flex-col gap-6">
       <PluginSlot name="cron:top" />
       <Toast toast={toast} />
+
+      {templateBuilderOpen && (
+        <CronTemplateBuilder
+          onClose={() => setTemplateBuilderOpen(false)}
+          departments={departments}
+          onUse={applyProposal}
+        />
+      )}
 
       <DeleteConfirmDialog
         open={jobDelete.isOpen}
@@ -775,9 +816,24 @@ export default function CronPage() {
           <Card>
             <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
               <p className="text-sm text-muted-foreground">{t.cron.noJobs}</p>
-              <Button size="sm" className="uppercase" onClick={openCreate}>
-                Schedule a New Job
-              </Button>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button
+                  size="sm"
+                  className="uppercase"
+                  prefix={<Sparkles className="size-3.5" />}
+                  onClick={() => setTemplateBuilderOpen(true)}
+                >
+                  Build from template
+                </Button>
+                <Button
+                  ghost
+                  size="sm"
+                  className="uppercase"
+                  onClick={openCreate}
+                >
+                  Schedule a New Job
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}

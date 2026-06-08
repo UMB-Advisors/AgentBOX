@@ -394,6 +394,15 @@ export const api = {
     fetchJSON<CronJob>(`/api/cron/jobs/${encodeURIComponent(id)}/trigger?profile=${encodeURIComponent(profile)}`, { method: "POST" }),
   deleteCronJob: (id: string, profile = "default") =>
     fetchJSON<{ ok: boolean }>(`/api/cron/jobs/${encodeURIComponent(id)}?profile=${encodeURIComponent(profile)}`, { method: "DELETE" }),
+  // Interactive, LLM-assisted job-template builder. Sends the running chat
+  // transcript and gets back the assistant's next reply plus an optional
+  // structured proposal to prefill the create-job form.
+  assistCronTemplate: (messages: CronTemplateMessage[]) =>
+    fetchJSON<CronTemplateAssistResult>(`/api/cron/template/assist`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
+    }),
 
   // Profiles (minimal)
   getProfiles: () =>
@@ -1362,6 +1371,28 @@ export interface CronJob {
   department_name?: string | null;
   employee_id?: number | null;
   employee_name?: string | null;
+}
+
+/** One turn in the job-template builder conversation. */
+export interface CronTemplateMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** A structured job draft the builder proposes once it has enough detail. */
+export interface CronTemplateProposal {
+  name: string;
+  prompt: string;
+  schedule: string;
+  deliver: string;
+  /** True when prompt + schedule are present and the assistant marked it ready. */
+  ready: boolean;
+}
+
+/** Response from the LLM-assisted template builder endpoint. */
+export interface CronTemplateAssistResult {
+  reply: string;
+  proposal: CronTemplateProposal | null;
 }
 
 export interface SkillInfo {
