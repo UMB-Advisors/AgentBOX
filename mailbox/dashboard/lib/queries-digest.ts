@@ -3,6 +3,7 @@ import { gatherFiringAlerts } from '@/lib/alert-inputs';
 import type { Alert } from '@/lib/alerts';
 import { operatorOwnsThread } from '@/lib/classification/thread-ownership';
 import { getKysely } from '@/lib/db';
+import { getOutcomesRollup, type OutcomesRollup } from '@/lib/job-outcomes/queries';
 import { getQueueWithUrgency } from '@/lib/queries';
 import { type AwaitingReplyItem, getAwaitingReply } from '@/lib/queries-followup';
 import { getDraftCounts24h, getStuckApprovedCount } from '@/lib/queries-system';
@@ -78,6 +79,11 @@ export interface DigestPayload {
   // FR-22 health rollup — sent count, send failures, and currently-firing
   // health alerts. Drives the "Appliance health" section.
   health: DigestHealth;
+  // MBOX-462 — agent-job outcomes (drafts, reports, blog posts produced by
+  // hermes-agent cron jobs / gbrain minions) over the last day, rolled up per
+  // Business then per Department. Drives the "What the agents did" section.
+  // Fail-soft: an empty rollup (no rows / read error) renders nothing.
+  job_outcomes: OutcomesRollup;
 }
 
 export interface DigestPayloadOptions {
@@ -186,7 +192,21 @@ export async function getDigestPayload(opts: DigestPayloadOptions = {}): Promise
 
   const health = await getDigestHealth();
 
-  return { counts_by_category, urgent_untouched, oldest_pending, awaiting_reply, health };
+  // job_outcomes — per-company/department rollup of what the agents produced in
+  // the last day. Fail-soft: a read error degrades to an empty rollup so the
+  // digest still renders (same posture as the health sub-fetches above).
+  const job_outcomes = await getOutcomesRollup({ sinceHours: 24 }).catch(
+    (): OutcomesRollup => ({ since_hours: 24, total: 0, businesses: [] }),
+  );
+
+  return {
+    counts_by_category,
+    urgent_untouched,
+    oldest_pending,
+    awaiting_reply,
+    health,
+    job_outcomes,
+  };
 }
 
 // MBOX-185 (FR-22) — digest health rollup. sent_24h comes from
