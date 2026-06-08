@@ -1,4 +1,5 @@
 import type { Alert } from '@/lib/alerts';
+import type { BusinessRollup, OutcomesRollup } from '@/lib/job-outcomes/queries';
 import type {
   CategoryCount,
   DigestDraftItem,
@@ -84,6 +85,7 @@ export function renderDigest(
     [
       headerSection(dateLabel, urgentCount, pendingCount),
       healthSection(payload.health),
+      outcomesSection(payload.job_outcomes),
       urgentSection(payload.urgent_untouched, queueUrl),
       awaitingReplySection(payload.awaiting_reply, queueUrl),
       categorySection(payload.counts_by_category),
@@ -146,6 +148,50 @@ function alertRow(a: Alert): string {
     <span style="color:${C.ink};font-weight:bold;">${esc(a.code)}</span>
     <span> — ${esc(a.message)}</span>
   </td></tr>`;
+}
+
+// MBOX-462 — "What the agents did" block: agent-job outcomes (drafts, reports,
+// blog posts produced by hermes-agent cron jobs / gbrain minions) over the last
+// day, grouped per Business then per Department. Renders nothing on an empty
+// rollup so a no-jobs day stays quiet.
+function outcomesSection(rollup: OutcomesRollup): string {
+  if (rollup.total === 0) return '';
+  const blocks = rollup.businesses.map(outcomeBusinessBlock).join('');
+  return sectionShell('What the agents did (last 24h)', C.headerFrom, blocks);
+}
+
+function outcomeBusinessBlock(b: BusinessRollup): string {
+  const failed = b.counts.failed + b.counts.partial;
+  const failNote =
+    failed > 0
+      ? ` <span style="color:${C.red};">· ${failed} need${failed === 1 ? 's' : ''} a look</span>`
+      : '';
+  const header = `
+    <tr><td style="padding:10px 0 2px;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:bold;color:${C.ink};border-top:1px solid ${C.border};">
+      ${esc(b.business_name)} <span style="color:${C.faint};font-weight:normal;">— ${b.counts.total} outcome${b.counts.total === 1 ? '' : 's'}</span>${failNote}
+    </td></tr>`;
+  const depts = b.departments
+    .map((d) => {
+      const types = Object.entries(d.by_type)
+        .sort((x, y) => y[1] - x[1])
+        .map(([t, n]) => `${n} ${esc(t.replace(/_/g, ' '))}`)
+        .join(', ');
+      const titles = d.recent
+        .filter((it) => it.title.trim().length > 0)
+        .slice(0, 3)
+        .map(
+          (it) =>
+            `<div style="color:${it.status === 'failed' || it.status === 'partial' ? C.red : C.sub};">• ${esc(snippet(it.title, 90))}</div>`,
+        )
+        .join('');
+      return `
+        <tr><td style="padding:2px 0 6px 10px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:${C.sub};">
+          <strong style="color:${C.chipInk};">${esc(d.department_name)}</strong> — ${types || `${d.counts.total} outcome${d.counts.total === 1 ? '' : 's'}`}
+          ${titles}
+        </td></tr>`;
+    })
+    .join('');
+  return header + depts;
 }
 
 function urgentSection(items: DigestDraftItem[], queueUrl: string | null): string {
