@@ -394,6 +394,10 @@ export const api = {
     fetchJSON<CronJob>(`/api/cron/jobs/${encodeURIComponent(id)}/trigger?profile=${encodeURIComponent(profile)}`, { method: "POST" }),
   deleteCronJob: (id: string, profile = "default") =>
     fetchJSON<{ ok: boolean }>(`/api/cron/jobs/${encodeURIComponent(id)}?profile=${encodeURIComponent(profile)}`, { method: "DELETE" }),
+  getCronOutputs: (limit = 10, profile = "all") =>
+    fetchJSON<{ outputs: CronOutput[] }>(
+      `/api/cron/outputs?profile=${encodeURIComponent(profile)}&limit=${limit}`,
+    ),
 
   // Profiles (minimal)
   getProfiles: () =>
@@ -1335,6 +1339,17 @@ export interface ModelsAnalyticsResponse {
     total_api_calls: number;
   };
   period_days: number;
+}
+
+export interface CronOutput {
+  job_id: string;
+  job_name: string;
+  timestamp: string;
+  ran_at: string | null;
+  output: string;
+  size: number;
+  last_status: string | null;
+  profile?: string;
 }
 
 export interface CronJob {

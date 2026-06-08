@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   CalendarClock,
   CalendarDays,
+  CheckCircle2,
   ChevronRight,
   ListChecks,
   Mail,
@@ -22,12 +23,14 @@ import {
 } from "@nous-research/ui/ui/components/card";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { AccountTag } from "@/components/AccountSelector";
+import { Markdown } from "@/components/Markdown";
 import { useAccountView } from "@/contexts/useAccountView";
 import { api } from "@/lib/api";
 import type {
   ActionItem,
   BriefEmail,
   BriefEvent,
+  CronOutput,
   DigestBrief,
   DigestPrefs,
   DraftRow,
@@ -289,6 +292,9 @@ export default function HomePage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Job Outcomes — recent completed agent-job runs, expandable */}
+      <JobOutcomes />
 
       {/* Google News — infinite top-stories feed */}
       {newsOn && (
@@ -842,6 +848,97 @@ function formatEventWhen(event: BriefEvent): string {
   const d = new Date(event.start);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/* ── Job Outcomes ──────────────────────────────────────────────────────── */
+
+function JobOutcomes() {
+  const [outputs, setOutputs] = useState<CronOutput[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    api
+      .getCronOutputs(10)
+      .then((r) => setOutputs(r.outputs))
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : "Failed to load job outcomes."),
+      );
+  }, []);
+
+  const toggle = useCallback((key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-text-secondary" />
+          <CardTitle>Job Outcomes</CardTitle>
+        </div>
+        <CardDescription>Recent completed agent job runs. Click to expand.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        {error ? (
+          <p className="text-sm text-destructive">{error}</p>
+        ) : outputs == null ? (
+          <Loading />
+        ) : outputs.length === 0 ? (
+          <Empty>No completed jobs yet.</Empty>
+        ) : (
+          outputs.map((o) => {
+            const key = `${o.profile ?? ""}:${o.job_id}:${o.timestamp}`;
+            const open = expanded.has(key);
+            const failed = o.last_status === "error";
+            return (
+              <div key={key} className="rounded border border-border bg-card">
+                <button
+                  type="button"
+                  onClick={() => toggle(key)}
+                  aria-expanded={open}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left"
+                >
+                  <ChevronRight
+                    className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                      open ? "rotate-90" : ""
+                    }`}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {o.job_name}
+                  </span>
+                  {o.ran_at && (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {isoTimeAgo(o.ran_at)}
+                    </span>
+                  )}
+                  <Badge tone={failed ? "destructive" : "success"}>
+                    {failed ? "error" : "ok"}
+                  </Badge>
+                </button>
+                {open && (
+                  <div className="border-t border-border px-3 py-3">
+                    {o.output.trim() ? (
+                      <Markdown content={o.output} />
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        (No output recorded for this run.)
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function formatDue(due: string): string {
