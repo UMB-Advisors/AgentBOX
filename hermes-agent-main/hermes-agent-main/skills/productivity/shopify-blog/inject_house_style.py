@@ -92,6 +92,23 @@ def _recent_titles(limit: int = 12):
 def main() -> int:
     home = _hermes_home()
 
+    # --- Evolving draft guidance (authored by the learn-from-published job) ---
+    guidance = ""
+    gp = home / "blog_learning" / "draft-guidance.md"
+    if gp.exists():
+        try:
+            guidance = gp.read_text(encoding="utf-8").strip()
+        except OSError:
+            guidance = ""
+    if guidance:
+        print(
+            "## LEARNED DRAFT GUIDANCE — continuously improved by the "
+            "learn-from-published job. This is the single most important input; "
+            "follow it.\n"
+        )
+        print(guidance)
+        print()
+
     # --- House style ---
     print(
         "YES! HOUSE-STYLE RULES — learned from how the human editor revised "

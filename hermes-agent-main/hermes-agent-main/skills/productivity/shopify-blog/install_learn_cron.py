@@ -72,6 +72,16 @@ lessons=[...], edit_magnitude=<value>, outcome="published_edited").
 The tools persist lessons to gbrain and refresh the house-style digest \
 automatically — you do not need to do that yourself.
 
+STEP 4 — IMPROVE TOMORROW'S DRAFT (always do this whenever any lessons exist, \
+even on a quiet run). Call get_blog_draft_guidance to read the current guidance, \
+then write an IMPROVED version that folds in everything learned so far: the \
+recurring voice/structure rules, the topics & angles that get PUBLISHED with \
+little editing (do more of these), the topics & angles that get REJECTED or \
+heavily rewritten (avoid these), preferred formats, and any compliance cautions. \
+Keep it concise and directly actionable — the 09:00 draft agent reads it every \
+morning. Call update_blog_draft_guidance(guidance=<markdown>). This is how the \
+blog draft prompt gets continuously better.
+
 When every pending draft is processed, give a 2-3 line summary: counts of \
 published-edited / published-clean / rejected / still-pending, and the key \
 lesson themes you saw.

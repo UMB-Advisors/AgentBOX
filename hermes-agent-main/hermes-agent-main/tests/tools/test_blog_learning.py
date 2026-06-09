@@ -306,3 +306,27 @@ class TestToolHandlers:
         )
         assert out["recorded"] == 0
         assert bl.load_record(11)["status"] == "processed"
+
+
+class TestDraftGuidance:
+    def test_read_empty(self):
+        assert bl.read_draft_guidance() == ""
+
+    def test_write_and_read(self):
+        p = bl.write_draft_guidance("# Guidance\n- rotate themes")
+        assert p.exists()
+        assert "rotate themes" in bl.read_draft_guidance()
+
+    def test_update_handler(self):
+        out = json.loads(bl._handle_update_guidance({"guidance": "do better"}))
+        assert out["updated"] is True
+        assert bl.read_draft_guidance() == "do better"
+
+    def test_update_handler_empty(self):
+        out = json.loads(bl._handle_update_guidance({"guidance": "  "}))
+        assert "error" in out
+
+    def test_get_handler(self):
+        bl.write_draft_guidance("current guidance")
+        out = json.loads(bl._handle_get_guidance({}))
+        assert out["guidance"] == "current guidance"

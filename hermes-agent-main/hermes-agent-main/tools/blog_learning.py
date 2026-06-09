@@ -464,6 +464,30 @@ def read_digest() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Draft guidance — the evolving, learn-authored brief that improves the draft
+# prompt. The learn-from-published agent synthesizes it each run from the
+# editor's behavior; the 09:00 draft injector prepends it. This is the
+# higher-level, holistic complement to the mechanical house-style digest.
+# ---------------------------------------------------------------------------
+
+
+def draft_guidance_path() -> Path:
+    return learn_dir() / "draft-guidance.md"
+
+
+def read_draft_guidance() -> str:
+    p = draft_guidance_path()
+    return p.read_text(encoding="utf-8") if p.exists() else ""
+
+
+def write_draft_guidance(text: str) -> Path:
+    _ensure_dirs()
+    p = draft_guidance_path()
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+# ---------------------------------------------------------------------------
 # Shopify article fetch (for feedback) — lazy import to avoid import cycle
 # ---------------------------------------------------------------------------
 
@@ -749,6 +773,51 @@ RECORD_LESSON_SCHEMA = {
 }
 
 
+def _handle_get_guidance(args: dict, **kw) -> str:
+    return tool_result({"guidance": read_draft_guidance()})
+
+
+def _handle_update_guidance(args: dict, **kw) -> str:
+    guidance = (args.get("guidance") or "").strip()
+    if not guidance:
+        return tool_error("Missing required parameter: guidance")
+    path = write_draft_guidance(guidance)
+    return tool_result({"updated": True, "path": str(path), "chars": len(guidance)})
+
+
+GET_GUIDANCE_SCHEMA = {
+    "name": "get_blog_draft_guidance",
+    "description": (
+        "Read the current evolving draft guidance — the learn-authored brief "
+        "that the 09:00 blog-draft agent receives. Read it before improving it."
+    ),
+    "parameters": {"type": "object", "properties": {}},
+}
+
+UPDATE_GUIDANCE_SCHEMA = {
+    "name": "update_blog_draft_guidance",
+    "description": (
+        "Overwrite the evolving draft guidance that improves tomorrow's blog "
+        "draft. Synthesize what the editor's published-vs-AI edits reveal into a "
+        "concise, actionable brief: recurring voice/structure rules, topics & "
+        "angles that get published with little editing (do more), topics & "
+        "angles that get rejected or heavily rewritten (avoid), preferred "
+        "formats, and compliance cautions. This markdown is injected into the "
+        "next 09:00 draft, so make it genuinely raise quality and variety."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "guidance": {
+                "type": "string",
+                "description": "The full improved draft-guidance markdown (replaces the prior version).",
+            },
+        },
+        "required": ["guidance"],
+    },
+}
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
@@ -777,4 +846,20 @@ registry.register(
     schema=RECORD_LESSON_SCHEMA,
     handler=_handle_record_lesson,
     emoji="🎓",
+)
+
+registry.register(
+    name="get_blog_draft_guidance",
+    toolset="blog_learning",
+    schema=GET_GUIDANCE_SCHEMA,
+    handler=_handle_get_guidance,
+    emoji="📋",
+)
+
+registry.register(
+    name="update_blog_draft_guidance",
+    toolset="blog_learning",
+    schema=UPDATE_GUIDANCE_SCHEMA,
+    handler=_handle_update_guidance,
+    emoji="✨",
 )
