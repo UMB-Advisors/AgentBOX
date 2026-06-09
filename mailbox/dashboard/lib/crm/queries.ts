@@ -29,6 +29,7 @@ export interface TeamMember {
   kind: TeamKind;
   title: string;
   department_id: number | null;
+  reports_to: number | null;
   email: string;
   status: string;
   notes: string;
@@ -166,6 +167,7 @@ export type TeamInput = {
   kind?: TeamKind;
   title?: string;
   department_id?: number | null;
+  reports_to?: number | null;
   email?: string;
   status?: string;
   notes?: string;
@@ -180,13 +182,14 @@ export async function listTeam(): Promise<TeamMember[]> {
 
 export async function createTeamMember(input: TeamInput): Promise<TeamMember> {
   const { rows } = await getPool().query<TeamMember>(
-    `INSERT INTO mailbox.team_members (name, kind, title, department_id, email, status, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    `INSERT INTO mailbox.team_members (name, kind, title, department_id, reports_to, email, status, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
     [
       input.name,
       input.kind ?? 'human',
       input.title ?? '',
       input.department_id ?? null,
+      input.reports_to ?? null,
       input.email ?? '',
       input.status ?? 'active',
       input.notes ?? '',
@@ -209,6 +212,7 @@ export async function updateTeamMember(
   if (patch.kind !== undefined) add('kind', patch.kind);
   if (patch.title !== undefined) add('title', patch.title);
   if (patch.department_id !== undefined) add('department_id', patch.department_id);
+  if (patch.reports_to !== undefined) add('reports_to', patch.reports_to);
   if (patch.email !== undefined) add('email', patch.email);
   if (patch.status !== undefined) add('status', patch.status);
   if (patch.notes !== undefined) add('notes', patch.notes);
