@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  PROVIDER_ONBOARDING,
-  type ProviderOnboarding,
-} from '@/lib/mail/onboarding-steps';
+import { PROVIDER_ONBOARDING, type ProviderOnboarding } from '@/lib/mail/onboarding-steps';
 import { MAIL_PROVIDERS } from '@/lib/types';
 
 // MBOX-465 — pure-data invariants for the provider-aware onboarding content.
