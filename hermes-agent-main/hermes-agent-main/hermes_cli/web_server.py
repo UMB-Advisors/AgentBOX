@@ -56,7 +56,7 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
     from fastapi.staticfiles import StaticFiles
-    from pydantic import BaseModel
+    from pydantic import BaseModel, field_validator
 except ImportError:
     # First try lazy-installing the dashboard extras. Only the user actually
     # running `hermes dashboard` needs fastapi+uvicorn; lazy install keeps
@@ -68,7 +68,7 @@ except ImportError:
         from fastapi.middleware.cors import CORSMiddleware
         from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
         from fastapi.staticfiles import StaticFiles
-        from pydantic import BaseModel
+        from pydantic import BaseModel, field_validator
     except Exception:
         raise SystemExit(
             "Web UI requires fastapi and uvicorn.\n"
@@ -1742,6 +1742,200 @@ async def shopify_delete_account(shop: str, request: Request):
     loop = asyncio.get_running_loop()
     removed = await loop.run_in_executor(
         None, shopify_accounts.delete_store, shop
+    )
+    return JSONResponse({"removed": removed})
+
+
+# ---------------------------------------------------------------------------
+# Mail-account connect (M365 + IMAP) — MBOX-468.
+# Brings the mailbox dashboard's MBOX-465 provider onboarding to the Hermes
+# dashboard. Two session-gated POST connect routes (probe → 422-on-fail →
+# test|connect → persist) plus list/delete. These are NOT in PUBLIC_API_PATHS —
+# they carry operator-entered credentials and must stay behind the session gate
+# (unlike the Google/Shopify auth/* browser redirects). The provider secret is
+# probed, then encrypted at rest (token_crypto, AES-256-GCM) only after a green
+# probe on mode:'connect'; a failed probe persists nothing.
+#
+# Body validation uses pydantic (the CalendarEventBody pattern) so a malformed
+# body yields the pydantic {detail:[{loc,msg,type}]} 422 shape. A failed PROBE
+# yields the semantic {ok:false, ...legs} 422 shape. The FE distinguishes them:
+# ok:false present ⇒ probe shape; detail-array present ⇒ validation shape.
+# ---------------------------------------------------------------------------
+class GraphConnectBody(BaseModel):
+    """Operator-entered BYO Azure app-registration credentials for a Microsoft
+    365 / Graph mailbox (app-only / client-credentials). ``client_secret`` is
+    never echoed and is stored AES-256-GCM-encrypted only on a green
+    ``mode:'connect'`` probe."""
+    mode: str = "test"
+    email: str
+    display_label: Optional[str] = None
+    tenant_id: str
+    client_id: str
+    client_secret: str
+    mailbox: Optional[str] = None
+
+    @field_validator("mode")
+    @classmethod
+    def _mode_valid(cls, v: str) -> str:
+        if v not in ("test", "connect"):
+            raise ValueError("mode must be 'test' or 'connect'")
+        return v
+
+    @field_validator("email", "mailbox")
+    @classmethod
+    def _email_shape(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if "@" not in v or " " in v or not v:
+            raise ValueError("must be a valid email")
+        return v
+
+    @field_validator("tenant_id", "client_id")
+    @classmethod
+    def _req_128(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not (1 <= len(v) <= 128):
+            raise ValueError("must be 1..128 chars")
+        return v
+
+    @field_validator("client_secret")
+    @classmethod
+    def _secret_len(cls, v: str) -> str:
+        if not (1 <= len(v) <= 2048):
+            raise ValueError("must be 1..2048 chars")
+        return v
+
+    @field_validator("display_label")
+    @classmethod
+    def _label_len(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if not (1 <= len(v) <= 100):
+            raise ValueError("must be 1..100 chars")
+        return v
+
+
+class ImapConnectBody(BaseModel):
+    """Operator-entered IMAP/SMTP connection details. ``app_password`` is never
+    echoed and is stored AES-256-GCM-encrypted only on a green ``mode:'connect'``
+    probe."""
+    mode: str = "test"
+    email: str
+    display_label: Optional[str] = None
+    imap_host: str
+    imap_port: int = 993
+    smtp_host: str
+    smtp_port: int = 587
+    username: str
+    app_password: str
+
+    @field_validator("mode")
+    @classmethod
+    def _mode_valid(cls, v: str) -> str:
+        if v not in ("test", "connect"):
+            raise ValueError("mode must be 'test' or 'connect'")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def _email_shape(cls, v: str) -> str:
+        v = (v or "").strip()
+        if "@" not in v or " " in v or not v:
+            raise ValueError("must be a valid email")
+        return v
+
+    @field_validator("imap_host", "smtp_host")
+    @classmethod
+    def _host_len(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not (1 <= len(v) <= 255):
+            raise ValueError("must be 1..255 chars")
+        return v
+
+    @field_validator("imap_port", "smtp_port")
+    @classmethod
+    def _port_range(cls, v: int) -> int:
+        if not (1 <= int(v) <= 65535):
+            raise ValueError("must be 1..65535")
+        return int(v)
+
+    @field_validator("username")
+    @classmethod
+    def _user_len(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not (1 <= len(v) <= 320):
+            raise ValueError("must be 1..320 chars")
+        return v
+
+    @field_validator("app_password")
+    @classmethod
+    def _pw_len(cls, v: str) -> str:
+        if not (1 <= len(v) <= 1024):
+            raise ValueError("must be 1..1024 chars")
+        return v
+
+    @field_validator("display_label")
+    @classmethod
+    def _label_len(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if not (1 <= len(v) <= 100):
+            raise ValueError("must be 1..100 chars")
+        return v
+
+
+@app.post("/api/accounts/microsoft")
+async def connect_microsoft_account(body: GraphConnectBody):
+    """Probe BYO Azure app credentials and (on mode:'connect') persist the M365
+    mailbox with the client secret encrypted at rest. A failed probe → 422 and
+    persists nothing; a green probe → 200 (test: legs only; connect: account_id).
+    Session-gated (operator credentials)."""
+    from hermes_cli import mail_accounts
+
+    status, result = await mail_accounts.connect_graph(body.model_dump())
+    return JSONResponse(result, status_code=status)
+
+
+@app.post("/api/accounts/imap")
+async def connect_imap_account(body: ImapConnectBody):
+    """Probe IMAP+SMTP credentials and (on mode:'connect') persist the mailbox
+    with the app password encrypted at rest. A failed probe → 422 and persists
+    nothing; a green probe → 200 (test: legs only; connect: account_id).
+    Session-gated (operator credentials)."""
+    from hermes_cli import mail_accounts
+
+    status, result = await mail_accounts.connect_imap(body.model_dump())
+    return JSONResponse(result, status_code=status)
+
+
+@app.get("/api/accounts/mail")
+async def list_mail_accounts():
+    """Connected mail accounts (M365 + IMAP) WITHOUT secrets, plus whether the
+    at-rest encryption key is configured. Session-gated."""
+    from hermes_cli import mail_accounts, token_crypto
+
+    loop = asyncio.get_running_loop()
+    accounts = await loop.run_in_executor(None, mail_accounts.list_accounts)
+    return JSONResponse(
+        {
+            "accounts": accounts,
+            "crypto_configured": token_crypto.crypto_configured(),
+        }
+    )
+
+
+@app.delete("/api/accounts/mail/{account_id}")
+async def delete_mail_account(account_id: str):
+    """Forget a connected mail account by its record id (local removal only).
+    Session-gated."""
+    from hermes_cli import mail_accounts
+
+    loop = asyncio.get_running_loop()
+    removed = await loop.run_in_executor(
+        None, mail_accounts.delete_account, account_id
     )
     return JSONResponse({"removed": removed})
 
