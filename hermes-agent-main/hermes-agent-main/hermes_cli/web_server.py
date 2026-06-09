@@ -4090,6 +4090,100 @@ async def delete_cron_job(job_id: str, profile: Optional[str] = None):
     return {"ok": True}
 
 
+def _read_recent_outputs(home: Path, limit: int, jobs_by_id: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Read a profile's most recent cron run outputs from disk.
+
+    Self-contained on purpose: scans ``<home>/cron/output/{job_id}/*.md``
+    directly rather than calling into ``cron.jobs`` so the whole feature lives
+    in the AgentBOX-custom ``hermes_cli`` backend (which the deploy ships) and
+    does not depend on patching the stock, hermes-pinned ``cron.jobs`` module.
+    """
+    from datetime import datetime
+
+    output_dir = home / "cron" / "output"
+    if not output_dir.exists():
+        return []
+
+    runs: List[Dict[str, Any]] = []
+    for job_dir in output_dir.iterdir():
+        if not job_dir.is_dir():
+            continue
+        job_id = job_dir.name
+        job = jobs_by_id.get(job_id, {})
+        for md in job_dir.glob("*.md"):
+            try:
+                stat = md.stat()
+            except OSError:
+                continue
+            runs.append({
+                "job_id": job_id,
+                "job_name": job.get("name") or job_id,
+                "timestamp": md.stem,  # "YYYY-MM-DD_HH-MM-SS"
+                "_mtime": stat.st_mtime,
+                "_path": md,
+                "size": stat.st_size,
+                "last_status": job.get("last_status"),
+            })
+
+    runs.sort(key=lambda r: r["_mtime"], reverse=True)
+    runs = runs[:limit]
+
+    for r in runs:
+        path = r.pop("_path")
+        mtime = r.pop("_mtime")
+        try:
+            r["output"] = path.read_text(encoding="utf-8")[:20000]
+        except OSError:
+            r["output"] = ""
+        try:
+            r["ran_at"] = datetime.strptime(r["timestamp"], "%Y-%m-%d_%H-%M-%S").isoformat()
+        except (ValueError, KeyError):
+            r["ran_at"] = datetime.fromtimestamp(mtime).isoformat()
+    return runs
+
+
+@app.get("/api/cron/outputs")
+async def list_cron_outputs(profile: str = "all", limit: int = 10):
+    """Recent completed cron-job run outputs across one or all profiles.
+
+    Powers the Home page "Job Outcomes" section. Each item carries the run's
+    markdown output plus its job title, status, and run time.
+    """
+    try:
+        limit = max(1, min(int(limit), 100))
+    except (TypeError, ValueError):
+        limit = 10
+
+    requested = (profile or "all").strip()
+    if requested.lower() != "all":
+        names = [requested]
+    else:
+        names = [str(p.get("name") or "") for p in _cron_profile_dicts()]
+        names = [n for n in names if n]
+
+    outputs: List[Dict[str, Any]] = []
+    for name in names:
+        try:
+            _, home = _cron_profile_home(name)
+            jobs = _call_cron_for_profile(name, "list_jobs", True)
+            jobs_by_id = {
+                str(j.get("id") or ""): j for j in jobs if j.get("id")
+            }
+            items = _read_recent_outputs(home, limit, jobs_by_id)
+        except Exception:
+            _log.exception("Failed to list cron outputs for profile %s", name)
+            continue
+        for item in items:
+            item["profile"] = name
+            outputs.append(item)
+
+    outputs.sort(
+        key=lambda o: str(o.get("ran_at") or o.get("timestamp") or ""),
+        reverse=True,
+    )
+    return {"outputs": outputs[:limit]}
+
+
 # ---------------------------------------------------------------------------
 # Profile management endpoints (minimal — list/create/rename/delete + SOUL.md)
 # ---------------------------------------------------------------------------

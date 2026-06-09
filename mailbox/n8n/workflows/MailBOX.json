@@ -46,6 +46,50 @@
         ]
       ]
     },
+    "Get Gmail Token": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Gmail List",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Gmail List": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Split Messages",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Split Messages": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Gmail Get",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Gmail Get": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Get many messages",
+            "type": "main"
+          }
+        ]
+      ]
+    },
     "Get many messages": {
       "main": [
         [
@@ -90,7 +134,7 @@
         [
           {
             "index": 0,
-            "node": "Get many messages",
+            "node": "Get Gmail Token",
             "type": "main"
           }
         ]
@@ -188,30 +232,132 @@
       }
     },
     {
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "vEz5mz0uaAtlK8yz",
-          "name": "Gmail account"
-        }
-      },
-      "id": "9024ea76-59b0-4ff6-a4d2-f7340579e1e5",
-      "name": "Get many messages",
-      "parameters": {
-        "filters": {
-          "q": "is:unread in:inbox -from:me newer_than:2d"
-        },
-        "limit": "={{ $('Bootstrap Check').item.json.gmail_get_limit }}",
-        "operation": "getAll",
-        "options": {},
-        "simple": false
-      },
+      "id": "a1f1e2d3-0001-4a00-9000-000000000001",
+      "name": "Get Gmail Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
       "position": [
         220,
         0
       ],
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.2,
-      "webhookId": "6c8a8428-a2cb-4c88-98d8-df896078f914"
+      "parameters": {
+        "method": "GET",
+        "url": "=http://mailbox-dashboard:3001/dashboard/api/internal/google/access-token?account_email={{ $('Bootstrap Check').item.json.account_email }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Hermes-Internal-Token",
+              "value": "={{ $env.HERMES_INTERNAL_TOKEN }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      }
+    },
+    {
+      "id": "a1f1e2d3-0002-4a00-9000-000000000002",
+      "name": "Gmail List",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        340,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "is:unread in:inbox -from:me newer_than:2d"
+            },
+            {
+              "name": "maxResults",
+              "value": "={{ $('Bootstrap Check').item.json.gmail_get_limit }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Gmail Token').item.json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "a1f1e2d3-0003-4a00-9000-000000000003",
+      "name": "Split Messages",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        440,
+        -120
+      ],
+      "parameters": {
+        "fieldToSplitOut": "messages",
+        "options": {}
+      }
+    },
+    {
+      "id": "a1f1e2d3-0004-4a00-9000-000000000004",
+      "name": "Gmail Get",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        540,
+        -120
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://gmail.googleapis.com/gmail/v1/users/me/messages/{{ $json.id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "format",
+              "value": "full"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Gmail Token').item.json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "9024ea76-59b0-4ff6-a4d2-f7340579e1e5",
+      "name": "Get many messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// MBOX-466: normalize Gmail REST (users.messages.get?format=full) output\n// back to the simpleParser-style shape the downstream `Extract Fields` set\n// node consumes (from.value[0].address, to.value[0].address, subject, date,\n// text, inReplyTo, references). The old n8n Gmail node emitted these even with\n// simple:false; raw REST does not, so we rebuild them here.\nconst msg = $json;\nconst payload = msg.payload || {};\nconst headers = payload.headers || [];\n\nfunction header(name) {\n  const target = name.toLowerCase();\n  const h = headers.find((x) => x && typeof x.name === 'string' && x.name.toLowerCase() === target);\n  return h ? h.value : '';\n}\n\n// Extract the bare email address from a header like \"Name <email>\" or \"email\".\nfunction addr(value) {\n  if (!value) return '';\n  const angle = value.match(/<([^>]+)>/);\n  if (angle) return angle[1].trim();\n  const bare = value.match(/[^\\s<>\"]+@[^\\s<>\"]+/);\n  return bare ? bare[0].trim() : value.trim();\n}\n\n// Walk the MIME tree and return the first text/plain body (base64url-decoded).\nfunction findPlainText(part) {\n  if (!part) return '';\n  const mime = part.mimeType || '';\n  if (mime === 'text/plain' && part.body && part.body.data) {\n    return Buffer.from(part.body.data, 'base64url').toString('utf8');\n  }\n  if (Array.isArray(part.parts)) {\n    for (const p of part.parts) {\n      const found = findPlainText(p);\n      if (found) return found;\n    }\n  }\n  return '';\n}\n\n// Single-part messages carry the body directly on payload.body.data.\nlet text = findPlainText(payload);\nif (!text && payload.body && payload.body.data && (payload.mimeType || '').startsWith('text/')) {\n  text = Buffer.from(payload.body.data, 'base64url').toString('utf8');\n}\n\nreturn {\n  id: msg.id,\n  threadId: msg.threadId,\n  from: { value: [{ address: addr(header('From')) }] },\n  to: { value: [{ address: addr(header('To')) }] },\n  subject: header('Subject'),\n  date: header('Date'),\n  text: text,\n  inReplyTo: header('In-Reply-To'),\n  references: header('References'),\n};\n"
+      }
     },
     {
       "id": "cb0c441f-df40-49af-8d26-908f789eb804",
@@ -304,7 +450,7 @@
         "url": "http://mailbox-dashboard:3001/dashboard/api/internal/inbox-messages",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"message_id\": {{ JSON.stringify($json.message_id || \"\") }},\n  \"thread_id\": {{ JSON.stringify($json.thread_id || \"\") }},\n  \"from_addr\": {{ JSON.stringify($json.from_addr || \"\") }},\n  \"to_addr\": {{ JSON.stringify($json.to_addr || \"\") }},\n  \"subject\": {{ JSON.stringify($json.subject || \"\") }},\n  \"received_at\": {{ JSON.stringify($json.received_at || \"\") }},\n  \"snippet\": {{ JSON.stringify($json.snippet || \"\") }},\n  \"body\": {{ JSON.stringify($json.body || \"\") }},\n  \"in_reply_to\": {{ JSON.stringify($json.in_reply_to || \"\") }},\n  \"references\": {{ JSON.stringify($json.references || \"\") }}\n}",
+        "jsonBody": "={\n  \"message_id\": {{ JSON.stringify($json.message_id || \"\") }},\n  \"thread_id\": {{ JSON.stringify($json.thread_id || \"\") }},\n  \"from_addr\": {{ JSON.stringify($json.from_addr || \"\") }},\n  \"to_addr\": {{ JSON.stringify($json.to_addr || \"\") }},\n  \"subject\": {{ JSON.stringify($json.subject || \"\") }},\n  \"received_at\": {{ JSON.stringify($json.received_at || \"\") }},\n  \"snippet\": {{ JSON.stringify($json.snippet || \"\") }},\n  \"body\": {{ JSON.stringify($json.body || \"\") }},\n  \"in_reply_to\": {{ JSON.stringify($json.in_reply_to || \"\") }},\n  \"references\": {{ JSON.stringify($json.references || \"\") }},\n  \"account_email\": {{ JSON.stringify($('Bootstrap Check').item.json.account_email || \"\") }}\n}",
         "options": {
           "timeout": 5000
         }
@@ -413,7 +559,8 @@
   ],
   "pinData": {},
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none"
   },
   "staticData": {
     "node:Every 5 Minute": {
