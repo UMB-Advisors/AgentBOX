@@ -37,6 +37,18 @@
 set -euo pipefail
 
 REMOTE="${REMOTE:-mailbox2}"
+
+# ── Deploy coordination (see CLAUDE.md "Deploy Coordination — Simultaneous
+# Builds"). Concurrent agents racing this script clobber each other's web_dist
+# (last-writer-wins). Serialize deploys to a given box on THIS machine with a
+# flock, then re-exec holding the lock. Cross-machine staleness is caught by the
+# origin/main freshness check + the DEPLOY_META forward-only guard further down.
+if [ -z "${_ABX_DEPLOY_LOCKED:-}" ]; then
+  _ABX_LOCK="${TMPDIR:-/tmp}/agentbox-deploy-$(printf '%s' "$REMOTE" | tr -c 'A-Za-z0-9' '_').lock"
+  echo "==> Acquiring deploy lock ($_ABX_LOCK) — waits if a peer deploy holds it"
+  exec env _ABX_DEPLOY_LOCKED=1 flock --timeout 900 "$_ABX_LOCK" "$0" "$@"
+fi
+
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HERMES="$REPO/hermes-agent-main/hermes-agent-main"
 WEB="$HERMES/web"
@@ -53,10 +65,12 @@ TS="$(date +%Y%m%d-%H%M%S)"
 
 build=1
 backend_only=0
+force=0
 for arg in "$@"; do
   case "$arg" in
     --no-build)     build=0 ;;
     --backend-only) backend_only=1; build=0 ;;
+    --force)        force=1 ;;  # bypass freshness + forward-only guards
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
@@ -69,17 +83,51 @@ if [ "${#BACKEND_FILES[@]}" -eq 0 ]; then
   exit 1
 fi
 
+# ── Freshness guard: the deploy source must CONTAIN origin/main, otherwise a
+# stale checkout silently reverts newer work (the 2026-06-09 Org Chart squash).
+# Override with --force.
+if [ "$force" = 0 ]; then
+  echo "==> Freshness check: HEAD must contain origin/main"
+  git -C "$REPO" fetch origin --quiet \
+    || { echo "!! git fetch origin failed — fix connectivity or pass --force" >&2; exit 1; }
+  if ! git -C "$REPO" merge-base --is-ancestor origin/main HEAD; then
+    echo "!! ABORT: HEAD is behind/divergent from origin/main — deploying would clobber newer work." >&2
+    echo "   Fix: git checkout main && git pull   then re-deploy.   Override: --force" >&2
+    exit 1
+  fi
+fi
+
 if [ "$build" = 1 ]; then
   echo "==> Building web ($WEB)"
   ( cd "$WEB" && npm run build )
 fi
 
 if [ "$backend_only" = 0 ]; then
+  # ── Forward-only guard: if the box already serves a deploy our HEAD does NOT
+  # contain, we'd be reverting it — refuse unless --force. DEPLOY_META is shipped
+  # inside web_dist (below) so it survives the next rsync --delete.
+  if [ "$force" = 0 ]; then
+    LIVE_SHA="$(ssh "$REMOTE" "sed -n 's/^sha=//p' '$RDIR/web_dist/DEPLOY_META' 2>/dev/null" || true)"
+    if [ -n "${LIVE_SHA:-}" ] && ! git -C "$REPO" merge-base --is-ancestor "$LIVE_SHA" HEAD 2>/dev/null; then
+      echo "!! ABORT: $REMOTE serves a newer/divergent deploy ($LIVE_SHA) your HEAD lacks." >&2
+      echo "   Deploying would REVERT it. Pull/rebase first, or override with --force." >&2
+      exit 1
+    fi
+  fi
+
+  # Provenance stamp — read by the forward-only guard on the next deploy.
+  _SHA="$(git -C "$REPO" rev-parse HEAD)"
+  _BRANCH="$(git -C "$REPO" rev-parse --abbrev-ref HEAD)"
+  if git -C "$REPO" diff --quiet && git -C "$REPO" diff --cached --quiet; then _DIRTY=false; else _DIRTY=true; fi
+  printf 'sha=%s\nbranch=%s\ndirty=%s\nby=%s@%s\nat=%s\n' \
+    "$_SHA" "$_BRANCH" "$_DIRTY" "$(whoami)" "$(hostname)" "$(date -u +%FT%TZ)" \
+    > "$CLI/web_dist/DEPLOY_META"
+
   echo "==> Backing up remote web_dist on $REMOTE"
   ssh "$REMOTE" "mkdir -p '$RDIR/_backup_redeploy_$TS' \
     && cp -a '$RDIR/web_dist' '$RDIR/_backup_redeploy_$TS/'"
 
-  echo "==> Syncing web_dist -> $REMOTE"
+  echo "==> Syncing web_dist -> $REMOTE (HEAD $_SHA, dirty=$_DIRTY)"
   rsync -az --delete "$CLI/web_dist/" "$REMOTE:$RDIR/web_dist/"
 fi
 
