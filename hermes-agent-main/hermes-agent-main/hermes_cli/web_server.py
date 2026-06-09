@@ -1933,6 +1933,13 @@ async def delete_mail_account(account_id: str):
     Session-gated."""
     from hermes_cli import mail_accounts
 
+    # Record ids are uuid4().hex (32 lowercase hex). Reject anything else up
+    # front: a malformed id can never match, so don't bother scanning the dir.
+    if not re.fullmatch(r"[0-9a-f]{32}", account_id or ""):
+        return JSONResponse(
+            {"removed": False, "error": "invalid account id"}, status_code=400
+        )
+
     loop = asyncio.get_running_loop()
     removed = await loop.run_in_executor(
         None, mail_accounts.delete_account, account_id

@@ -101,9 +101,18 @@ def _write_json_600(path: Path, data: Any) -> None:
     try:
         with os.fdopen(fd, "w") as fh:
             fh.write(json.dumps(data, indent=2))
-    finally:
-        os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+        # Rename only after a clean write; the replace is atomic on POSIX, so
+        # the live record is never observed half-written.
+        os.replace(tmp, path)
+    except BaseException:
+        # Never leave a partial 0600 temp file behind on a write/replace
+        # failure. (The file was created 0600 by os.open's mode arg, so no
+        # separate chmod is needed.)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _read_record(email: str) -> Optional[Dict[str, Any]]:

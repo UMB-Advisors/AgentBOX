@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import asyncio
 import imaplib
+import ipaddress
 import smtplib
+import socket
 import urllib.parse
 from typing import Any, Dict, Tuple
 
@@ -169,9 +171,48 @@ def _json_or_empty(resp: Any) -> Any:
 def _safe_err(exc: Exception) -> str:
     """A short, secret-free description of a transport exception. We use the
     exception class name plus its str(); httpx/imaplib/smtplib never put the
-    credential in the message, but we keep it terse regardless."""
+    credential in the message, but we keep it terse regardless. Capped so a
+    long transport message can't bloat the operator-facing detail (covers the
+    Graph token/mailbox call sites, which previously didn't cap)."""
     msg = str(exc).strip()
-    return msg or exc.__class__.__name__
+    return (msg or exc.__class__.__name__)[:200]
+
+
+def _host_block_reason(host: str) -> str | None:
+    """SSRF guard for operator-supplied IMAP/SMTP hosts. Resolve ``host`` and
+    return a reason string if it must NOT be probed -- it resolves to a
+    loopback / link-local (incl. 169.254.169.254 cloud metadata) / private /
+    reserved / multicast / unspecified address -- else ``None``. Blocks if ANY
+    resolved address is disallowed, so a dual-record host can't smuggle one
+    public + one internal A record past the check.
+
+    Residual: a TOCTOU window remains (imaplib/smtplib re-resolve at connect),
+    so this is the standard, proportionate mitigation for a single-tenant
+    appliance -- and the right gate to harden before any multi-tenant exposure.
+    """
+    h = (host or "").strip()
+    if not h:
+        return "is empty"
+    try:
+        infos = socket.getaddrinfo(h, None, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return f"did not resolve ({h[:120]})"
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            return f"resolved to an unparseable address ({h[:120]})"
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return f"resolves to a non-public address ({h[:120]})"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +220,9 @@ def _safe_err(exc: Exception) -> str:
 # ---------------------------------------------------------------------------
 def _probe_imap(host: str, port: int, username: str, password: str) -> Dict[str, Any]:
     """IMAP implicit-TLS connect + LOGIN. Never raises."""
+    blocked = _host_block_reason(host)
+    if blocked is not None:
+        return _result(False, f"IMAP host {blocked}")
     conn = None
     try:
         conn = imaplib.IMAP4_SSL(host, port, timeout=_TIMEOUT_S)
@@ -200,6 +244,9 @@ def _probe_imap(host: str, port: int, username: str, password: str) -> Dict[str,
 def _probe_smtp(host: str, port: int, username: str, password: str) -> Dict[str, Any]:
     """SMTP login. Port 465 = implicit TLS (SMTP_SSL); otherwise plain connect
     then STARTTLS upgrade. Never raises."""
+    blocked = _host_block_reason(host)
+    if blocked is not None:
+        return _result(False, f"SMTP host {blocked}")
     conn = None
     try:
         if port == 465:
