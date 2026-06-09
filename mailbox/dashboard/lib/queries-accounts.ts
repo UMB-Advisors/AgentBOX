@@ -41,6 +41,27 @@ export async function getDefaultAccountId(): Promise<number> {
   return row.id;
 }
 
+// MBOX-466 — the default inbox's stable email address (the fan-out key the
+// ingestion pipeline stamps on inserts and passes to the dashboard token
+// authority — app/api/internal/google/access-token — as ?account_email=). V1 is
+// single-account: the connected+registered inbox is
+// the migration-033 default row (the IMAP/Google connect adopts the sentinel
+// default in place, so post-connect the default row's email_address is the live
+// account). Returns null pre-connect, while the default still carries the
+// 'primary@appliance.local' sentinel — the caller surfaces that as "no account
+// to ingest yet" rather than handing n8n the placeholder address.
+export async function getDefaultAccountEmail(): Promise<string | null> {
+  const db = getKysely();
+  const row = await db
+    .selectFrom('accounts')
+    .select('email_address')
+    .where('is_default', '=', true)
+    .executeTakeFirst();
+  if (!row) return null;
+  if (row.email_address === SENTINEL_DEFAULT_EMAIL) return null;
+  return row.email_address;
+}
+
 // MBOX-399 — the transport provider for one account, or null if it doesn't
 // exist. The voice-backfill route reads this to dispatch by provider
 // (imap→runImapVoiceBackfill, gmail→runGmailVoiceBackfill) before hitting the
