@@ -74,14 +74,18 @@ racing. Follow these rules:
    by rules 1–3. The same discipline applies to the mailbox-stack rebuild
    (`docker compose build mailbox-dashboard`).
 
-**Planned enforcement (not yet in the script — until then, the above is
-convention-only):** add to `deploy-dashboard.sh`: (a) `git fetch` + refuse if
-`HEAD` is behind `origin/main`; (b) box-side `flock ~/.hermes/deploy.lock` so
-concurrent deploys serialize; (c) a `web_dist/DEPLOY_META` provenance stamp
-(SHA/branch/who/when) with a forward-only guard (refuse to overwrite unless the
-new SHA contains the live SHA; `--force` to override). **Endgame:** a single
-CI/CD deployer that ships `main` on merge so agents never run
-`deploy-dashboard.sh` directly.
+**Enforcement (shipped):** `deploy-dashboard.sh` now has (a) `git fetch` + refuse
+if `HEAD` is behind `origin/main`; (b) `flock` per-box deploy lock (re-exec); (c)
+a `web_dist/DEPLOY_META` provenance stamp with a forward-only guard (refuse to
+overwrite unless the new SHA contains the live SHA; `--force` to override).
+
+**CI is the deployer (preferred path).** A self-hosted GitHub Actions runner
+deploys `main` on merge — `.github/workflows/deploy-dashboard.yml`, set up via
+`bin/register-ci-runner.sh`, runbook at `docs/ci-cd-deployer.v0.1.0.md`. **Once
+the runner is registered, do NOT run `deploy-dashboard.sh` by hand** — merge to
+`main` and let CI deploy. Manual `bin/deploy-dashboard.sh --force` is break-glass
+only (CI down). This makes "one deployer, always from main" structural, not just
+convention.
 </important>
 
 ## Layout
