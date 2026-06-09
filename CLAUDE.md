@@ -45,6 +45,45 @@ bin/deploy-dashboard.sh --backend-only           # custom backend only, no web r
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9119/api/google/auth/start  # 303 = OK
 ```
 
+## Deploy Coordination — Simultaneous Builds (READ BEFORE DEPLOYING)
+
+<important>
+Multiple agents/sessions share ONE appliance per box. `bin/deploy-dashboard.sh`
+does `rsync --delete web_dist` + restart with **NO lock and NO freshness check** —
+last-writer-wins. On 2026-06-09 a peer agent building stale code (no Org Chart)
+deployed `index-DsVtfbDA.js` over a fresh deploy and silently reverted it
+("got squashed"). This is NOT a hermes auto-update — it is concurrent deploys
+racing. Follow these rules:
+
+1. **Deploy only from up-to-date `origin/main`.** Never deploy from a feature
+   branch or worktree. Merge your PR first, then on the deploy checkout:
+   `git fetch && git checkout main && git pull`, confirm
+   `git rev-parse HEAD == git rev-parse origin/main`, THEN deploy. If your HEAD is
+   **behind** `origin/main`, you are about to clobber newer work — STOP.
+2. **One deploy at a time per box.** Before deploying, check nobody else is
+   mid-deploy: `ssh <box> 'pgrep -af "hermes dashboard|rsync.*web_dist"'`. Wait
+   if a deploy is in flight. (Box-side `flock ~/.hermes/deploy.lock` is the
+   planned enforcement — see below.)
+3. **Verify your deploy actually stuck.** After deploying, confirm the served
+   bundle is YOURS and the feature is present:
+   `ssh <box> 'grep -o "assets/index-[^\"]*\.js" <RDIR>/web_dist/index.html'`
+   then grep that bundle for a string from your feature. If the hash changes
+   seconds later, a peer clobbered you — re-coordinate, don't blindly re-deploy.
+4. **Worktree isolation does NOT protect the shared box.** Worktrees only stop
+   local build-file collisions; deploy contention is a separate hazard governed
+   by rules 1–3. The same discipline applies to the mailbox-stack rebuild
+   (`docker compose build mailbox-dashboard`).
+
+**Planned enforcement (not yet in the script — until then, the above is
+convention-only):** add to `deploy-dashboard.sh`: (a) `git fetch` + refuse if
+`HEAD` is behind `origin/main`; (b) box-side `flock ~/.hermes/deploy.lock` so
+concurrent deploys serialize; (c) a `web_dist/DEPLOY_META` provenance stamp
+(SHA/branch/who/when) with a forward-only guard (refuse to overwrite unless the
+new SHA contains the live SHA; `--force` to override). **Endgame:** a single
+CI/CD deployer that ships `main` on merge so agents never run
+`deploy-dashboard.sh` directly.
+</important>
+
 ## Layout
 
 - `install/agentbox-install.sh` — canonical fresh-box bring-up (staged). STAGE 7.6 overlays
