@@ -153,6 +153,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
+      // MUST bypass Next.js' Data Cache. Without this Next caches the token
+      // response and serves a STALE access_token on every later call, so Gmail
+      // then 401s "Invalid Credentials". Every request must do a LIVE refresh.
+      cache: 'no-store',
       signal: AbortSignal.timeout(5_000),
     });
   } catch (err) {
