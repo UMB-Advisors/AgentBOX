@@ -4,6 +4,7 @@ import { Check, Pencil, Sparkles, Star, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { GraphConnectForm } from '@/app/onboarding/email-connect/GraphConnectForm';
 import { ImapConnectForm } from '@/app/onboarding/email-connect/ImapConnectForm';
+import { ProviderOnboarding } from '@/app/settings/accounts/ProviderOnboarding';
 import { AppShell } from '@/components/AppShell';
 import { TimeAgo } from '@/components/TimeAgo';
 import { Toast } from '@/components/Toast';
@@ -335,6 +336,8 @@ export function AccountsSettings({
                 ))}
               </select>
             </label>
+
+            <ProviderOnboarding provider={provider} />
 
             {provider === 'imap' ? (
               <ImapConnectForm
