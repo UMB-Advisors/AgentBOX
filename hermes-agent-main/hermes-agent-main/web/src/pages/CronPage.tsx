@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { Clock, Pause, Pencil, Play, Trash2, X, Zap } from "lucide-react";
+import { Clock, LayoutTemplate, Pause, Pencil, Play, Trash2, X, Zap } from "lucide-react";
 import cronstrue from "cronstrue";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -7,7 +7,13 @@ import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { H2 } from "@nous-research/ui/ui/components/typography/h2";
 import { api } from "@/lib/api";
-import type { CronJob, ProfileInfo, ModelOptionProvider } from "@/lib/api";
+import type {
+  CronJob,
+  ProfileInfo,
+  ModelOptionProvider,
+  AgentTemplate,
+  AgentTemplateSummary,
+} from "@/lib/api";
 import { crmApi } from "@/lib/crm";
 import type { Department, TeamMember } from "@/lib/crm";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
@@ -260,7 +266,25 @@ export default function CronPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [creating, setCreating] = useState(false);
+  // Agent Templates: a picker of reusable blueprints that pre-fill the create
+  // form. `appliedTemplate` is the full descriptor backing the current draft (so
+  // we can show its pattern detail); template* carry the template's skills /
+  // toolsets through to createCronJob on submit.
+  const [templates, setTemplates] = useState<AgentTemplateSummary[]>([]);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [appliedTemplate, setAppliedTemplate] = useState<AgentTemplate | null>(null);
+  const [templateSkills, setTemplateSkills] = useState<string[]>([]);
+  const [templateToolsets, setTemplateToolsets] = useState<string[]>([]);
+  const [showPattern, setShowPattern] = useState(false);
   const isEditing = editingKey !== null;
+
+  // Clear any template association from the current draft.
+  const clearTemplate = useCallback(() => {
+    setAppliedTemplate(null);
+    setTemplateSkills([]);
+    setTemplateToolsets([]);
+    setShowPattern(false);
+  }, []);
   const closeCreateModal = useCallback(() => {
     setCreateModalOpen(false);
     setEditingKey(null);
@@ -280,8 +304,9 @@ export default function CronPage() {
     setModel("");
     setDepartmentId("");
     setEmployeeId("");
+    clearTemplate();
     setCreateModalOpen(true);
-  }, []);
+  }, [clearTemplate]);
 
   const openEdit = useCallback((job: CronJob) => {
     setEditingKey(getJobKey(job));
@@ -293,8 +318,48 @@ export default function CronPage() {
     setModel(asText(job.model) || "");
     setDepartmentId(job.department_id != null ? String(job.department_id) : "");
     setEmployeeId(job.employee_id != null ? String(job.employee_id) : "");
+    clearTemplate();
     setCreateModalOpen(true);
-  }, []);
+  }, [clearTemplate]);
+
+  // Open the template picker (fetches the list lazily the first time).
+  const openTemplatePicker = useCallback(() => {
+    if (templates.length === 0) {
+      api
+        .getAgentTemplates()
+        .then((r) => setTemplates(r.templates ?? []))
+        .catch(() => showToast("Couldn’t load templates", "error"));
+    }
+    setTemplatePickerOpen(true);
+  }, [templates.length, showToast]);
+
+  // Apply a chosen template: fetch its full descriptor and pre-fill the create
+  // form. The operator can edit anything before saving — this only seeds it.
+  const applyTemplate = useCallback(
+    async (id: string) => {
+      try {
+        const tpl = await api.getAgentTemplate(id);
+        const d = tpl.defaults;
+        setEditingKey(null);
+        setName(d.name ?? "");
+        setPrompt(d.prompt ?? "");
+        setSchedule(d.schedule ?? "");
+        setDeliver(d.deliver || "local");
+        setModel(d.model || "");
+        setDepartmentId("");
+        setEmployeeId("");
+        setTemplateSkills(d.skills ?? []);
+        setTemplateToolsets(d.enabled_toolsets ?? []);
+        setAppliedTemplate(tpl);
+        setShowPattern(false);
+        setTemplatePickerOpen(false);
+        setCreateModalOpen(true);
+      } catch {
+        showToast("Couldn’t load template", "error");
+      }
+    },
+    [showToast],
+  );
 
   const loadJobs = useCallback(() => {
     api
@@ -401,6 +466,9 @@ export default function CronPage() {
             name: name.trim() || undefined,
             deliver,
             ...modelFields,
+            // From an applied template, if any (omitted when empty).
+            skills: templateSkills.length ? templateSkills : undefined,
+            enabled_toolsets: templateToolsets.length ? templateToolsets : undefined,
             ...crmFields,
           },
           createProfile,
@@ -414,6 +482,7 @@ export default function CronPage() {
       setModel("");
       setDepartmentId("");
       setEmployeeId("");
+      clearTemplate();
       setEditingKey(null);
       setCreateModalOpen(false);
       loadJobs();
@@ -529,6 +598,77 @@ export default function CronPage() {
         loading={jobDelete.isDeleting}
       />
 
+      {/* Template picker modal */}
+      {templatePickerOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/85 backdrop-blur-sm p-4"
+          onClick={(e) =>
+            e.target === e.currentTarget && setTemplatePickerOpen(false)
+          }
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="template-picker-title"
+        >
+          <div
+            className={cn(
+              themedBody,
+              "relative w-full max-w-2xl border border-border bg-card shadow-2xl flex flex-col max-h-[85vh]",
+            )}
+          >
+            <Button
+              ghost
+              size="icon"
+              onClick={() => setTemplatePickerOpen(false)}
+              className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+              aria-label="Close"
+            >
+              <X />
+            </Button>
+
+            <header className="p-5 pb-3 border-b border-border">
+              <h2
+                id="template-picker-title"
+                className="font-mondwest text-display text-base tracking-wider"
+              >
+                Build from a template
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Agent Template Pattern blueprints, tuned for this box. Pick one to
+                pre-fill a new job — you can edit everything before saving.
+              </p>
+            </header>
+
+            <div className="p-5 grid gap-3 overflow-y-auto">
+              {templates.length === 0 && (
+                <p className="text-sm text-muted-foreground py-6 text-center">
+                  No templates available.
+                </p>
+              )}
+              {templates.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => applyTemplate(tpl.id)}
+                  className="text-left border border-border bg-background/40 p-4 hover:border-foreground/30 hover:bg-background/60 transition-colors"
+                >
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="font-medium text-sm">{tpl.name}</span>
+                    <Badge tone={tpl.category === "instance" ? "secondary" : "outline"}>
+                      {tpl.category}
+                    </Badge>
+                    <Badge tone="outline">{tpl.hardware_tier}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {tpl.node_count} nodes
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{tpl.summary}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Create job modal */}
       {createModalOpen && (
         <div
@@ -559,7 +699,83 @@ export default function CronPage() {
               </h2>
             </header>
 
-            <div className="p-5 grid gap-4">
+            <div className="p-5 grid gap-4 max-h-[80vh] overflow-y-auto">
+              {appliedTemplate && (
+                <div className="border border-border bg-background/40 p-3 text-xs">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <LayoutTemplate className="h-3.5 w-3.5 text-primary" />
+                    <span className="font-medium">{appliedTemplate.name}</span>
+                    <Badge tone="outline">{appliedTemplate.hardware_tier}</Badge>
+                    <Badge tone="secondary">{appliedTemplate.provenance.status}</Badge>
+                    <button
+                      type="button"
+                      className="ml-auto underline text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowPattern((v) => !v)}
+                    >
+                      {showPattern ? "Hide pattern" : "Show pattern"}
+                    </button>
+                    <button
+                      type="button"
+                      className="underline text-muted-foreground hover:text-foreground"
+                      onClick={clearTemplate}
+                    >
+                      Detach
+                    </button>
+                  </div>
+                  {(templateSkills.length > 0 || templateToolsets.length > 0) && (
+                    <p className="mt-2 text-muted-foreground">
+                      {templateSkills.length > 0 &&
+                        `Skills: ${templateSkills.join(", ")}`}
+                      {templateSkills.length > 0 && templateToolsets.length > 0 && " · "}
+                      {templateToolsets.length > 0 &&
+                        `Toolsets: ${templateToolsets.join(", ")}`}
+                    </p>
+                  )}
+                  {showPattern && (
+                    <div className="mt-3 grid gap-3 border-t border-border pt-3">
+                      <p className="text-muted-foreground">
+                        {appliedTemplate.provenance.note}
+                      </p>
+                      <div className="grid gap-1">
+                        {appliedTemplate.primitives.map((p) => (
+                          <div key={p.key}>
+                            <span className="font-medium">
+                              {p.key} · {p.title}
+                            </span>{" "}
+                            <span className="text-muted-foreground">{p.desc}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead className="text-muted-foreground">
+                            <tr>
+                              <th className="pr-2 font-normal">#</th>
+                              <th className="pr-2 font-normal">Node</th>
+                              <th className="pr-2 font-normal">Model</th>
+                              <th className="font-normal">Routing (T2)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {appliedTemplate.nodes.map((n) => (
+                              <tr key={n.n} className="align-top">
+                                <td className="pr-2 py-0.5">{n.n}</td>
+                                <td className="pr-2 py-0.5">{n.node}</td>
+                                <td className="pr-2 py-0.5">
+                                  {n.probabilistic ? "model" : "—"}
+                                </td>
+                                <td className="py-0.5 text-muted-foreground">
+                                  {n.routing_t2}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="grid gap-2">
                 <Label htmlFor="cron-profile">Profile</Label>
                 <Select
@@ -737,6 +953,16 @@ export default function CronPage() {
           </H2>
 
           <div className="flex items-end gap-3">
+            <Button
+              size="sm"
+              ghost
+              className="uppercase shrink-0"
+              onClick={openTemplatePicker}
+              prefix={<LayoutTemplate />}
+            >
+              From Template
+            </Button>
+
             <Button size="sm" className="uppercase shrink-0" onClick={openCreate}>
               Schedule a New Job
             </Button>
@@ -775,9 +1001,20 @@ export default function CronPage() {
           <Card>
             <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
               <p className="text-sm text-muted-foreground">{t.cron.noJobs}</p>
-              <Button size="sm" className="uppercase" onClick={openCreate}>
-                Schedule a New Job
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  ghost
+                  className="uppercase"
+                  onClick={openTemplatePicker}
+                  prefix={<LayoutTemplate />}
+                >
+                  From Template
+                </Button>
+                <Button size="sm" className="uppercase" onClick={openCreate}>
+                  Schedule a New Job
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}

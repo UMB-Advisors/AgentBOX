@@ -353,6 +353,9 @@ export const api = {
       deliver?: string;
       model?: string | null;
       provider?: string | null;
+      // Optional skills / toolsets to preload (used by Agent Template instantiation).
+      skills?: string[] | null;
+      enabled_toolsets?: string[] | null;
       department_id?: number | null;
       department_name?: string | null;
       employee_id?: number | null;
@@ -398,6 +401,12 @@ export const api = {
     fetchJSON<{ outputs: CronOutput[] }>(
       `/api/cron/outputs?profile=${encodeURIComponent(profile)}&limit=${limit}`,
     ),
+
+  // Agent Templates — reusable blueprints the Agent Jobs UI builds new jobs from.
+  getAgentTemplates: () =>
+    fetchJSON<{ templates: AgentTemplateSummary[] }>("/api/cron/templates"),
+  getAgentTemplate: (id: string) =>
+    fetchJSON<AgentTemplate>(`/api/cron/templates/${encodeURIComponent(id)}`),
 
   // Profiles (minimal)
   getProfiles: () =>
@@ -1377,6 +1386,68 @@ export interface CronJob {
   department_name?: string | null;
   employee_id?: number | null;
   employee_name?: string | null;
+}
+
+// Agent Templates — reusable blueprints the Agent Jobs UI builds new jobs from.
+// Served by /api/cron/templates (hermes_cli/agent_templates.py).
+export interface AgentTemplateSummary {
+  id: string;
+  name: string;
+  summary: string;
+  category: string; // "pattern" | "instance"
+  hardware_tier: string;
+  tier_label: string;
+  tags: string[];
+  node_count: number;
+}
+
+export interface AgentTemplateNode {
+  n: string;
+  node: string;
+  probabilistic: boolean;
+  capability: string;
+  routing_t2: string;
+  artifact: string;
+}
+
+export interface AgentTemplatePrimitive {
+  key: string;
+  title: string;
+  desc: string;
+}
+
+export interface AgentTemplateRoutingRow {
+  tier: string;
+  resident: string;
+  default: string;
+}
+
+export interface AgentTemplateDefaults {
+  name: string;
+  prompt: string;
+  schedule: string;
+  deliver: string;
+  model: string;
+  provider: string;
+  skills: string[];
+  enabled_toolsets: string[];
+}
+
+export interface AgentTemplate extends Omit<AgentTemplateSummary, "node_count"> {
+  primitives: AgentTemplatePrimitive[];
+  routing_table: AgentTemplateRoutingRow[];
+  optimizations: string[];
+  nodes: AgentTemplateNode[];
+  safety: string[];
+  open_questions: string[];
+  defaults: AgentTemplateDefaults;
+  provenance: {
+    spec: string;
+    status: string;
+    tier: string;
+    tier_label: string;
+    note: string;
+  };
 }
 
 export interface SkillInfo {
