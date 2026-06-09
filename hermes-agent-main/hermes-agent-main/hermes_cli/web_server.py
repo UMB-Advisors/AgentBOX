@@ -4088,6 +4088,12 @@ class CronJobCreate(BaseModel):
     # the job and honored by the scheduler (cron/scheduler.py reads job["model"]).
     model: Optional[str] = None
     provider: Optional[str] = None
+    # Optional skills / toolsets to preload. Used by Agent Template instantiation
+    # (a template can ship a recommended skill + toolset set); both pass straight
+    # through to cron.jobs.create_job, which already supports them. Omitted →
+    # default behaviour (all tools loaded, no skills).
+    skills: Optional[List[str]] = None
+    enabled_toolsets: Optional[List[str]] = None
     # CRM assignment (soft links into the mailbox-dashboard CRM). Optional.
     department_id: Optional[int] = None
     department_name: Optional[str] = None
@@ -4220,6 +4226,8 @@ async def create_cron_job(body: CronJobCreate, profile: str = "default"):
             deliver=body.deliver,
             model=body.model,
             provider=body.provider,
+            skills=body.skills,
+            enabled_toolsets=body.enabled_toolsets,
             department_id=body.department_id,
             department_name=body.department_name,
             employee_id=body.employee_id,
@@ -4289,6 +4297,34 @@ async def delete_cron_job(job_id: str, profile: Optional[str] = None):
     if not removed:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Agent Template endpoints
+#
+# Templates are reusable blueprints the Agent Jobs UI instantiates new jobs
+# from. They are pure data (hermes_cli/agent_templates.py): a strong default
+# prompt + schedule + T2-tier model routing. The frontend fetches the full
+# descriptor on selection and pre-fills the create-job form; the operator can
+# tweak it before saving, which creates a normal cron job. No separate engine.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/cron/templates")
+async def list_cron_templates():
+    """List Agent Template summaries for the dashboard picker."""
+    from hermes_cli import agent_templates
+    return {"templates": agent_templates.list_templates()}
+
+
+@app.get("/api/cron/templates/{template_id}")
+async def get_cron_template(template_id: str):
+    """Full Agent Template descriptor (primitives, node routing, defaults)."""
+    from hermes_cli import agent_templates
+    template = agent_templates.get_template(template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return template
 
 
 def _read_recent_outputs(home: Path, limit: int, jobs_by_id: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
