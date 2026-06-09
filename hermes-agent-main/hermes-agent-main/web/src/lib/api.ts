@@ -839,7 +839,72 @@ export const api = {
       `/api/shopify/accounts/${encodeURIComponent(shop)}`,
       { method: "DELETE" },
     ),
+
+  // ── Mail accounts (Microsoft 365 + IMAP, MBOX-468) ─────────────
+  /** Probe (``mode:'test'``) or persist (``mode:'connect'``) a Microsoft 365
+   * mailbox via the app-only Graph credentials. Session-gated POST. Returns the
+   * raw status + parsed body so the caller can distinguish the two 422 shapes
+   * (semantic probe-fail vs pydantic body-validation) — see
+   * {@link mailConnectFetch}. The ``client_secret`` is sent ONLY in the request
+   * body and is never echoed back in any response. */
+  connectMicrosoft: (body: GraphConnectBody) =>
+    mailConnectFetch("/api/accounts/microsoft", body),
+  /** Probe (``mode:'test'``) or persist (``mode:'connect'``) an IMAP/SMTP
+   * mailbox. Session-gated POST. ``app_password`` is sent ONLY in the request
+   * body and is never echoed back. See {@link mailConnectFetch} for the
+   * 200-or-422 contract. */
+  connectImap: (body: ImapConnectBody) =>
+    mailConnectFetch("/api/accounts/imap", body),
+  /** List connected mail accounts (Microsoft 365 + IMAP) + whether at-rest
+   * secret encryption is configured on the box. ``crypto_configured === false``
+   * means a ``mode:'connect'`` will 500 — gate the Connect button on it. Never
+   * includes any secret. */
+  listMailAccounts: () =>
+    fetchJSON<MailAccountsResponse>("/api/accounts/mail"),
+  /** Disconnect a mail account by its record id (uuid4 hex). */
+  removeMailAccount: (id: string) =>
+    fetchJSON<{ removed: boolean }>(
+      `/api/accounts/mail/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    ),
 };
+
+/** POST a credential-bearing mail-connect body to a session-gated route and
+ * return ``{ status, body }`` WITHOUT throwing on a 422. The mail-connect
+ * contract (MBOX-468) uses 422 as a first-class, body-carrying response — both
+ * the semantic probe-fail (``{ ok:false, ...legs }``) and the pydantic
+ * body-validation (``{ detail:[...] }``) shapes — so {@link fetchJSON}'s
+ * throw-on-non-2xx behaviour would discard exactly the body the UI needs.
+ *
+ * 200 (green test / persisted connect) and 422 (probe-fail / validation) both
+ * resolve with the parsed body. Anything else (500 persist error, network) is
+ * thrown so the page surfaces it as a generic error. The ``X-Hermes-Session-Token``
+ * header is attached the same way {@link fetchJSON} attaches it. The secret in
+ * ``body`` travels ONLY in the JSON request body — never a query string. */
+async function mailConnectFetch(
+  url: string,
+  body: GraphConnectBody | ImapConnectBody,
+): Promise<{ status: number; body: MailConnectResponse }> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const token = window.__HERMES_SESSION_TOKEN__;
+  if (token) {
+    setSessionHeader(headers, token);
+  }
+  const res = await fetch(`${BASE}${url}`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+  // 200 and 422 both carry a JSON body the caller must inspect. Everything else
+  // (500 persist failure, 5xx, network) is an error the page shows generically.
+  if (res.status === 200 || res.status === 422) {
+    const parsed = (await res.json()) as MailConnectResponse;
+    return { status: res.status, body: parsed };
+  }
+  const text = await res.text().catch(() => res.statusText);
+  throw new Error(`${res.status}: ${text}`);
+}
 
 export interface GoogleImportResult {
   connected: boolean;
@@ -919,6 +984,125 @@ export interface ShopifyAccount {
 export interface ShopifyAccountsResponse {
   client_configured: boolean;
   accounts: ShopifyAccount[];
+}
+
+// ── Mail accounts (Microsoft 365 + IMAP, MBOX-468) ──────────────────────────
+// The HTTP contract for Implementer A's session-gated mail-connect routes. No
+// type in this block carries a secret in a RESPONSE — ``client_secret`` /
+// ``app_password`` appear ONLY on the request bodies below and are never echoed.
+
+/** Request body for ``POST /api/accounts/microsoft``. ``mode`` defaults to
+ * ``'test'`` server-side; send ``'connect'`` to persist after a green probe.
+ * ``client_secret`` is request-only and never returned. */
+export interface GraphConnectBody {
+  mode?: "test" | "connect";
+  email: string;
+  display_label?: string;
+  tenant_id: string;
+  client_id: string;
+  client_secret: string;
+  /** Defaults to ``email`` server-side. */
+  mailbox?: string;
+}
+
+/** Request body for ``POST /api/accounts/imap``. ``mode`` defaults to
+ * ``'test'``; send ``'connect'`` to persist. ``app_password`` is request-only
+ * and never returned. Ports default to 993 (IMAP) / 587 (SMTP) server-side. */
+export interface ImapConnectBody {
+  mode?: "test" | "connect";
+  email: string;
+  display_label?: string;
+  imap_host: string;
+  imap_port?: number;
+  smtp_host: string;
+  smtp_port?: number;
+  username: string;
+  app_password: string;
+}
+
+/** One leg of a probe verdict (Graph token/mailbox, or IMAP/SMTP login). */
+export interface ProbeLeg {
+  ok: boolean;
+  detail: string;
+}
+
+/** Semantic 422 (probe-fail) for ``POST /api/accounts/microsoft``: the body
+ * carries ``ok:false`` and per-leg detail. Discriminated from the
+ * body-validation 422 by the presence of ``ok``. */
+export interface GraphProbeResult {
+  ok: false;
+  token: ProbeLeg;
+  mailbox: ProbeLeg;
+}
+
+/** Semantic 422 (probe-fail) for ``POST /api/accounts/imap``. */
+export interface ImapProbeResult {
+  ok: false;
+  imap: ProbeLeg;
+  smtp: ProbeLeg;
+}
+
+/** 200 ``mode:'test'`` success — green probe, nothing persisted. The leg
+ * shapes vary by provider (token/mailbox vs imap/smtp); kept loose here since
+ * the page only needs ``ok``/``tested`` on the happy path. */
+export interface MailTestResult {
+  ok: true;
+  tested: true;
+  token?: ProbeLeg;
+  mailbox?: ProbeLeg;
+  imap?: ProbeLeg;
+  smtp?: ProbeLeg;
+}
+
+/** 200 ``mode:'connect'`` success — account persisted (secret encrypted at
+ * rest). ``account_id`` is a uuid4 hex string. */
+export interface MailConnectSuccess {
+  ok: true;
+  account_id: string;
+  provider: "microsoft" | "imap";
+}
+
+/** Pydantic body-validation 422 ``{ detail:[...] }`` — discriminated from the
+ * probe-fail shape by the absence of ``ok`` and presence of ``detail``. */
+export interface ValidationError {
+  detail: Array<{ loc: (string | number)[]; msg: string; type: string }>;
+}
+
+/** 500 persist failure (incl. ``crypto_configured=false`` on a connect). */
+export interface MailConnectError {
+  ok: false;
+  error: string;
+}
+
+/** Every body {@link mailConnectFetch} may resolve with across 200 + 422. The
+ * page narrows by: ``ok:false`` present and a leg key (``token``/``imap``) =>
+ * probe-fail; ``detail`` array present => validation error; ``ok:true`` +
+ * ``tested`` => green test; ``ok:true`` + ``account_id`` => persisted connect. */
+export type MailConnectResponse =
+  | MailTestResult
+  | MailConnectSuccess
+  | GraphProbeResult
+  | ImapProbeResult
+  | ValidationError
+  | MailConnectError;
+
+/** A connected mail account as returned by ``GET /api/accounts/mail``. Never
+ * includes any secret. */
+export interface MailAccount {
+  id: string;
+  provider: "microsoft" | "imap";
+  email: string;
+  display_label: string | null;
+  mailbox: string | null;
+  connected_at: string | null;
+}
+
+/** Response shape for ``GET /api/accounts/mail``. ``crypto_configured`` is
+ * ``false`` when at-rest secret encryption isn't set up — a ``mode:'connect'``
+ * will 500 in that case, so the page disables Connect. */
+export interface MailAccountsResponse {
+  accounts: MailAccount[];
+  crypto_configured: boolean;
 }
 
 /** Daily digest payload returned by ``GET /api/digest/latest`` (Phase 3).
