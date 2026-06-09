@@ -342,6 +342,21 @@ if [ -f "$REPO/bin/lib/custom-backend-files.sh" ] && [ -d "$ABX_HERMES/hermes_cl
     cp -a "$src" "$dst"; n=$((n+1))
   done < <(abx_custom_backend_files "$ABX_HERMES")
   log "  overlaid $n custom backend files onto $INSTALL_CLI"
+  # MBOX-468: provision the at-rest key for mail-account secrets. The custom
+  # backend encrypts M365 client-secrets / IMAP app-passwords with AES-256-GCM
+  # keyed by HERMES_MAIL_SECRET_KEY (32-byte hex); a missing key hard-fails the
+  # 'connect' step (test-connection still works). A per-box random key is ideal —
+  # each box encrypts its own secrets. Idempotent: NEVER overwrite an existing
+  # key (rotating it would orphan every already-stored secret).
+  HENV="$HH/.env"
+  if [ -f "$HENV" ] && grep -q '^HERMES_MAIL_SECRET_KEY=' "$HENV"; then
+    log "  HERMES_MAIL_SECRET_KEY already present in $HENV"
+  else
+    mkdir -p "$HH"
+    printf 'HERMES_MAIL_SECRET_KEY=%s\n' "$(openssl rand -hex 32)" >> "$HENV"
+    chmod 600 "$HENV" 2>/dev/null || true
+    log "  generated HERMES_MAIL_SECRET_KEY -> $HENV"
+  fi
   # If the dashboard service is already running (re-run / hermes update repair),
   # restart so the overlay takes effect now. On a first install STAGE 8 starts it.
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
