@@ -816,6 +816,12 @@ export const api = {
       `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/clear-send-attempt`,
       { method: "POST" },
     ),
+  /** System-wide Gmail rate-limit cooldown state (MBOX-481). Read-only GET —
+   * powers the cooldown banner above the queue. Proxies the on-box
+   * mailbox-dashboard ``/api/system/gmail-cooldown`` through the SAME
+   * ``/dashboard/*`` reverse-proxy as every other inbox binding. */
+  inboxGmailCooldown: () =>
+    fetchJSON<InboxCooldownState>("/dashboard/api/system/gmail-cooldown"),
 
   // ── Auto-send rules (MBOX-477) ─────────────────────────────────────────
   // SAFETY SURFACE: these gate what the mailbox Postgres pipeline sends WITHOUT
@@ -2738,6 +2744,17 @@ export interface InboxSnoozeResult {
   success: boolean;
   id: number;
   snooze_until: string;
+}
+
+/** System-wide Gmail rate-limit cooldown (MBOX-481, ported from mailbox
+ * GmailCooldownBanner / STAQPRO-331). Read from the on-box mailbox-dashboard
+ * ``/api/system/gmail-cooldown`` GET — ``is_active`` is the operator gate; the
+ * timestamps drive the banner's "next safe send" copy. All ISO-8601 or null. */
+export interface InboxCooldownState {
+  is_active: boolean;
+  until: string | null;
+  set_at: string | null;
+  recommended_safe_at: string | null;
 }
 
 // ── Classifications (MBOX-472) ───────────────────────────────────────────────
