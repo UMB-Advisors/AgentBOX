@@ -1579,6 +1579,7 @@ async def google_list_accounts():
 @app.delete("/api/google/accounts/{email}")
 async def google_delete_account(email: str, request: Request):
     """Revoke + remove a connected account."""
+    _require_token(request)
     from hermes_cli import google_accounts
 
     loop = asyncio.get_running_loop()
@@ -1737,6 +1738,7 @@ async def shopify_list_accounts():
 @app.delete("/api/shopify/accounts/{shop}")
 async def shopify_delete_account(shop: str, request: Request):
     """Forget a connected store (local token removal)."""
+    _require_token(request)
     from hermes_cli import shopify_accounts
 
     loop = asyncio.get_running_loop()

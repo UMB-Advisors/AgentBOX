@@ -389,7 +389,7 @@ export function MicrosoftForm({
         <Button
           outlined
           onClick={() => void run("test")}
-          disabled={!required || busy !== null}
+          disabled={!required || busy !== null || disabled}
           prefix={busy === "test" ? <Spinner /> : undefined}
         >
           Test connection
@@ -695,7 +695,7 @@ export function ImapForm({
         <Button
           outlined
           onClick={() => void run("test")}
-          disabled={!required || busy !== null}
+          disabled={!required || busy !== null || disabled}
           prefix={busy === "test" ? <Spinner /> : undefined}
         >
           Test connection
