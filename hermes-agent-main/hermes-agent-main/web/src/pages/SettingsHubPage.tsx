@@ -15,6 +15,7 @@ import {
   Rocket,
   Settings,
   ShoppingBag,
+  SlidersHorizontal,
   Sparkles,
   Users,
   ChevronRight,
@@ -91,6 +92,12 @@ const CONNECTION_ITEMS: HubItem[] = [
 const AGENT_ITEMS: HubItem[] = [
   { path: "/sessions", label: "Sessions", icon: MessageSquare },
   { path: "/profiles", label: "Profiles", icon: Users },
+  {
+    path: "/settings/tuning",
+    label: "Drafting tuning",
+    icon: SlidersHorizontal,
+    description: "Voice style & drafting guidelines",
+  },
   { path: "/skills", label: "Skills", icon: Package },
   { path: "/models", label: "Models", icon: Cpu },
   { path: "/analytics", label: "Analytics", icon: BarChart3 },
