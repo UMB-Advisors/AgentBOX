@@ -2476,3 +2476,140 @@ class TestOnboardingAdvanceBodyValidation:
         with pytest.raises(ValidationError):
             OnboardingAdvanceBody(from_stage="", to_stage="live")
 
+
+class TestClassificationsProxy:
+    """MBOX-472 — the /api/classifications* routes proxy the on-box
+    mailbox-dashboard. These assert the forwarded URL/method/body and the
+    relay of the upstream status + JSON, plus the 502-on-unreachable path —
+    without a live dashboard. ``httpx`` is faked at the module level (the route
+    imports it lazily)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_test_client(self, monkeypatch, _isolate_hermes_home):
+        try:
+            from starlette.testclient import TestClient
+        except ImportError:
+            pytest.skip("fastapi/starlette not installed")
+
+        import hermes_state
+        from hermes_constants import get_hermes_home
+        from hermes_cli.web_server import app, _SESSION_HEADER_NAME, _SESSION_TOKEN
+
+        monkeypatch.setattr(
+            hermes_state, "DEFAULT_DB_PATH", get_hermes_home() / "state.db"
+        )
+        self.client = TestClient(app)
+        self.client.headers[_SESSION_HEADER_NAME] = _SESSION_TOKEN
+
+    def _install_fake_httpx(self, monkeypatch, *, status, json_body=None, raise_exc=None):
+        """Patch ``httpx`` so the route's lazy ``import httpx`` resolves to a fake
+        AsyncClient. Returns a dict the test reads back to assert the forwarded
+        request shape."""
+        import sys
+        import types
+        import httpx as real_httpx
+
+        captured = {}
+
+        class _FakeResponse:
+            def __init__(self):
+                self.status_code = status
+
+            def json(self):
+                if json_body is None:
+                    raise ValueError("no json")
+                return json_body
+
+        class _FakeAsyncClient:
+            def __init__(self, *a, **k):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def request(self, method, url, params=None, headers=None, content=None):
+                captured["method"] = method
+                captured["url"] = url
+                captured["params"] = dict(params) if params else {}
+                captured["content"] = content
+                if raise_exc is not None:
+                    raise raise_exc
+                return _FakeResponse()
+
+        fake_httpx = types.SimpleNamespace(
+            AsyncClient=_FakeAsyncClient,
+            Timeout=real_httpx.Timeout,
+            HTTPError=real_httpx.HTTPError,
+        )
+        monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+        return captured
+
+    def test_list_forwards_to_dashboard(self, monkeypatch):
+        from hermes_cli.web_server import _DASHBOARD_UPSTREAM
+
+        rows = [{"log_id": "1", "category": "internal", "confidence": 0.9}]
+        captured = self._install_fake_httpx(monkeypatch, status=200, json_body=rows)
+
+        resp = self.client.get("/api/classifications?limit=25")
+
+        assert resp.status_code == 200
+        assert resp.json() == rows
+        assert captured["method"] == "GET"
+        assert captured["url"] == f"{_DASHBOARD_UPSTREAM}/dashboard/api/classifications"
+        assert captured["params"].get("limit") == "25"
+
+    def test_reclassify_forwards_body(self, monkeypatch):
+        from hermes_cli.web_server import _DASHBOARD_UPSTREAM
+
+        body = {"success": True, "email": "a@b.com", "allowlisted": True,
+                "queued": 3, "capped": False}
+        captured = self._install_fake_httpx(monkeypatch, status=200, json_body=body)
+
+        resp = self.client.post(
+            "/api/classifications/reclassify-sender",
+            json={"email": "a@b.com"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["allowlisted"] is True
+        assert captured["method"] == "POST"
+        assert captured["url"] == (
+            f"{_DASHBOARD_UPSTREAM}/dashboard/api/classifications/reclassify-sender"
+        )
+        assert captured["content"] is not None
+
+    def test_unreachable_dashboard_returns_502(self, monkeypatch):
+        import httpx as real_httpx
+
+        self._install_fake_httpx(
+            monkeypatch,
+            status=0,
+            raise_exc=real_httpx.ConnectError("boom"),
+        )
+
+        resp = self.client.get("/api/classifications")
+        assert resp.status_code == 502
+        assert "unreachable" in resp.json()["detail"]
+
+    def test_non_json_upstream_surfaced_as_error(self, monkeypatch):
+        # The list route does not exist on the dashboard yet → Next.js HTML 404.
+        self._install_fake_httpx(monkeypatch, status=404, json_body=None)
+        resp = self.client.get("/api/classifications")
+        assert resp.status_code == 404
+        assert "non-JSON" in resp.json()["detail"]
+
+    def test_requires_session(self):
+        """GET /api/classifications without the session header must 401 —
+        the route must never land in PUBLIC_API_PATHS (auth-gated like the
+        rest of /api/*)."""
+        from starlette.testclient import TestClient
+        from hermes_cli.web_server import app
+
+        # Fresh client WITHOUT the dashboard session header.
+        unauth_client = TestClient(app)
+        resp = unauth_client.get("/api/classifications")
+        assert resp.status_code == 401
+

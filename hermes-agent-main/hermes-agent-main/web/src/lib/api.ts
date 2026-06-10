@@ -976,6 +976,31 @@ export const api = {
       },
     ),
 
+  // ── Classifications (MBOX-472) ─────────────────────────────────────────
+  // These hit the hermes-side ``/api/classifications*`` proxy routes
+  // (``web_server.py``), which forward to the on-box mailbox-dashboard. The
+  // classification data lives in the mailbox Postgres pipeline; hermes_cli has
+  // no DB driver, so it proxies rather than queries (same model as Job Outcomes
+  // / Unified Inbox).
+
+  /** Recent classification-log rows joined to inbox + draft outcome, newest
+   * first (server caps at 200). ``limit`` narrows the page size. */
+  listClassifications: (limit = 100) => {
+    const qs = new URLSearchParams();
+    qs.set("limit", String(limit));
+    return fetchJSON<ClassificationListResponse>(
+      `/api/classifications?${qs.toString()}`,
+    );
+  },
+  /** MBOX-370 "reclassify automatically": take ``email`` off the spam list and
+   * re-run the classifier on their existing mail. Returns fast; the re-classify
+   * runs in the background on the box. */
+  reclassifySender: (email: string, reason?: string) =>
+    fetchJSON<ReclassifySenderResult>("/api/classifications/reclassify-sender", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reason ? { email, reason } : { email }),
+    }),
   // ── Drafting tuning / guidelines (MBOX-475) ──────────────────────────────
   // Proxied to the on-box mailbox dashboard (Next.js ``basePath=/dashboard``)
   // through the SAME ``/dashboard/{path}`` reverse proxy the inbox calls use.
@@ -2569,6 +2594,55 @@ export interface InboxSnoozeResult {
   success: boolean;
   id: number;
   snooze_until: string;
+}
+
+// ── Classifications (MBOX-472) ───────────────────────────────────────────────
+// Mirrors the mailbox-dashboard ClassificationRow shape
+// (lib/queries-classifications.ts). ``route`` is derived server-side from the
+// category + confidence; ``draft_status`` is the joined draft outcome (null when
+// the message produced no draft).
+
+export type ClassificationRoute = "drop" | "local" | "cloud";
+
+export type ClassificationDraftOutcome =
+  | "pending"
+  | "approved"
+  | "sent"
+  | "rejected"
+  | "edited"
+  | "failed"
+  | null;
+
+export interface ClassificationRow {
+  log_id: string;
+  classified_at: string;
+  inbox_message_id: number;
+  from_addr: string | null;
+  subject: string | null;
+  category: string;
+  confidence: number;
+  model_version: string;
+  latency_ms: number | null;
+  route: ClassificationRoute;
+  draft_id: number | null;
+  draft_status: ClassificationDraftOutcome;
+  draft_sent_at: string | null;
+}
+
+/** Shape of GET /api/classifications. The mailbox list route may return either a
+ * bare array or a ``{ rows }`` envelope; the page normalises both. */
+export type ClassificationListResponse =
+  | ClassificationRow[]
+  | { rows: ClassificationRow[] };
+
+/** Result of POST /api/classifications/reclassify-sender (MBOX-370). */
+export interface ReclassifySenderResult {
+  success: boolean;
+  email: string;
+  allowlisted: boolean;
+  queued: number;
+  capped: boolean;
+  error?: string;
 }
 
 // ── Persona voice tuning (MBOX-476) ──────────────────────────────────────
