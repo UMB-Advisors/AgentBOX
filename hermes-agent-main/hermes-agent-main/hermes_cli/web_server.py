@@ -1958,23 +1958,25 @@ async def delete_mail_account(account_id: str):
 
 class OnboardingAdvanceBody(BaseModel):
     """Strict adjacent-pair stage transition for the onboarding wizard. Mirrors
-    the mailbox ``onboardingAdvanceBodySchema`` ``{from, to}`` contract; the
-    wizard sends the stage it believes is current as ``from_stage`` so a stale
-    view is caught (409 stale_from) rather than silently overwriting."""
+    the mailbox ``onboardingAdvanceBodySchema`` transition contract; the wizard
+    sends the stage it believes is current as ``from_stage`` so a stale view is
+    caught (409 stale_from) rather than silently overwriting."""
 
-    # ``from`` is a Python keyword, so the field is ``from_stage`` with a
-    # ``from`` JSON alias to keep the wire contract identical to the source.
+    # ``from`` is a Python keyword, so the wire fields are ``from_stage`` /
+    # ``to_stage`` (the frontend posts exactly that).
     from_stage: str
     to_stage: str
 
-    model_config = {"populate_by_name": True}
-
     @field_validator("from_stage", "to_stage")
     @classmethod
-    def _stage_shape(cls, v: str) -> str:
+    def _stage_known(cls, v: str) -> str:
+        # Validate against the known STAGES set so a malformed stage name fails
+        # with 422 here rather than surfacing as a confusing 409 downstream.
+        from hermes_cli.onboarding_state import STAGES
+
         v = (v or "").strip()
-        if not (1 <= len(v) <= 64):
-            raise ValueError("stage must be 1..64 chars")
+        if v not in STAGES:
+            raise ValueError(f"stage must be one of {sorted(STAGES)}")
         return v
 
 

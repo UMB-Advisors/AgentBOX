@@ -48,6 +48,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -153,8 +154,20 @@ def state_path() -> Path:
 # Atomic 0600 write (verified idiom from shopify_accounts.py:185)
 # ---------------------------------------------------------------------------
 def _write_json_600(path: Path, data: Any) -> None:
+    """Atomic 0600 write via a unique tmp file + ``os.replace``.
+
+    Single-writer assumption: onboarding is driven by one dashboard operator, so
+    there is no cross-process locking here. The tmp-name uniqueness (pid + thread
+    id) plus the atomic ``os.replace`` keep individual writes intact and prevent
+    tmp-file collisions under ``run_in_executor``, but concurrent mutations from
+    multiple processes are out of scope (last write wins)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
+    # pid alone is not collision-safe across threads (writes run under
+    # run_in_executor); include the thread id so concurrent writers never share
+    # a tmp path.
+    tmp = path.with_suffix(
+        path.suffix + f".tmp.{os.getpid()}.{threading.get_ident()}"
+    )
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         with os.fdopen(fd, "w") as fh:

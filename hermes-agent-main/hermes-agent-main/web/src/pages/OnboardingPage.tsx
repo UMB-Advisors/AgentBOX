@@ -365,13 +365,20 @@ export default function OnboardingPage() {
               from_stage: from,
               to_stage: to,
             });
-            if (status === 200) {
-              setState({
-                ...refreshed,
-                active_mailbox: email,
-                stage: "stage" in body ? body.stage : to,
-              });
+            if (status !== 200) {
+              // Don't move the wizard if the backend stage didn't advance, or
+              // the UI step desyncs from the persisted stage (the next advance
+              // then 409s with a stale_from).
+              const msg =
+                "error" in body ? body.error : `unexpected status ${status}`;
+              setNavError(msg);
+              return;
             }
+            setState({
+              ...refreshed,
+              active_mailbox: email,
+              stage: "stage" in body ? body.stage : to,
+            });
           }
           setSlug(target);
         }

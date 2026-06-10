@@ -2446,3 +2446,33 @@ class TestDashboardPluginStaticAssetAllowlist:
         # — never 200.
         assert resp.status_code in (403, 404)
 
+
+class TestOnboardingAdvanceBodyValidation:
+    """The advance body validates stage names against the known STAGES set so a
+    malformed stage name fails fast with a 422 rather than surfacing as a
+    confusing 409 stale_from/invalid_transition downstream (MBOX-471 review)."""
+
+    def test_known_stages_accepted_and_trimmed(self):
+        from hermes_cli.web_server import OnboardingAdvanceBody
+        from hermes_cli.onboarding_state import STAGES
+
+        body = OnboardingAdvanceBody(
+            from_stage=f"  {STAGES[0]} ", to_stage=STAGES[1]
+        )
+        assert body.from_stage == STAGES[0]
+        assert body.to_stage == STAGES[1]
+
+    def test_unknown_stage_rejected(self):
+        from pydantic import ValidationError
+        from hermes_cli.web_server import OnboardingAdvanceBody
+
+        with pytest.raises(ValidationError):
+            OnboardingAdvanceBody(from_stage="bogus", to_stage="live")
+
+    def test_empty_stage_rejected(self):
+        from pydantic import ValidationError
+        from hermes_cli.web_server import OnboardingAdvanceBody
+
+        with pytest.raises(ValidationError):
+            OnboardingAdvanceBody(from_stage="", to_stage="live")
+
