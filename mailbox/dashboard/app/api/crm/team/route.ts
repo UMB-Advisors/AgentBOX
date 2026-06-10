@@ -17,11 +17,15 @@ function readTeamInput(body: Record<string, unknown>): TeamInput | null {
   const depRaw = body.department_id;
   const department_id =
     depRaw === null || depRaw === undefined || depRaw === '' ? null : Number(depRaw);
+  const mgrRaw = body.reports_to;
+  const reports_to =
+    mgrRaw === null || mgrRaw === undefined || mgrRaw === '' ? null : Number(mgrRaw);
   return {
     name,
     kind,
     title: typeof body.title === 'string' ? body.title : '',
     department_id: Number.isFinite(department_id as number) ? (department_id as number) : null,
+    reports_to: Number.isFinite(reports_to as number) ? (reports_to as number) : null,
     email: typeof body.email === 'string' ? body.email : '',
     status: body.status === 'inactive' ? 'inactive' : 'active',
     notes: typeof body.notes === 'string' ? body.notes : '',

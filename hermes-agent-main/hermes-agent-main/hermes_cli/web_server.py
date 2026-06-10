@@ -56,7 +56,7 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
     from fastapi.staticfiles import StaticFiles
-    from pydantic import BaseModel
+    from pydantic import BaseModel, field_validator
 except ImportError:
     # First try lazy-installing the dashboard extras. Only the user actually
     # running `hermes dashboard` needs fastapi+uvicorn; lazy install keeps
@@ -68,7 +68,7 @@ except ImportError:
         from fastapi.middleware.cors import CORSMiddleware
         from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
         from fastapi.staticfiles import StaticFiles
-        from pydantic import BaseModel
+        from pydantic import BaseModel, field_validator
     except Exception:
         raise SystemExit(
             "Web UI requires fastapi and uvicorn.\n"
@@ -1746,6 +1746,207 @@ async def shopify_delete_account(shop: str, request: Request):
     return JSONResponse({"removed": removed})
 
 
+# ---------------------------------------------------------------------------
+# Mail-account connect (M365 + IMAP) — MBOX-468.
+# Brings the mailbox dashboard's MBOX-465 provider onboarding to the Hermes
+# dashboard. Two session-gated POST connect routes (probe → 422-on-fail →
+# test|connect → persist) plus list/delete. These are NOT in PUBLIC_API_PATHS —
+# they carry operator-entered credentials and must stay behind the session gate
+# (unlike the Google/Shopify auth/* browser redirects). The provider secret is
+# probed, then encrypted at rest (token_crypto, AES-256-GCM) only after a green
+# probe on mode:'connect'; a failed probe persists nothing.
+#
+# Body validation uses pydantic (the CalendarEventBody pattern) so a malformed
+# body yields the pydantic {detail:[{loc,msg,type}]} 422 shape. A failed PROBE
+# yields the semantic {ok:false, ...legs} 422 shape. The FE distinguishes them:
+# ok:false present ⇒ probe shape; detail-array present ⇒ validation shape.
+# ---------------------------------------------------------------------------
+class GraphConnectBody(BaseModel):
+    """Operator-entered BYO Azure app-registration credentials for a Microsoft
+    365 / Graph mailbox (app-only / client-credentials). ``client_secret`` is
+    never echoed and is stored AES-256-GCM-encrypted only on a green
+    ``mode:'connect'`` probe."""
+    mode: str = "test"
+    email: str
+    display_label: Optional[str] = None
+    tenant_id: str
+    client_id: str
+    client_secret: str
+    mailbox: Optional[str] = None
+
+    @field_validator("mode")
+    @classmethod
+    def _mode_valid(cls, v: str) -> str:
+        if v not in ("test", "connect"):
+            raise ValueError("mode must be 'test' or 'connect'")
+        return v
+
+    @field_validator("email", "mailbox")
+    @classmethod
+    def _email_shape(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if "@" not in v or " " in v or not v:
+            raise ValueError("must be a valid email")
+        return v
+
+    @field_validator("tenant_id", "client_id")
+    @classmethod
+    def _req_128(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not (1 <= len(v) <= 128):
+            raise ValueError("must be 1..128 chars")
+        return v
+
+    @field_validator("client_secret")
+    @classmethod
+    def _secret_len(cls, v: str) -> str:
+        if not (1 <= len(v) <= 2048):
+            raise ValueError("must be 1..2048 chars")
+        return v
+
+    @field_validator("display_label")
+    @classmethod
+    def _label_len(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if not (1 <= len(v) <= 100):
+            raise ValueError("must be 1..100 chars")
+        return v
+
+
+class ImapConnectBody(BaseModel):
+    """Operator-entered IMAP/SMTP connection details. ``app_password`` is never
+    echoed and is stored AES-256-GCM-encrypted only on a green ``mode:'connect'``
+    probe."""
+    mode: str = "test"
+    email: str
+    display_label: Optional[str] = None
+    imap_host: str
+    imap_port: int = 993
+    smtp_host: str
+    smtp_port: int = 587
+    username: str
+    app_password: str
+
+    @field_validator("mode")
+    @classmethod
+    def _mode_valid(cls, v: str) -> str:
+        if v not in ("test", "connect"):
+            raise ValueError("mode must be 'test' or 'connect'")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def _email_shape(cls, v: str) -> str:
+        v = (v or "").strip()
+        if "@" not in v or " " in v or not v:
+            raise ValueError("must be a valid email")
+        return v
+
+    @field_validator("imap_host", "smtp_host")
+    @classmethod
+    def _host_len(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not (1 <= len(v) <= 255):
+            raise ValueError("must be 1..255 chars")
+        return v
+
+    @field_validator("imap_port", "smtp_port")
+    @classmethod
+    def _port_range(cls, v: int) -> int:
+        if not (1 <= int(v) <= 65535):
+            raise ValueError("must be 1..65535")
+        return int(v)
+
+    @field_validator("username")
+    @classmethod
+    def _user_len(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not (1 <= len(v) <= 320):
+            raise ValueError("must be 1..320 chars")
+        return v
+
+    @field_validator("app_password")
+    @classmethod
+    def _pw_len(cls, v: str) -> str:
+        if not (1 <= len(v) <= 1024):
+            raise ValueError("must be 1..1024 chars")
+        return v
+
+    @field_validator("display_label")
+    @classmethod
+    def _label_len(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if not (1 <= len(v) <= 100):
+            raise ValueError("must be 1..100 chars")
+        return v
+
+
+@app.post("/api/accounts/microsoft")
+async def connect_microsoft_account(body: GraphConnectBody):
+    """Probe BYO Azure app credentials and (on mode:'connect') persist the M365
+    mailbox with the client secret encrypted at rest. A failed probe → 422 and
+    persists nothing; a green probe → 200 (test: legs only; connect: account_id).
+    Session-gated (operator credentials)."""
+    from hermes_cli import mail_accounts
+
+    status, result = await mail_accounts.connect_graph(body.model_dump())
+    return JSONResponse(result, status_code=status)
+
+
+@app.post("/api/accounts/imap")
+async def connect_imap_account(body: ImapConnectBody):
+    """Probe IMAP+SMTP credentials and (on mode:'connect') persist the mailbox
+    with the app password encrypted at rest. A failed probe → 422 and persists
+    nothing; a green probe → 200 (test: legs only; connect: account_id).
+    Session-gated (operator credentials)."""
+    from hermes_cli import mail_accounts
+
+    status, result = await mail_accounts.connect_imap(body.model_dump())
+    return JSONResponse(result, status_code=status)
+
+
+@app.get("/api/accounts/mail")
+async def list_mail_accounts():
+    """Connected mail accounts (M365 + IMAP) WITHOUT secrets, plus whether the
+    at-rest encryption key is configured. Session-gated."""
+    from hermes_cli import mail_accounts, token_crypto
+
+    loop = asyncio.get_running_loop()
+    accounts = await loop.run_in_executor(None, mail_accounts.list_accounts)
+    return JSONResponse(
+        {
+            "accounts": accounts,
+            "crypto_configured": token_crypto.crypto_configured(),
+        }
+    )
+
+
+@app.delete("/api/accounts/mail/{account_id}")
+async def delete_mail_account(account_id: str):
+    """Forget a connected mail account by its record id (local removal only).
+    Session-gated."""
+    from hermes_cli import mail_accounts
+
+    # Record ids are uuid4().hex (32 lowercase hex). Reject anything else up
+    # front: a malformed id can never match, so don't bother scanning the dir.
+    if not re.fullmatch(r"[0-9a-f]{32}", account_id or ""):
+        return JSONResponse(
+            {"removed": False, "error": "invalid account id"}, status_code=400
+        )
+
+    loop = asyncio.get_running_loop()
+    removed = await loop.run_in_executor(
+        None, mail_accounts.delete_account, account_id
+    )
+    return JSONResponse({"removed": removed})
+
+
 class CalendarEventBody(BaseModel):
     """Payload for create/update on the Calendar tab. ``account`` selects which
     connected account's primary calendar to write to (blank = primary). Timed
@@ -1980,28 +2181,33 @@ def _spawn_hermes_action(subcommand: List[str], name: str) -> subprocess.Popen:
     _ACTION_LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = _ACTION_LOG_DIR / log_file_name
     log_file = open(log_path, "ab", buffering=0)
-    log_file.write(
-        f"\n=== {name} started {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode()
-    )
-
-    cmd = [sys.executable, "-m", "hermes_cli.main", *subcommand]
-
-    popen_kwargs: Dict[str, Any] = {
-        "cwd": str(PROJECT_ROOT),
-        "stdin": subprocess.DEVNULL,
-        "stdout": log_file,
-        "stderr": subprocess.STDOUT,
-        "env": {**os.environ, "HERMES_NONINTERACTIVE": "1"},
-    }
-    if sys.platform == "win32":
-        popen_kwargs["creationflags"] = (
-            subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
-            | getattr(subprocess, "DETACHED_PROCESS", 0)
+    try:
+        log_file.write(
+            f"\n=== {name} started {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode()
         )
-    else:
-        popen_kwargs["start_new_session"] = True
 
-    proc = subprocess.Popen(cmd, **popen_kwargs)
+        cmd = [sys.executable, "-m", "hermes_cli.main", *subcommand]
+
+        popen_kwargs: Dict[str, Any] = {
+            "cwd": str(PROJECT_ROOT),
+            "stdin": subprocess.DEVNULL,
+            "stdout": log_file,
+            "stderr": subprocess.STDOUT,
+            "env": {**os.environ, "HERMES_NONINTERACTIVE": "1"},
+        }
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+                | getattr(subprocess, "DETACHED_PROCESS", 0)
+            )
+        else:
+            popen_kwargs["start_new_session"] = True
+
+        proc = subprocess.Popen(cmd, **popen_kwargs)
+    finally:
+        # The child inherits the fd via stdout; the parent's copy would
+        # otherwise leak one fd per action spawn.
+        log_file.close()
     _ACTION_PROCS[name] = proc
     return proc
 
@@ -2565,6 +2771,12 @@ async def reveal_env_var(body: EnvVarReveal, request: Request):
     """
     # --- Token check ---
     _require_token(request)
+
+    # --- Allowlist: only settings-managed keys are revealable. Without this,
+    # any session-token holder could read arbitrary .env entries (e.g.
+    # HERMES_MAIL_SECRET_KEY), defeating the at-rest encryption. ---
+    if body.key not in OPTIONAL_ENV_VARS:
+        raise HTTPException(status_code=403, detail=f"{body.key} is not revealable")
 
     # --- Rate limit ---
     now = time.time()
@@ -3887,6 +4099,12 @@ class CronJobCreate(BaseModel):
     # the job and honored by the scheduler (cron/scheduler.py reads job["model"]).
     model: Optional[str] = None
     provider: Optional[str] = None
+    # Optional skills / toolsets to preload. Used by Agent Template instantiation
+    # (a template can ship a recommended skill + toolset set); both pass straight
+    # through to cron.jobs.create_job, which already supports them. Omitted →
+    # default behaviour (all tools loaded, no skills).
+    skills: Optional[List[str]] = None
+    enabled_toolsets: Optional[List[str]] = None
     # CRM assignment (soft links into the mailbox-dashboard CRM). Optional.
     department_id: Optional[int] = None
     department_name: Optional[str] = None
@@ -4019,6 +4237,8 @@ async def create_cron_job(body: CronJobCreate, profile: str = "default"):
             deliver=body.deliver,
             model=body.model,
             provider=body.provider,
+            skills=body.skills,
+            enabled_toolsets=body.enabled_toolsets,
             department_id=body.department_id,
             department_name=body.department_name,
             employee_id=body.employee_id,
@@ -4232,6 +4452,125 @@ def cron_template_assist(body: CronTemplateAssistRequest):
     if not display:
         display = "Here's a draft — review it on the right and tweak anything."
     return {"reply": display, "proposal": proposal}
+# Agent Template endpoints
+#
+# Templates are reusable blueprints the Agent Jobs UI instantiates new jobs
+# from. They are pure data (hermes_cli/agent_templates.py): a strong default
+# prompt + schedule + T2-tier model routing. The frontend fetches the full
+# descriptor on selection and pre-fills the create-job form; the operator can
+# tweak it before saving, which creates a normal cron job. No separate engine.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/cron/templates")
+async def list_cron_templates():
+    """List Agent Template summaries for the dashboard picker."""
+    from hermes_cli import agent_templates
+    return {"templates": agent_templates.list_templates()}
+
+
+@app.get("/api/cron/templates/{template_id}")
+async def get_cron_template(template_id: str):
+    """Full Agent Template descriptor (primitives, node routing, defaults)."""
+    from hermes_cli import agent_templates
+    template = agent_templates.get_template(template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return template
+
+
+def _read_recent_outputs(home: Path, limit: int, jobs_by_id: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Read a profile's most recent cron run outputs from disk.
+
+    Self-contained on purpose: scans ``<home>/cron/output/{job_id}/*.md``
+    directly rather than calling into ``cron.jobs`` so the whole feature lives
+    in the AgentBOX-custom ``hermes_cli`` backend (which the deploy ships) and
+    does not depend on patching the stock, hermes-pinned ``cron.jobs`` module.
+    """
+    from datetime import datetime
+
+    output_dir = home / "cron" / "output"
+    if not output_dir.exists():
+        return []
+
+    runs: List[Dict[str, Any]] = []
+    for job_dir in output_dir.iterdir():
+        if not job_dir.is_dir():
+            continue
+        job_id = job_dir.name
+        job = jobs_by_id.get(job_id, {})
+        for md in job_dir.glob("*.md"):
+            try:
+                stat = md.stat()
+            except OSError:
+                continue
+            runs.append({
+                "job_id": job_id,
+                "job_name": job.get("name") or job_id,
+                "timestamp": md.stem,  # "YYYY-MM-DD_HH-MM-SS"
+                "_mtime": stat.st_mtime,
+                "_path": md,
+                "size": stat.st_size,
+                "last_status": job.get("last_status"),
+            })
+
+    runs.sort(key=lambda r: r["_mtime"], reverse=True)
+    runs = runs[:limit]
+
+    for r in runs:
+        path = r.pop("_path")
+        mtime = r.pop("_mtime")
+        try:
+            r["output"] = path.read_text(encoding="utf-8")[:20000]
+        except OSError:
+            r["output"] = ""
+        try:
+            r["ran_at"] = datetime.strptime(r["timestamp"], "%Y-%m-%d_%H-%M-%S").isoformat()
+        except (ValueError, KeyError):
+            r["ran_at"] = datetime.fromtimestamp(mtime).isoformat()
+    return runs
+
+
+@app.get("/api/cron/outputs")
+async def list_cron_outputs(profile: str = "all", limit: int = 10):
+    """Recent completed cron-job run outputs across one or all profiles.
+
+    Powers the Home page "Job Outcomes" section. Each item carries the run's
+    markdown output plus its job title, status, and run time.
+    """
+    try:
+        limit = max(1, min(int(limit), 100))
+    except (TypeError, ValueError):
+        limit = 10
+
+    requested = (profile or "all").strip()
+    if requested.lower() != "all":
+        names = [requested]
+    else:
+        names = [str(p.get("name") or "") for p in _cron_profile_dicts()]
+        names = [n for n in names if n]
+
+    outputs: List[Dict[str, Any]] = []
+    for name in names:
+        try:
+            _, home = _cron_profile_home(name)
+            jobs = _call_cron_for_profile(name, "list_jobs", True)
+            jobs_by_id = {
+                str(j.get("id") or ""): j for j in jobs if j.get("id")
+            }
+            items = _read_recent_outputs(home, limit, jobs_by_id)
+        except Exception:
+            _log.exception("Failed to list cron outputs for profile %s", name)
+            continue
+        for item in items:
+            item["profile"] = name
+            outputs.append(item)
+
+    outputs.sort(
+        key=lambda o: str(o.get("ran_at") or o.get("timestamp") or ""),
+        reverse=True,
+    )
+    return {"outputs": outputs[:limit]}
 
 
 # ---------------------------------------------------------------------------

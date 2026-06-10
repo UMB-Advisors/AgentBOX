@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Alert } from '@/lib/alerts';
 import { renderDigest } from '@/lib/digest/render';
+import type { OutcomesRollup } from '@/lib/job-outcomes/queries';
 import type { DigestHealth, DigestPayload } from '@/lib/queries-digest';
 
 // MBOX-132 — pure unit tests for the digest HTML renderer (no DB). Covers the
@@ -16,6 +17,11 @@ function health(over: Partial<DigestHealth> = {}): DigestHealth {
   return { sent_24h: 0, stuck_approved: 0, firing_alerts: [], ...over };
 }
 
+// Empty outcomes rollup — the no-jobs-today baseline (renders nothing).
+function noOutcomes(): OutcomesRollup {
+  return { since_hours: 24, total: 0, businesses: [] };
+}
+
 function emptyPayload(): DigestPayload {
   return {
     counts_by_category: [],
@@ -23,8 +29,59 @@ function emptyPayload(): DigestPayload {
     oldest_pending: [],
     awaiting_reply: [],
     health: health(),
+    job_outcomes: noOutcomes(),
   };
 }
+
+describe('renderDigest — agent job outcomes (MBOX-462)', () => {
+  it('omits the outcomes section when there are none', () => {
+    const { html } = renderDigest(emptyPayload(), { now: NOW });
+    expect(html).not.toContain('What the agents did');
+  });
+
+  it('renders a per-business, per-department outcomes block', () => {
+    const payload: DigestPayload = {
+      ...emptyPayload(),
+      job_outcomes: {
+        since_hours: 24,
+        total: 2,
+        businesses: [
+          {
+            business_id: 1,
+            business_name: 'Yes Cacao',
+            counts: { total: 2, success: 1, partial: 0, failed: 1, skipped: 0 },
+            departments: [
+              {
+                department_id: 5,
+                department_name: 'Marketing',
+                counts: { total: 2, success: 1, partial: 0, failed: 1, skipped: 0 },
+                by_type: { blog_post: 2 },
+                recent: [
+                  {
+                    id: '1',
+                    source: 'hermes_cron',
+                    job_name: 'yes-cacao-blog',
+                    outcome_type: 'blog_post',
+                    status: 'success',
+                    title: 'Cacao & circadian rhythm',
+                    occurred_at: '2026-05-22T08:00:00Z',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const { html } = renderDigest(payload, { now: NOW });
+    expect(html).toContain('What the agents did');
+    expect(html).toContain('Yes Cacao');
+    expect(html).toContain('Marketing');
+    expect(html).toContain('2 blog post');
+    expect(html).toContain('Cacao &amp; circadian rhythm'); // HTML-escaped title
+    expect(html).toContain('needs a look'); // the 1 failed outcome is flagged
+  });
+});
 
 describe('renderDigest', () => {
   it('builds a subject with urgent + pending counts and the date', () => {
@@ -47,6 +104,7 @@ describe('renderDigest', () => {
       oldest_pending: [],
       awaiting_reply: [],
       health: health(),
+      job_outcomes: noOutcomes(),
     };
     const { subject, html } = renderDigest(payload, { now: NOW });
     expect(subject).toContain('1 urgent');
@@ -81,6 +139,7 @@ describe('renderDigest', () => {
       oldest_pending: [],
       awaiting_reply: [],
       health: health(),
+      job_outcomes: noOutcomes(),
     };
     const withUrl = renderDigest(payload, {
       now: NOW,
@@ -109,6 +168,7 @@ describe('renderDigest', () => {
       oldest_pending: [],
       awaiting_reply: [],
       health: health(),
+      job_outcomes: noOutcomes(),
     };
     const evil = renderDigest(payload, { now: NOW, queueUrl: 'javascript:alert(1)' });
     expect(evil.html).not.toContain('javascript:');
@@ -132,6 +192,7 @@ describe('renderDigest', () => {
       oldest_pending: [],
       awaiting_reply: [],
       health: health(),
+      job_outcomes: noOutcomes(),
     };
     const { html } = renderDigest(payload, { now: NOW });
     expect(html).not.toContain('<script>alert(1)</script>');

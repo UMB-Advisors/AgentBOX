@@ -69,6 +69,17 @@
   # customer-facing surface is the approval queue, not the n8n editor.
   redir / /dashboard/queue 308
 
+  # MBOX-466 (transport OPTION B — dashboard mints) — the Gmail token-authority
+  # route app/api/internal/google/access-token is served by mailbox-dashboard
+  # under the /dashboard basePath, so the handle /dashboard/* proxy below WOULD
+  # expose it to the public funnel. It must be reachable ONLY from the docker
+  # network (n8n's "Get Gmail Token" node calls mailbox-dashboard:3001 directly).
+  # Return 403 at the public edge before the proxy ever sees it. This does NOT
+  # affect the container-network call — that never traverses Caddy. Satisfies the
+  # spec acceptance criterion "token-minting endpoint unreachable from the funnel."
+  @internal_google_token path /dashboard/api/internal/google/access-token
+  respond @internal_google_token 403
+
   # Dashboard approval queue. STAQPRO-131: behind the basic_auth above.
   handle /dashboard/* {
     # flush_interval -1: flush every write immediately so SSE (the
@@ -125,6 +136,12 @@
 
   redir /dashboard /dashboard/queue 308
   redir / /dashboard/queue 308
+
+  # MBOX-466 (transport OPTION B) — same internal-route exclusion as the public
+  # block above: the Gmail token-authority route must not be reachable from the
+  # LAN site either. Container-network access from n8n is unaffected.
+  @internal_google_token path /dashboard/api/internal/google/access-token
+  respond @internal_google_token 403
 
   handle /dashboard/* {
     # flush_interval -1: flush every write immediately so SSE (the

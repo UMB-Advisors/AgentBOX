@@ -1505,3 +1505,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS crm_contacts_source_external_uniq
 
 \unrestrict jsPo17P9Gn0vDqUWcxp0cOYofwJdgqmmXLfc7CA6tqz1TOw4iON2UeFaJdgOXW3
 
+-- ── MBOX-462 (migration 049): Agent Job outcomes ledger ──
+-- Mirrors dashboard/migrations/049-create-job-outcomes-v1-2026-06-07.sql.
+-- FK targets mailbox.businesses + mailbox.departments are created above.
+CREATE TABLE IF NOT EXISTS mailbox.job_outcomes (
+  id              BIGSERIAL PRIMARY KEY,
+  source          TEXT NOT NULL,
+  external_job_id TEXT,
+  job_name        TEXT NOT NULL,
+  profile         TEXT,
+  business_id     INTEGER REFERENCES mailbox.businesses(id) ON DELETE SET NULL,
+  department_id   INTEGER REFERENCES mailbox.departments(id) ON DELETE SET NULL,
+  outcome_type    TEXT NOT NULL DEFAULT 'other',
+  status          TEXT NOT NULL DEFAULT 'success',
+  title           TEXT NOT NULL DEFAULT '',
+  summary         TEXT NOT NULL DEFAULT '',
+  artifact_ref    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  occurred_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT job_outcomes_status_check
+    CHECK (status IN ('success', 'partial', 'failed', 'skipped'))
+);
+CREATE INDEX IF NOT EXISTS job_outcomes_business_occurred_idx
+  ON mailbox.job_outcomes (business_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS job_outcomes_department_occurred_idx
+  ON mailbox.job_outcomes (department_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS job_outcomes_occurred_idx
+  ON mailbox.job_outcomes (occurred_at DESC);
+

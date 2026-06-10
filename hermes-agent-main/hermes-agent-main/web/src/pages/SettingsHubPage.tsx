@@ -67,6 +67,12 @@ const CONNECTION_ITEMS: HubItem[] = [
     description: "Connect Shopify stores for blog content",
   },
   {
+    path: "/settings/mail",
+    label: "Mail accounts",
+    icon: Mail,
+    description: "Connect Microsoft 365 or IMAP mailboxes",
+  },
+  {
     path: "/connections",
     label: "Model providers",
     icon: Plug,
