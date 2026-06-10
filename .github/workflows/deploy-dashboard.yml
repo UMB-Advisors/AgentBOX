@@ -1,0 +1,76 @@
+name: Deploy dashboard
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SINGLE-DEPLOYER (CI/CD). Every merge to `main` auto-deploys the AgentBOX
+# dashboard to the appliance(s) via the guarded bin/deploy-dashboard.sh, running
+# on a SELF-HOSTED runner on the dev workstation (it has Tailscale SSH to the
+# boxes + the npm build env + the SSH keys). Agents must NOT run
+# deploy-dashboard.sh by hand anymore — merge to main and let this deploy.
+# Break-glass only: run `bin/deploy-dashboard.sh --force` locally if CI is down.
+# See docs/ci-cd-deployer.v0.1.0.md and CLAUDE.md "Deploy Coordination".
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+    # Only deploy when something the dashboard actually ships changed — doc-only
+    # or unrelated merges don't trigger a (re)deploy.
+    paths:
+      - 'hermes-agent-main/hermes-agent-main/web/**'
+      - 'hermes-agent-main/hermes-agent-main/hermes_cli/**'
+      - 'bin/deploy-dashboard.sh'
+      - 'bin/lib/custom-backend-files.sh'
+      - '.github/workflows/deploy-dashboard.yml'
+  workflow_dispatch: {}   # manual "Run workflow" button in the Actions tab
+
+# Serialize deploys at the workflow level (belt-and-suspenders with the script's
+# flock). Never cancel an in-flight deploy — let it finish, queue the next.
+concurrency:
+  group: deploy-dashboard
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Runs on the workstation runner registered with this label (see
+    # bin/register-ci-runner.sh). The runner user must have Tailscale SSH access
+    # to the boxes + npm.
+    runs-on: [self-hosted, agentbox-deploy]
+    strategy:
+      fail-fast: false           # one box failing must not skip the others
+      matrix:
+        box:
+          - name: agentbox2
+            remote: UMB@100.127.2.54
+            rdir: /home/UMB/.hermes/hermes-agent/hermes_cli
+          # To also auto-deploy agentbox1, uncomment:
+          # - name: agentbox1
+          #   remote: mailbox2
+          #   rdir: /home/mailbox/.hermes/hermes-agent/hermes_cli
+    steps:
+      - name: Checkout LATEST main (deploy the current tip, not the triggering SHA)
+        # Jobs can sit queued (waiting for the runner) while main advances; the
+        # default checkout uses the triggering SHA, which the freshness guard then
+        # (correctly) rejects as stale. `ref: main` always deploys the newest main.
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node 22 (Vite 7 needs >=20.19/22.12)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install web dependencies (fresh checkout has no node_modules)
+        working-directory: hermes-agent-main/hermes-agent-main/web
+        run: npm ci --no-audit --no-fund
+
+      - name: Build + deploy to ${{ matrix.box.name }}
+        # deploy-dashboard.sh builds web/ then rsyncs web_dist + restores the
+        # custom backend + restarts the service. Its flock/freshness/forward-only
+        # guards are no-ops here (fresh main checkout, serialized), but stay as a
+        # safety net. A build failure aborts before any deploy (set -e).
+        env:
+          REMOTE: ${{ matrix.box.remote }}
+          RDIR: ${{ matrix.box.rdir }}
+        run: bin/deploy-dashboard.sh

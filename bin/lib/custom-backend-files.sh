@@ -25,6 +25,7 @@ ABX_STATIC_BACKEND=(
   google_accounts.py
   google_people.py
   shopify_accounts.py
+  agent_templates.py
   dashboard_auth/public_paths.py
 )
 

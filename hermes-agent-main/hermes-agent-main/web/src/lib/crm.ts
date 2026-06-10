@@ -30,6 +30,7 @@ export interface TeamMember {
   kind: TeamKind;
   title: string;
   department_id: number | null;
+  reports_to: number | null;
   email: string;
   status: string;
   notes: string;
@@ -81,6 +82,7 @@ export type TeamInput = {
   kind?: TeamKind;
   title?: string;
   department_id?: number | null;
+  reports_to?: number | null;
   email?: string;
   status?: string;
   notes?: string;

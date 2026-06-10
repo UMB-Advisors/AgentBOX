@@ -17,13 +17,12 @@ import {
   useNavigate,
 } from "react-router-dom";
 import {
+  Building2,
   CalendarDays,
-  Clock,
   Contact,
   HardDrive,
   Home as HomeIcon,
   Inbox,
-  LayoutDashboard,
   Menu,
   MessageSquare,
   Network,
@@ -32,7 +31,6 @@ import {
   RotateCw,
   Settings,
   Star,
-  Users,
   X,
 } from "lucide-react";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -70,12 +68,14 @@ import InboxPage from "@/pages/InboxPage";
 import GraphPage from "@/pages/GraphPage";
 import DrivePage from "@/pages/DrivePage";
 import TeamPage from "@/pages/TeamPage";
+import OrgChartPage from "@/pages/OrgChartPage";
 import ContactsPage from "@/pages/ContactsPage";
 import BusinessesPage from "@/pages/BusinessesPage";
 import SettingsHubPage from "@/pages/SettingsHubPage";
 import DigestSettingsPage from "@/pages/DigestSettingsPage";
 import SettingsGooglePage from "@/pages/SettingsGooglePage";
 import SettingsShopifyPage from "@/pages/SettingsShopifyPage";
+import SettingsMailPage from "@/pages/SettingsMailPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { useI18n } from "@/i18n";
@@ -111,12 +111,14 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/calendar": CalendarPage,
   "/drive": DrivePage,
   "/team": TeamPage,
+  "/org": OrgChartPage,
   "/contacts": ContactsPage,
   "/businesses": BusinessesPage,
   "/settings": SettingsHubPage,
   "/settings/digest": DigestSettingsPage,
   "/settings/google": SettingsGooglePage,
   "/settings/shopify": SettingsShopifyPage,
+  "/settings/mail": SettingsMailPage,
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,
   "/models": ModelsPage,
@@ -158,15 +160,16 @@ function buildPrimaryNav(manifests: PluginManifest[]): NavItem[] {
     { path: "/inbox", label: "Incoming Messages", icon: Inbox },
     { path: "/calendar", label: "Calendar", icon: CalendarDays },
     { path: "/drive", label: "Drive", icon: HardDrive },
-    { path: "/team", label: "Team", icon: Users },
     { path: "/contacts", label: "Contacts", icon: Contact },
   ];
-  if (hasTab("/kanban"))
-    items.push({ path: "/kanban", label: "Tasks", icon: LayoutDashboard });
-  items.push({ path: "/cron", label: "Agent Jobs", icon: Clock });
   items.push({ path: "/graph", label: "Brain Graph", icon: Network });
   if (hasTab("/achievements"))
     items.push({ path: "/achievements", label: "Achievements", icon: Star });
+  // Org Chart consolidates Team, Tasks (/kanban), and Agent Jobs (/cron) as
+  // sub-views — grouped at the bottom, just above Settings. The /kanban hasTab
+  // gate now lives inside OrgChartPage (it shows the Tasks sub-tab only when
+  // the plugin is present).
+  items.push({ path: "/org", label: "Org Chart", icon: Building2 });
   items.push({ path: "/settings", label: "Settings", icon: Settings });
   return items;
 }

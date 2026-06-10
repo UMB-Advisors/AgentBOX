@@ -27,6 +27,7 @@ const EMPTY: TeamInput = {
   kind: "human",
   title: "",
   department_id: null,
+  reports_to: null,
   email: "",
   status: "active",
   notes: "",
@@ -78,6 +79,7 @@ export default function TeamPage() {
       kind: m.kind,
       title: m.title,
       department_id: m.department_id,
+      reports_to: m.reports_to,
       email: m.email,
       status: m.status,
       notes: m.notes,
@@ -130,6 +132,8 @@ export default function TeamPage() {
 
   const deptName = (id: number | null) =>
     id == null ? "" : (departments.find((d) => d.id === id)?.name ?? "");
+  const mgrName = (id: number | null) =>
+    id == null ? "" : (team.find((m) => m.id === id)?.name ?? "");
 
   if (loading) {
     return (
@@ -207,6 +211,18 @@ export default function TeamPage() {
                   </Select>
                 </div>
                 <div className="grid gap-2">
+                  <Label htmlFor="tm-reports-to">Reports to</Label>
+                  <Select id="tm-reports-to" value={form.reports_to == null ? "" : String(form.reports_to)}
+                    onValueChange={(v) => setForm({ ...form, reports_to: v ? Number(v) : null })}>
+                    <SelectOption value="">—</SelectOption>
+                    {team
+                      .filter((m) => m.id !== editingId)
+                      .map((m) => (
+                        <SelectOption key={m.id} value={String(m.id)}>{m.name}</SelectOption>
+                      ))}
+                  </Select>
+                </div>
+                <div className="grid gap-2">
                   <Label htmlFor="tm-email">Email</Label>
                   <Input id="tm-email" value={form.email ?? ""}
                     onChange={(e) => setForm({ ...form, email: e.target.value })} />
@@ -265,6 +281,7 @@ export default function TeamPage() {
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     {m.title && <span>{m.title}</span>}
                     {m.email && <span>{m.email}</span>}
+                    {mgrName(m.reports_to) && <span>↳ reports to {mgrName(m.reports_to)}</span>}
                   </div>
                   {m.notes && <p className="text-xs text-muted-foreground mt-1 truncate">{m.notes}</p>}
                 </div>
