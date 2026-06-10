@@ -975,6 +975,84 @@ export const api = {
         body: JSON.stringify(body),
       },
     ),
+
+  // ── Drafting tuning / guidelines (MBOX-475) ──────────────────────────────
+  // Proxied to the on-box mailbox dashboard (Next.js ``basePath=/dashboard``)
+  // through the SAME ``/dashboard/{path}`` reverse proxy the inbox calls use.
+  // Same-origin, unauthenticated loopback; the ``X-Hermes-Session-Token``
+  // ``fetchJSON`` attaches is ignored by the mailbox API. These read/write the
+  // very persona markers + ``prompt_rules`` the mailbox drafting pipeline
+  // consumes — do NOT add a hermes_cli Postgres path. ``account`` narrows by
+  // ``account_id`` (absent → the seeded default inbox).
+
+  /** Connected inboxes for the per-account tuning selector (mailbox registry).
+   * Reuses ``GET /dashboard/api/accounts`` — same source as ``inboxListAccounts``. */
+  tuningListAccounts: () =>
+    fetchJSON<InboxAccountsResponse>("/dashboard/api/accounts"),
+
+  /** Seed the Style tab: the persona row's ``statistical_markers`` (default
+   * account only — the mailbox persona GET is not account-scoped; per-account
+   * style seeding is a documented follow-up gap). */
+  tuningGetPersona: () =>
+    fetchJSON<TuningPersonaSeedResponse>("/dashboard/api/persona"),
+
+  /** Save the voice-style knobs. The route MERGES the marker subset into the
+   * persona (preserving extraction markers + exemplars) and echoes the resolved
+   * ``style`` back (post-clamp). ``StyleProfile`` from ``@/lib/tuningStyle``. */
+  tuningSaveStyle: (
+    style: import("@/lib/tuningStyle").StyleProfile,
+    accountId?: number,
+  ) => {
+    const qs = accountId != null ? `?account=${accountId}` : "";
+    return fetchJSON<TuningStyleResponse>(`/dashboard/api/tuning/style${qs}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(style),
+    });
+  },
+
+  /** List drafting guidelines (enabled rules feed the system prompt). */
+  tuningListRules: (accountId?: number) => {
+    const qs = accountId != null ? `?account=${accountId}` : "";
+    return fetchJSON<PromptRulesResponse>(`/dashboard/api/prompt-rules${qs}`);
+  },
+
+  /** Create a guideline (version 1, enabled). */
+  tuningCreateRule: (body: PromptRuleCreateBody, accountId?: number) => {
+    const qs = accountId != null ? `?account=${accountId}` : "";
+    return fetchJSON<PromptRuleResponse>(`/dashboard/api/prompt-rules${qs}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** Edit / toggle a guideline. Content edits bump version; an enabled-only
+   * toggle does not. 404 if the id belongs to another inbox. */
+  tuningUpdateRule: (
+    id: number,
+    body: PromptRuleUpdateBody,
+    accountId?: number,
+  ) => {
+    const qs = accountId != null ? `?account=${accountId}` : "";
+    return fetchJSON<PromptRuleResponse>(
+      `/dashboard/api/prompt-rules/${id}${qs}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+  },
+
+  /** Remove a guideline. 404 if the id belongs to another inbox. */
+  tuningDeleteRule: (id: number, accountId?: number) => {
+    const qs = accountId != null ? `?account=${accountId}` : "";
+    return fetchJSON<{ deleted: boolean; id: number }>(
+      `/dashboard/api/prompt-rules/${id}${qs}`,
+      { method: "DELETE" },
+    );
+  },
 };
 
 /** POST an onboarding stage transition and return ``{ status, body }`` WITHOUT
@@ -2398,6 +2476,62 @@ export interface InboxDraftsResponse {
 
 export interface InboxAccountsResponse {
   accounts: AccountRow[];
+}
+
+// ── Drafting tuning / guidelines (MBOX-475) ────────────────────────────────
+// Shapes for the Tuning page. These ride the same ``/dashboard/*`` reverse
+// proxy as the inbox calls above; the bodies mirror the mailbox dashboard's
+// ``/api/tuning/style`` + ``/api/prompt-rules`` contracts so the values stay
+// the SAME data the mailbox drafting pipeline reads.
+
+/** PUT /dashboard/api/tuning/style body + echo. ``StyleProfile`` lives in
+ * ``@/lib/tuningStyle`` (the marker-subset shape). */
+export interface TuningStyleResponse {
+  style: import("@/lib/tuningStyle").StyleProfile;
+}
+
+/** A row from ``GET /dashboard/api/persona`` — used only to seed the Style tab
+ * (``statistical_markers`` → ``markersToStyle``). The persona surface itself is
+ * owned by MBOX-476; this read is the Style-seed dependency only. */
+export interface TuningPersonaSeedResponse {
+  persona: {
+    statistical_markers?: Record<string, unknown> | null;
+    [key: string]: unknown;
+  } | null;
+}
+
+/** A single drafting guideline (mailbox ``prompt_rules`` row). */
+export interface PromptRule {
+  id: number;
+  scope: import("@/lib/tuningStyle").PromptRuleScope;
+  rule: string;
+  rationale: string;
+  enabled: boolean;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PromptRulesResponse {
+  rules: PromptRule[];
+}
+
+export interface PromptRuleResponse {
+  rule: PromptRule;
+}
+
+export interface PromptRuleCreateBody {
+  scope: import("@/lib/tuningStyle").PromptRuleScope;
+  rule: string;
+  rationale?: string;
+}
+
+export interface PromptRuleUpdateBody {
+  scope?: import("@/lib/tuningStyle").PromptRuleScope;
+  rule?: string;
+  rationale?: string;
+  enabled?: boolean;
 }
 
 /** Result of POST .../approve — the ``transitionToApprovedAndSend`` JSON.
