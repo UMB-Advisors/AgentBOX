@@ -76,6 +76,7 @@ import DigestSettingsPage from "@/pages/DigestSettingsPage";
 import SettingsGooglePage from "@/pages/SettingsGooglePage";
 import SettingsShopifyPage from "@/pages/SettingsShopifyPage";
 import SettingsMailPage from "@/pages/SettingsMailPage";
+import SettingsVipPage from "@/pages/SettingsVipPage";
 import SettingsClassificationsPage from "@/pages/SettingsClassificationsPage";
 import SettingsPersonaPage from "@/pages/SettingsPersonaPage";
 import SettingsTuningPage from "@/pages/SettingsTuningPage";
@@ -123,6 +124,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/settings/google": SettingsGooglePage,
   "/settings/shopify": SettingsShopifyPage,
   "/settings/mail": SettingsMailPage,
+  "/settings/vip": SettingsVipPage,
   "/settings/classifications": SettingsClassificationsPage,
   "/settings/persona": SettingsPersonaPage,
   "/settings/tuning": SettingsTuningPage,

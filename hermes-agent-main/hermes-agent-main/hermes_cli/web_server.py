@@ -2273,6 +2273,14 @@ _HOP_BY_HOP = frozenset({
 })
 
 
+# Auth posture: when the OAuth gate is enabled (app.state.auth_required),
+# gated_auth_middleware covers /dashboard/* — the prefix is NOT in
+# dashboard_auth.middleware._GATE_PUBLIC_PREFIXES (nor an exact match in
+# PUBLIC_API_PATHS), so _path_is_public() returns False and a valid session
+# cookie is required, including for proxied mutations (VIP senders, auto-send
+# rules, draft approval). In loopback mode (auth_required=False) the server
+# binds 127.0.0.1 and loopback access is trusted by design — the ssh tunnel is
+# the auth boundary, same model as the legacy /api session middleware.
 @app.api_route(
     "/dashboard/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
