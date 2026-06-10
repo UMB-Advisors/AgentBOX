@@ -205,10 +205,15 @@ function ProbeOutcome({
 export function MicrosoftForm({
   cryptoConfigured,
   onConnected,
+  disabled = false,
 }: {
   cryptoConfigured: boolean;
   /** Receives the connected mailbox email (MBOX-484). Settings ignores it. */
   onConnected: (email: string) => void;
+  /** External in-flight guard (MBOX-485). The onboarding wizard passes its
+   * post-connect stage-advance busy state so Connect can't be re-fired during
+   * the advance window (double-submit). Optional; Settings omits it. */
+  disabled?: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [displayLabel, setDisplayLabel] = useState("");
@@ -384,14 +389,16 @@ export function MicrosoftForm({
         <Button
           outlined
           onClick={() => void run("test")}
-          disabled={!required || busy !== null}
+          disabled={!required || busy !== null || disabled}
           prefix={busy === "test" ? <Spinner /> : undefined}
         >
           Test connection
         </Button>
         <Button
           onClick={() => void run("connect")}
-          disabled={!required || !tested || !cryptoConfigured || busy !== null}
+          disabled={
+            !required || !tested || !cryptoConfigured || busy !== null || disabled
+          }
           prefix={busy === "connect" ? <Spinner /> : <Plus className="h-3.5 w-3.5" />}
           title={
             !cryptoConfigured
@@ -420,10 +427,15 @@ export function MicrosoftForm({
 export function ImapForm({
   cryptoConfigured,
   onConnected,
+  disabled = false,
 }: {
   cryptoConfigured: boolean;
   /** Receives the connected mailbox email (MBOX-484). Settings ignores it. */
   onConnected: (email: string) => void;
+  /** External in-flight guard (MBOX-485). The onboarding wizard passes its
+   * post-connect stage-advance busy state so Connect can't be re-fired during
+   * the advance window (double-submit). Optional; Settings omits it. */
+  disabled?: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [displayLabel, setDisplayLabel] = useState("");
@@ -683,14 +695,16 @@ export function ImapForm({
         <Button
           outlined
           onClick={() => void run("test")}
-          disabled={!required || busy !== null}
+          disabled={!required || busy !== null || disabled}
           prefix={busy === "test" ? <Spinner /> : undefined}
         >
           Test connection
         </Button>
         <Button
           onClick={() => void run("connect")}
-          disabled={!required || !tested || !cryptoConfigured || busy !== null}
+          disabled={
+            !required || !tested || !cryptoConfigured || busy !== null || disabled
+          }
           prefix={busy === "connect" ? <Spinner /> : <Plus className="h-3.5 w-3.5" />}
           title={
             !cryptoConfigured
