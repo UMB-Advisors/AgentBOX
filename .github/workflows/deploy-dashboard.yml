@@ -47,9 +47,13 @@ jobs:
           #   remote: mailbox2
           #   rdir: /home/mailbox/.hermes/hermes-agent/hermes_cli
     steps:
-      - name: Checkout main (full history — guards need merge-base/origin/main)
+      - name: Checkout LATEST main (deploy the current tip, not the triggering SHA)
+        # Jobs can sit queued (waiting for the runner) while main advances; the
+        # default checkout uses the triggering SHA, which the freshness guard then
+        # (correctly) rejects as stale. `ref: main` always deploys the newest main.
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Set up Node 22 (Vite 7 needs >=20.19/22.12)
