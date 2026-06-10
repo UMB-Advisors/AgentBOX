@@ -2592,12 +2592,24 @@ class TestClassificationsProxy:
 
         resp = self.client.get("/api/classifications")
         assert resp.status_code == 502
-        assert "unreachable" in resp.json()["error"]
+        assert "unreachable" in resp.json()["detail"]
 
     def test_non_json_upstream_surfaced_as_error(self, monkeypatch):
         # The list route does not exist on the dashboard yet → Next.js HTML 404.
         self._install_fake_httpx(monkeypatch, status=404, json_body=None)
         resp = self.client.get("/api/classifications")
         assert resp.status_code == 404
-        assert "non-JSON" in resp.json()["error"]
+        assert "non-JSON" in resp.json()["detail"]
+
+    def test_requires_session(self):
+        """GET /api/classifications without the session header must 401 —
+        the route must never land in PUBLIC_API_PATHS (auth-gated like the
+        rest of /api/*)."""
+        from starlette.testclient import TestClient
+        from hermes_cli.web_server import app
+
+        # Fresh client WITHOUT the dashboard session header.
+        unauth_client = TestClient(app)
+        resp = unauth_client.get("/api/classifications")
+        assert resp.status_code == 401
 

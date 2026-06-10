@@ -2376,16 +2376,17 @@ async def _proxy_classifications_json(
     except httpx.HTTPError as exc:
         return JSONResponse(
             status_code=502,
-            content={"error": f"mailbox-dashboard unreachable: {exc}"},
+            content={"detail": f"mailbox-dashboard unreachable: {exc}"},
         )
     try:
         payload = upstream.json()
     except ValueError:
         # Non-JSON upstream (e.g. the Next.js HTML 404 page when the list route
         # does not exist yet) — surface a clean JSON error the SPA can render.
+        status_code = 502 if upstream.status_code < 400 else upstream.status_code
         return JSONResponse(
-            status_code=upstream.status_code if upstream.status_code >= 400 else 502,
-            content={"error": f"upstream returned non-JSON ({upstream.status_code})"},
+            status_code=status_code,
+            content={"detail": f"upstream returned non-JSON ({upstream.status_code})"},
         )
     return JSONResponse(status_code=upstream.status_code, content=payload)
 
