@@ -81,6 +81,7 @@ import SettingsVipPage from "@/pages/SettingsVipPage";
 import SettingsClassificationsPage from "@/pages/SettingsClassificationsPage";
 import SettingsPersonaPage from "@/pages/SettingsPersonaPage";
 import SettingsTuningPage from "@/pages/SettingsTuningPage";
+import SettingsKnowledgeBasePage from "@/pages/SettingsKnowledgeBasePage";
 import OnboardingPage from "@/pages/OnboardingPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
@@ -130,6 +131,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/settings/classifications": SettingsClassificationsPage,
   "/settings/persona": SettingsPersonaPage,
   "/settings/tuning": SettingsTuningPage,
+  "/settings/knowledge-base": SettingsKnowledgeBasePage,
   "/onboarding": OnboardingPage,
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,
