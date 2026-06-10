@@ -5,10 +5,12 @@ import {
   BookOpen,
   Building2,
   Cpu,
+  Crown,
   FileText,
   KeyRound,
   Mail,
   MessageSquare,
+  Mic,
   Package,
   Plug,
   Puzzle,
@@ -16,7 +18,9 @@ import {
   Send,
   Settings,
   ShoppingBag,
+  SlidersHorizontal,
   Sparkles,
+  Tags,
   Users,
   ChevronRight,
 } from "lucide-react";
@@ -101,10 +105,34 @@ const MAILBOX_ITEMS: HubItem[] = [
 // Built-in views moved under Settings. Routes still mounted in App.tsx.
 const AGENT_ITEMS: HubItem[] = [
   { path: "/sessions", label: "Sessions", icon: MessageSquare },
+  {
+    path: "/settings/classifications",
+    label: "Classifications",
+    icon: Tags,
+    description: "Review message triage & reclassify senders",
+  },
   { path: "/profiles", label: "Profiles", icon: Users },
+  {
+    path: "/settings/persona",
+    label: "Persona voice",
+    icon: Mic,
+    description: "Tune the reply voice the drafting pipeline writes in",
+  },
+  {
+    path: "/settings/tuning",
+    label: "Drafting tuning",
+    icon: SlidersHorizontal,
+    description: "Voice style & drafting guidelines",
+  },
   { path: "/skills", label: "Skills", icon: Package },
   { path: "/models", label: "Models", icon: Cpu },
   { path: "/analytics", label: "Analytics", icon: BarChart3 },
+  {
+    path: "/settings/vip",
+    label: "VIP senders",
+    icon: Crown,
+    description: "Always flag email from key people or domains as urgent",
+  },
 ];
 
 const SYSTEM_ITEMS: HubItem[] = [
