@@ -343,14 +343,21 @@ class GbrainClient:
     # ------------------------------------------------------------------
 
     def recall(self, query: str, *, limit: int = 5,
-               timeout: Optional[float] = None) -> Any:
-        """Semantic recall via the server-exposed ``query`` op."""
+               timeout: Optional[float] = None,
+               cli_fallback: Optional[bool] = None) -> Any:
+        """Semantic recall via the server-exposed ``query`` op.
+
+        ``cli_fallback=False`` disables the subprocess fallback for this
+        call — hot-path callers (prefetch) must never spawn the CLI;
+        explicit tool calls keep the client-level default.
+        """
+        allow_cli = self._cli_fallback if cli_fallback is None else cli_fallback
         try:
             return self.call_tool(
                 "query", {"query": query, "limit": int(limit)}, timeout=timeout
             )
         except GbrainRefusedError:
-            if not self._cli_fallback:
+            if not allow_cli:
                 raise
             logger.debug("gbrain server refused 'query' — CLI fallback")
             return self._run_cli(["query", query, "--json"])

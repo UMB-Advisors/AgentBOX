@@ -399,21 +399,40 @@ class GbrainMemoryProvider(MemoryProvider):
     # -- recall (prefetch) ----------------------------------------------------
 
     def _recall_text(self, query: str) -> str:
-        """One recall round-trip, formatted, sanitized, budget-truncated."""
+        """One recall round-trip, formatted, sanitized, budget-truncated.
+
+        CLI fallback is disabled: this runs on (or just off) the turn's
+        hot path, where spawning the bun CLI is never acceptable.
+        """
         payload = self._client.recall(
-            query, limit=self._recall_limit, timeout=PREFETCH_TIMEOUT
+            query, limit=self._recall_limit, timeout=PREFETCH_TIMEOUT,
+            cli_fallback=False,
         )
         text = _format_recall_results(payload)
         text = _FENCE_RE.sub("", text).strip()
         return _truncate_word_safe(text, self._context_chars)
 
+    def _warm_cache(self, query: str, key: str) -> None:
+        """Worker-thread body: recall and deposit into the prefetch cache."""
+        try:
+            result = self._recall_text(query)
+        except Exception as e:
+            logger.debug("gbrain recall warmup failed: %s", e)
+            return
+        if result:
+            with self._prefetch_lock:
+                self._prefetch_cache[key] = (result, time.monotonic())
+
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         """Recall context for the upcoming turn.
 
-        Serves a queued warmup result when fresh; otherwise performs one
-        bounded synchronous recall (<= 3s). Returns plain text — the
-        MemoryManager adds the <memory-context> fences. Any error or
-        timeout returns "" — recall must never break a turn.
+        Serves a queued warmup result when fresh. On a cache miss the
+        recall runs in a worker thread joined with a hard wall-clock
+        deadline (PREFETCH_TIMEOUT): token minting (OAuth discovery +
+        mint + 401 re-mint) or a slow daemon can never hold the turn,
+        and a late result is cached for the next turn instead. Returns
+        plain text — the MemoryManager adds the <memory-context> fences.
+        Any error or timeout returns "" — recall must never break a turn.
         """
         if not self._client:
             return ""
@@ -427,7 +446,24 @@ class GbrainMemoryProvider(MemoryProvider):
                 result, ts = cached
                 if result and (time.monotonic() - ts) < PREFETCH_CACHE_TTL:
                     return result
-            return self._recall_text(query)
+            # Cache miss: never recall inline — the client's socket-level
+            # timeout bounds individual ops, not wall clock.
+            worker = threading.Thread(
+                target=self._warm_cache, args=(query, key),
+                daemon=True, name="gbrain-prefetch",
+            )
+            self._prefetch_thread = worker
+            worker.start()
+            worker.join(timeout=PREFETCH_TIMEOUT)
+            if worker.is_alive():
+                logger.debug(
+                    "gbrain prefetch exceeded %.1fs; deferring result to "
+                    "next turn", PREFETCH_TIMEOUT,
+                )
+                return ""
+            with self._prefetch_lock:
+                cached = self._prefetch_cache.pop(key, None)
+            return cached[0] if cached else ""
         except Exception as e:
             logger.debug("gbrain prefetch failed: %s", e)
             return ""
@@ -439,19 +475,9 @@ class GbrainMemoryProvider(MemoryProvider):
         if self._prefetch_thread and self._prefetch_thread.is_alive():
             return
         key = session_id or self._session_id or ""
-
-        def _warm():
-            try:
-                result = self._recall_text(query)
-            except Exception as e:
-                logger.debug("gbrain queue_prefetch failed: %s", e)
-                return
-            if result:
-                with self._prefetch_lock:
-                    self._prefetch_cache[key] = (result, time.monotonic())
-
         self._prefetch_thread = threading.Thread(
-            target=_warm, daemon=True, name="gbrain-prefetch"
+            target=self._warm_cache, args=(query, key),
+            daemon=True, name="gbrain-prefetch",
         )
         self._prefetch_thread.start()
 

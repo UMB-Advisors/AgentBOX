@@ -10,6 +10,7 @@ Covers the Phase 1 plan's 5 cases:
 
 import json
 import socket
+import time
 
 import pytest
 
@@ -25,17 +26,22 @@ from plugins.memory.gbrain.client import GbrainClient
 class FakeClient:
     """Stands in for GbrainClient — records calls, returns canned data."""
 
-    def __init__(self, recall_payload="", recall_exc=None):
+    def __init__(self, recall_payload="", recall_exc=None, recall_delay=0.0):
         self.recall_payload = recall_payload
         self.recall_exc = recall_exc
+        self.recall_delay = recall_delay
         self.recall_calls = []
         self.capture_calls = []
         self.forget_calls = []
 
-    def recall(self, query, *, limit=5, timeout=None):
-        self.recall_calls.append({"query": query, "limit": limit})
+    def recall(self, query, *, limit=5, timeout=None, cli_fallback=None):
+        self.recall_calls.append(
+            {"query": query, "limit": limit, "cli_fallback": cli_fallback}
+        )
         if self.recall_exc:
             raise self.recall_exc
+        if self.recall_delay:
+            time.sleep(self.recall_delay)
         return self.recall_payload
 
     def capture(self, text, *, tags=None, slug=None, timeout=None):
@@ -143,6 +149,58 @@ def test_prefetch_empty_on_empty_or_slash_query(monkeypatch, tmp_path):
     assert p.prefetch("") == ""
     assert p.prefetch("/reset") == ""
     assert client.recall_calls == []
+
+
+def test_prefetch_wall_clock_bounded(monkeypatch, tmp_path):
+    """A slow recall (token mint, slow daemon) can't hold the turn past
+    PREFETCH_TIMEOUT — prefetch returns "" and the late result is cached
+    for the next turn."""
+    monkeypatch.setattr(gbrain_mod, "PREFETCH_TIMEOUT", 0.2)
+    client = FakeClient(recall_payload="slow result", recall_delay=0.8)
+    p = _make_provider(monkeypatch, tmp_path, client=client)
+    start = time.monotonic()
+    assert p.prefetch("needs recall", session_id="s1") == ""
+    assert time.monotonic() - start < 0.6
+    # the worker finishes off-path and deposits into the cache
+    p._prefetch_thread.join(timeout=5.0)
+    assert p.prefetch("next turn", session_id="s1") == "slow result"
+    assert len(client.recall_calls) == 1  # second prefetch was a cache hit
+
+
+def test_prefetch_never_spawns_cli(monkeypatch, tmp_path):
+    """A server refusal on the prefetch path must NOT fall back to the
+    bun CLI subprocess (kept only for explicit tool calls)."""
+    import plugins.memory.gbrain.client as client_mod
+
+    def fake_request(self, url, *, data=None, headers=None, method="POST",
+                     timeout=None):
+        return 200, {"Content-Type": "application/json"}, json.dumps({
+            "jsonrpc": "2.0", "id": 1,
+            "error": {"code": -32601, "message": "unknown_operation: query"},
+        }).encode()
+
+    cli_calls = []
+
+    class FakeProc:
+        returncode = 0
+        stdout = json.dumps({"results": [{"text": "cli result"}]})
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        cli_calls.append(cmd)
+        return FakeProc()
+
+    monkeypatch.setattr(GbrainClient, "_request", fake_request)
+    monkeypatch.setattr(client_mod.subprocess, "run", fake_run)
+    real_client = GbrainClient("http://127.0.0.1:3131", static_token="t")
+    p = _make_provider(monkeypatch, tmp_path, client=real_client)
+    assert p.prefetch("query about things") == ""
+    if p._prefetch_thread:
+        p._prefetch_thread.join(timeout=5.0)
+    p.queue_prefetch("warm me up")
+    if p._prefetch_thread:
+        p._prefetch_thread.join(timeout=5.0)
+    assert cli_calls == []  # no subprocess on either recall path
 
 
 # ---------------------------------------------------------------------------
