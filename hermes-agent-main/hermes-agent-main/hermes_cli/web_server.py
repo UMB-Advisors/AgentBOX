@@ -1947,6 +1947,105 @@ async def delete_mail_account(account_id: str):
     return JSONResponse({"removed": removed})
 
 
+# ── First-run onboarding state machine (MBOX-471 + MBOX-484) ──────────────────
+# Ports the mailbox dashboard's onboarding stage machine to hermes as a 0600 JSON
+# file store (see hermes_cli/onboarding_state.py). The wizard's email-connect step
+# records the active mailbox + advances the stage on a successful connect
+# (MBOX-484). These routes carry no secrets; unlike the mailbox wizard (which ran
+# BEFORE Caddy basic_auth) the hermes wizard runs INSIDE the authenticated
+# dashboard, so they stay session-gated and are NOT added to PUBLIC_API_PATHS.
+
+
+class OnboardingAdvanceBody(BaseModel):
+    """Strict adjacent-pair stage transition for the onboarding wizard. Mirrors
+    the mailbox ``onboardingAdvanceBodySchema`` transition contract; the wizard
+    sends the stage it believes is current as ``from_stage`` so a stale view is
+    caught (409 stale_from) rather than silently overwriting."""
+
+    # ``from`` is a Python keyword, so the wire fields are ``from_stage`` /
+    # ``to_stage`` (the frontend posts exactly that).
+    from_stage: str
+    to_stage: str
+
+    @field_validator("from_stage", "to_stage")
+    @classmethod
+    def _stage_known(cls, v: str) -> str:
+        # Validate against the known STAGES set so a malformed stage name fails
+        # with 422 here rather than surfacing as a confusing 409 downstream.
+        from hermes_cli.onboarding_state import STAGES
+
+        v = (v or "").strip()
+        if v not in STAGES:
+            raise ValueError(f"stage must be one of {sorted(STAGES)}")
+        return v
+
+
+class OnboardingActiveMailboxBody(BaseModel):
+    """Record the active/default mailbox during onboarding (MBOX-484). The
+    wizard posts this on a successful mail connect, before issuing the stage
+    ``advance``."""
+
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _email_shape(cls, v: str) -> str:
+        v = (v or "").strip()
+        if "@" not in v or " " in v or not v:
+            raise ValueError("must be a valid email")
+        return v
+
+
+@app.get("/api/onboarding/state")
+async def onboarding_state():
+    """Current onboarding stage, active mailbox, and the wizard step descriptors
+    (pure config, no secrets). Session-gated."""
+    from hermes_cli import onboarding_state as ob
+
+    loop = asyncio.get_running_loop()
+    state = await loop.run_in_executor(None, ob.get_state)
+    return JSONResponse(
+        {
+            "stage": state["stage"],
+            "active_mailbox": state["active_mailbox"],
+            "lived_at": state["lived_at"],
+            "steps": ob.steps_public(),
+            "stages": list(ob.STAGES),
+        }
+    )
+
+
+@app.post("/api/onboarding/advance")
+async def onboarding_advance(body: OnboardingAdvanceBody):
+    """Advance the onboarding stage by a strict adjacent pair. 200 on success;
+    409 ``stale_from`` if the wizard's view is stale; 409 ``invalid_transition``
+    for a non-adjacent move. Session-gated."""
+    from hermes_cli import onboarding_state as ob
+
+    loop = asyncio.get_running_loop()
+    status, result = await loop.run_in_executor(
+        None, ob.advance, body.from_stage, body.to_stage
+    )
+    return JSONResponse(result, status_code=status)
+
+
+@app.post("/api/onboarding/active-mailbox")
+async def onboarding_active_mailbox(body: OnboardingActiveMailboxBody):
+    """Record the active/default mailbox on a successful wizard connect
+    (MBOX-484). Verifies the email is a connected mail account before recording,
+    so a typo can't pin onboarding to a mailbox Hermes can't see. Session-gated."""
+    from hermes_cli import mail_accounts, onboarding_state as ob
+
+    loop = asyncio.get_running_loop()
+    accounts = await loop.run_in_executor(None, mail_accounts.list_accounts)
+    email = body.email.strip().lower()
+    known = {(a.get("email") or "").strip().lower() for a in accounts}
+    if email not in known:
+        return JSONResponse(
+            {"ok": False, "error": "not_a_connected_mailbox"}, status_code=409
+        )
+    state = await loop.run_in_executor(None, ob.record_active_mailbox, email)
+    return JSONResponse({"ok": True, "active_mailbox": state["active_mailbox"]})
 class MailAccountUpdateBody(BaseModel):
     """Registry mutation for a connected mailbox (MBOX-470). All fields optional;
     a request may relabel, set-default, or both in one PATCH. ``display_label``

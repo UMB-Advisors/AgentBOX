@@ -905,6 +905,30 @@ export const api = {
       `/api/accounts/mail/${encodeURIComponent(id)}`,
       { method: "DELETE" },
     ),
+
+  // ── First-run onboarding wizard (MBOX-471 + MBOX-484) ──────────────
+  /** Current onboarding stage, active mailbox, and the wizard step descriptors
+   * (pure config, no secrets). The wizard drives its progress indicator and
+   * stage transitions from this. */
+  getOnboardingState: () =>
+    fetchJSON<OnboardingState>("/api/onboarding/state"),
+  /** Advance the onboarding stage by a strict adjacent pair. Resolves with
+   * ``{ status, body }`` WITHOUT throwing on the 409 contract (stale_from /
+   * invalid_transition) so the wizard can surface those inline — mirrors the
+   * mailbox advance route. */
+  advanceOnboarding: (body: OnboardingAdvanceBody) =>
+    onboardingAdvanceFetch(body),
+  /** Record the active/default mailbox on a successful wizard connect
+   * (MBOX-484). The box verifies the email is a connected mail account. */
+  recordActiveMailbox: (email: string) =>
+    fetchJSON<{ ok: boolean; active_mailbox: string }>(
+      "/api/onboarding/active-mailbox",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      },
+    ),
   /** Relabel and/or set-default a connected mail account (MBOX-470 registry
    * mutation). PATCH the same file-store record the connect routes write.
    * ``display_label: null`` clears the label (falls back to the email);
@@ -920,6 +944,34 @@ export const api = {
       },
     ),
 };
+
+/** POST an onboarding stage transition and return ``{ status, body }`` WITHOUT
+ * throwing on the 409 contract. The advance route (ported from the mailbox
+ * ``/api/internal/onboarding/advance``) uses 409 as a first-class body-carrying
+ * response (``stale_from`` / ``invalid_transition``); {@link fetchJSON}'s
+ * throw-on-non-2xx would discard the body the wizard needs to react. 200 and 409
+ * both resolve with the parsed body; anything else (404/500/network) throws. */
+async function onboardingAdvanceFetch(
+  body: OnboardingAdvanceBody,
+): Promise<{ status: number; body: OnboardingAdvanceResponse }> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const token = window.__HERMES_SESSION_TOKEN__;
+  if (token) {
+    setSessionHeader(headers, token);
+  }
+  const res = await fetch(`${BASE}/api/onboarding/advance`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+  if (res.status === 200 || res.status === 409) {
+    const parsed = (await res.json()) as OnboardingAdvanceResponse;
+    return { status: res.status, body: parsed };
+  }
+  const text = await res.text().catch(() => res.statusText);
+  throw new Error(`${res.status}: ${text}`);
+}
 
 /** POST a credential-bearing mail-connect body to a session-gated route and
  * return ``{ status, body }`` WITHOUT throwing on a 422. The mail-connect
@@ -1168,6 +1220,49 @@ export interface MailAccountsResponse {
   accounts: MailAccount[];
   crypto_configured: boolean;
 }
+
+// ── First-run onboarding wizard (MBOX-471 + MBOX-484) ────────────────────────
+
+/** One wizard step descriptor from ``GET /api/onboarding/state``. ``stage`` is
+ * the persisted stage the step sits on; consecutive steps may share a stage
+ * (welcome+password, profile+network-check) — those navigate client-side with
+ * no ``advance`` call. */
+export interface OnboardingStep {
+  slug: string;
+  title: string;
+  intent: string;
+  stage: string;
+  allows_back: boolean;
+}
+
+/** Response shape for ``GET /api/onboarding/state``. */
+export interface OnboardingState {
+  stage: string;
+  active_mailbox: string | null;
+  lived_at: string | null;
+  steps: OnboardingStep[];
+  stages: string[];
+}
+
+/** Request body for ``POST /api/onboarding/advance``. ``from_stage`` is the
+ * wizard's view of the current stage (the concurrency guard); ``to_stage`` is
+ * the adjacent stage to move to. */
+export interface OnboardingAdvanceBody {
+  from_stage: string;
+  to_stage: string;
+}
+
+/** Body resolved by {@link onboardingAdvanceFetch} across 200 + 409. 200 =>
+ * ``{ ok:true, stage }``; 409 => ``{ error:'stale_from'|'invalid_transition', ... }``. */
+export type OnboardingAdvanceResponse =
+  | { ok: true; stage: string }
+  | {
+      error: "stale_from" | "invalid_transition";
+      actual?: string;
+      expected?: string;
+      from?: string;
+      to?: string;
+    };
 
 /** Daily digest payload returned by ``GET /api/digest/latest`` (Phase 3).
  *
