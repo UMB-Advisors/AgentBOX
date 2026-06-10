@@ -20,6 +20,7 @@ import imaplib
 import ipaddress
 import smtplib
 import socket
+import ssl
 import urllib.parse
 from typing import Any, Dict, Tuple
 
@@ -225,7 +226,11 @@ def _probe_imap(host: str, port: int, username: str, password: str) -> Dict[str,
         return _result(False, f"IMAP host {blocked}")
     conn = None
     try:
-        conn = imaplib.IMAP4_SSL(host, port, timeout=_TIMEOUT_S)
+        # Explicit context: without one the stdlib uses CERT_NONE and would
+        # send the operator's credentials to an unverified server.
+        conn = imaplib.IMAP4_SSL(
+            host, port, timeout=_TIMEOUT_S, ssl_context=ssl.create_default_context()
+        )
         # login() raises imaplib.error on a NO/BAD tagged response.
         conn.login(username, password)
         return _result(True, "IMAP login OK")
@@ -249,12 +254,15 @@ def _probe_smtp(host: str, port: int, username: str, password: str) -> Dict[str,
         return _result(False, f"SMTP host {blocked}")
     conn = None
     try:
+        # Explicit context: without one the stdlib uses CERT_NONE and would
+        # send the operator's credentials to an unverified server.
+        tls_ctx = ssl.create_default_context()
         if port == 465:
-            conn = smtplib.SMTP_SSL(host, port, timeout=_TIMEOUT_S)
+            conn = smtplib.SMTP_SSL(host, port, timeout=_TIMEOUT_S, context=tls_ctx)
         else:
             conn = smtplib.SMTP(host, port, timeout=_TIMEOUT_S)
             conn.ehlo()
-            conn.starttls()
+            conn.starttls(context=tls_ctx)
             conn.ehlo()
         conn.login(username, password)
         return _result(True, "SMTP login OK")
