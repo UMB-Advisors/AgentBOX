@@ -10,13 +10,16 @@ import {
   KeyRound,
   Mail,
   MessageSquare,
+  Mic,
   Package,
   Plug,
   Puzzle,
   Rocket,
   Settings,
   ShoppingBag,
+  SlidersHorizontal,
   Sparkles,
+  Tags,
   Users,
   ChevronRight,
 } from "lucide-react";
@@ -91,7 +94,25 @@ const CONNECTION_ITEMS: HubItem[] = [
 // Built-in views moved under Settings. Routes still mounted in App.tsx.
 const AGENT_ITEMS: HubItem[] = [
   { path: "/sessions", label: "Sessions", icon: MessageSquare },
+  {
+    path: "/settings/classifications",
+    label: "Classifications",
+    icon: Tags,
+    description: "Review message triage & reclassify senders",
+  },
   { path: "/profiles", label: "Profiles", icon: Users },
+  {
+    path: "/settings/persona",
+    label: "Persona voice",
+    icon: Mic,
+    description: "Tune the reply voice the drafting pipeline writes in",
+  },
+  {
+    path: "/settings/tuning",
+    label: "Drafting tuning",
+    icon: SlidersHorizontal,
+    description: "Voice style & drafting guidelines",
+  },
   { path: "/skills", label: "Skills", icon: Package },
   { path: "/models", label: "Models", icon: Cpu },
   { path: "/analytics", label: "Analytics", icon: BarChart3 },
