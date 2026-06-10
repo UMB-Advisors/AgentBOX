@@ -4,6 +4,7 @@ import {
   BarChart3,
   BookOpen,
   Building2,
+  ClipboardList,
   Cpu,
   Crown,
   FileText,
@@ -57,6 +58,12 @@ const HOME_ITEMS: HubItem[] = [
     description: "First-run setup: connect a mailbox & get triaging",
   },
   { path: "/settings/digest", label: "Daily Digest", icon: Sparkles },
+  {
+    path: "/daily-brief",
+    label: "Daily Brief",
+    icon: ClipboardList,
+    description: "Pending, urgent & oldest-waiting at a glance (MBOX-479)",
+  },
 ];
 
 // The operator's org: businesses + their departments (people live in the Team tab).
