@@ -14,6 +14,7 @@ import hmac
 import importlib.util
 import json
 import logging
+import mimetypes
 import os
 import secrets
 import stat
@@ -764,6 +765,94 @@ def _gbrain_cli_text(args: List[str], timeout: float = 30.0) -> Optional[str]:
     if proc.returncode != 0:
         return None
     return proc.stdout or None
+
+
+# ── Brain Graph generation ──────────────────────────────────────────────────
+# The static UA bundle (graph_app/) ships with the dashboard; the per-brain
+# snapshot (knowledge-graph.json) is generated on demand here via the gbrain →
+# Understand-Anything adapter (tools/gbrain-graph-export.ts). The adapter's
+# relative imports (../core/…) require it to run from inside the gbrain source
+# tree, so we self-install it into $GBRAIN_DIR/src/tools/ before running.
+# Generation runs in a background thread (PGLite + bun is seconds-to-minutes);
+# the GraphPage UI polls /api/graph/status.
+_GRAPH_GEN_LOCK = threading.Lock()
+_GRAPH_GEN: Dict[str, Any] = {
+    "busy": False,
+    "started_at": 0.0,
+    "finished_at": 0.0,
+    "ok": None,       # Optional[bool] — None until the first run finishes
+    "error": None,    # Optional[str]  — last failure message, surfaced to the UI
+    "summary": None,  # Optional[str]  — adapter's stderr summary line
+}
+
+# Canonical adapter shipped in the hermes tree (parent of hermes_cli/). Copied
+# into the gbrain source tree at generate time.
+_GRAPH_ADAPTER_SRC = Path(__file__).resolve().parent.parent / "tools" / "gbrain-graph-export.ts"
+
+
+def _run_graph_export() -> None:
+    """Generate ``knowledge-graph.json`` into ``GRAPH_APP_DIST`` via the adapter.
+
+    Background-thread worker. Resolves bun + the gbrain checkout the same way as
+    the digest helpers, self-installs the adapter into the gbrain source tree
+    (its relative imports require that location), runs it, and records the
+    outcome in ``_GRAPH_GEN`` for ``/api/graph/status``. Never raises.
+    """
+    bun = os.environ.get("GBRAIN_BUN") or str(Path.home() / ".bun" / "bin" / "bun")
+    gbrain_dir = Path(os.environ.get("GBRAIN_DIR") or (Path.home() / "gbrain-src"))
+    out_path = GRAPH_APP_DIST / "knowledge-graph.json"
+    error: Optional[str] = None
+    summary: Optional[str] = None
+    ok = False
+    try:
+        if not Path(bun).exists():
+            raise FileNotFoundError(f"bun not found at {bun} (set GBRAIN_BUN)")
+        if not gbrain_dir.is_dir():
+            raise FileNotFoundError(f"gbrain source dir not found at {gbrain_dir} (set GBRAIN_DIR)")
+        # The adapter must execute from inside the gbrain source tree (relative
+        # imports). Install/refresh it there from the shipped copy.
+        adapter = gbrain_dir / "src" / "tools" / "gbrain-graph-export.ts"
+        if _GRAPH_ADAPTER_SRC.is_file():
+            adapter.parent.mkdir(parents=True, exist_ok=True)
+            if (not adapter.is_file()) or adapter.read_bytes() != _GRAPH_ADAPTER_SRC.read_bytes():
+                adapter.write_bytes(_GRAPH_ADAPTER_SRC.read_bytes())
+        if not adapter.is_file():
+            raise FileNotFoundError(
+                f"gbrain graph adapter missing at {adapter} and no shipped copy at "
+                f"{_GRAPH_ADAPTER_SRC} — deploy tools/gbrain-graph-export.ts"
+            )
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        proc = subprocess.run(
+            [bun, "run", str(adapter), "--out", str(out_path)],
+            cwd=str(gbrain_dir),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        # The adapter prints its result summary ("pages=N … → path") to stderr.
+        tail = [ln for ln in (proc.stderr or "").strip().splitlines() if ln.strip()]
+        summary = next(
+            (ln for ln in reversed(tail) if "gbrain-graph-export:" in ln),
+            (tail[-1] if tail else None),
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(summary or f"adapter exited {proc.returncode}")
+        if not out_path.is_file():
+            raise RuntimeError("adapter finished but wrote no knowledge-graph.json")
+        ok = True
+    except subprocess.TimeoutExpired:
+        error = "graph export timed out (gbrain busy? PGLite lock held by `gbrain serve`)"
+    except Exception as exc:  # noqa: BLE001 — any failure is surfaced to the UI
+        error = str(exc)
+    finally:
+        with _GRAPH_GEN_LOCK:
+            _GRAPH_GEN.update(
+                busy=False,
+                finished_at=time.time(),
+                ok=ok,
+                error=error,
+                summary=summary,
+            )
 
 
 def _gbrain_query_highlights(prompt: str, limit: int = 5) -> List[str]:
@@ -6034,56 +6123,99 @@ def mount_spa(application: FastAPI):
     application.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
 
     # Brain Graph: serve the static UA bundle + gbrain snapshot same-origin under
-    # /graph-app/. Registered BEFORE the SPA catch-all below so /{full_path}
-    # doesn't swallow it. html=True makes /graph-app/ resolve to index.html and
-    # /graph-app/knowledge-graph.json serve the snapshot. Not gated by the /api
-    # auth middleware (same as the SPA + the /dashboard inbox proxy); the edge
-    # (Caddy basic-auth) already fronts the whole origin.
-    if GRAPH_APP_DIST.is_dir() and (GRAPH_APP_DIST / "index.html").is_file():
-        # The graph snapshot is MUTABLE (regenerated as the brain changes), but
-        # StaticFiles sends no Cache-Control, so browsers heuristically cache it
-        # and keep showing a stale graph across refreshes — e.g. an old export
-        # with no `layers`, which the UA dashboard renders as a blank canvas.
-        # Serve this one file with `no-cache` so every load revalidates. Must be
-        # registered BEFORE the mount below so it wins for this exact path.
-        _graph_snapshot = GRAPH_APP_DIST / "knowledge-graph.json"
+    # /graph-app/. Served DYNAMICALLY (per-request) rather than via a startup
+    # StaticFiles mount, so a graph generated at runtime (POST /api/graph/generate)
+    # is visible WITHOUT a dashboard restart — the old mount was gated on
+    # index.html existing at startup, which froze the placeholder until restart.
+    # Registered BEFORE the SPA catch-all so /{full_path} doesn't swallow it. Not
+    # gated by the /api auth middleware (same as the SPA + the /dashboard inbox
+    # proxy); the edge (Caddy basic-auth) already fronts the whole origin.
+    _graph_snapshot = GRAPH_APP_DIST / "knowledge-graph.json"
+    _graph_placeholder = (
+        "<!doctype html><meta charset=utf-8>"
+        "<title>Brain Graph</title>"
+        "<style>html,body{height:100%;margin:0;background:#0a0a0a;color:#9aa0a6;"
+        "font:14px/1.6 ui-monospace,monospace;display:flex;align-items:center;"
+        "justify-content:center;text-align:center}div{max-width:32rem;padding:2rem}"
+        "code{color:#cdd2d6}</style>"
+        "<div><h2>Brain Graph not generated yet</h2>"
+        "<p>Use the <b>Generate Brain Graph</b> button in the dashboard, or run the "
+        "gbrain&nbsp;&rarr;&nbsp;Understand-Anything export on the gbrain host and drop "
+        "the bundle into <code>graph_app/</code> (or set "
+        "<code>HERMES_GRAPH_APP_DIST</code>).</p>"
+        "<p>See <code>docs/brain-graph-tab-prd.v0.1.0.md</code>.</p></div>"
+    )
 
-        @application.get("/graph-app/knowledge-graph.json")
-        async def graph_snapshot():
-            if not _graph_snapshot.is_file():
-                return JSONResponse({"error": "no graph snapshot yet"}, status_code=404)
-            return Response(
-                content=_graph_snapshot.read_bytes(),
-                media_type="application/json",
-                headers={"Cache-Control": "no-cache"},
-            )
-
-        application.mount(
-            "/graph-app",
-            StaticFiles(directory=GRAPH_APP_DIST, html=True),
-            name="graph-app",
+    @application.get("/graph-app/knowledge-graph.json")
+    async def graph_snapshot():
+        # MUTABLE snapshot (regenerated as the brain changes). StaticFiles sends
+        # no Cache-Control, so browsers heuristically cache it and keep showing a
+        # stale graph; serve with `no-cache` so every load revalidates.
+        if not _graph_snapshot.is_file():
+            return JSONResponse({"error": "no graph snapshot yet"}, status_code=404)
+        return Response(
+            content=_graph_snapshot.read_bytes(),
+            media_type="application/json",
+            headers={"Cache-Control": "no-cache"},
         )
-    else:
-        # Bundle not generated yet — return a friendly placeholder so the iframe
+
+    @application.get("/graph-app")
+    @application.get("/graph-app/{sub:path}")
+    async def graph_app_files(sub: str = ""):
+        # Bundle not generated/shipped yet → friendly placeholder so the iframe
         # shows guidance instead of a blank page or the SPA catch-all.
-        _graph_placeholder = (
-            "<!doctype html><meta charset=utf-8>"
-            "<title>Brain Graph</title>"
-            "<style>html,body{height:100%;margin:0;background:#0a0a0a;color:#9aa0a6;"
-            "font:14px/1.6 ui-monospace,monospace;display:flex;align-items:center;"
-            "justify-content:center;text-align:center}div{max-width:32rem;padding:2rem}"
-            "code{color:#cdd2d6}</style>"
-            "<div><h2>Brain Graph not generated yet</h2>"
-            "<p>Run the gbrain&nbsp;&rarr;&nbsp;Understand-Anything export on the gbrain host, "
-            "then drop the bundle into <code>graph_app/</code> "
-            "(or set <code>HERMES_GRAPH_APP_DIST</code>).</p>"
-            "<p>See <code>docs/brain-graph-tab-prd.v0.1.0.md</code>.</p></div>"
+        if not (GRAPH_APP_DIST / "index.html").is_file():
+            return HTMLResponse(_graph_placeholder)
+        # Resolve the requested asset under the bundle dir; guard traversal.
+        # html=True-style SPA fallback: extension-less routes → index.html,
+        # genuinely missing assets → 404 (so a wrong-mime HTML isn't served as JS).
+        root = GRAPH_APP_DIST.resolve()
+        target = (GRAPH_APP_DIST / (sub or "index.html")).resolve()
+        if not target.is_relative_to(root):
+            return HTMLResponse(_graph_placeholder, status_code=404)
+        if not target.is_file():
+            if Path(sub).suffix:
+                return Response(status_code=404)
+            target = root / "index.html"
+        media_type, _ = mimetypes.guess_type(str(target))
+        return Response(
+            content=target.read_bytes(),
+            media_type=media_type or "application/octet-stream",
         )
 
-        @application.get("/graph-app")
-        @application.get("/graph-app/{_sub:path}")
-        async def graph_app_placeholder(_sub: str = ""):
-            return HTMLResponse(_graph_placeholder)
+    # Brain Graph generation API (used by GraphPage's "Generate Brain Graph"
+    # button). /status reports bundle + snapshot readiness and the last run's
+    # outcome; /generate kicks off the gbrain → UA adapter in a background thread.
+    @application.get("/api/graph/status")
+    async def graph_status():
+        with _GRAPH_GEN_LOCK:
+            state = dict(_GRAPH_GEN)
+        info: Dict[str, Any] = {
+            "bundleReady": (GRAPH_APP_DIST / "index.html").is_file(),
+            "snapshotReady": _graph_snapshot.is_file(),
+            "generating": bool(state["busy"]),
+            "lastOk": state["ok"],
+            "error": state["error"],
+            "summary": state["summary"],
+        }
+        if _graph_snapshot.is_file():
+            try:
+                data = json.loads(_graph_snapshot.read_text())
+                info["nodes"] = len(data.get("nodes", []))
+                info["edges"] = len(data.get("edges", []))
+                info["generatedAt"] = (data.get("project") or {}).get("analyzedAt")
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+        return JSONResponse(info)
+
+    @application.post("/api/graph/generate")
+    async def graph_generate():
+        with _GRAPH_GEN_LOCK:
+            if _GRAPH_GEN["busy"]:
+                return JSONResponse({"started": False, "busy": True}, status_code=202)
+            _GRAPH_GEN.update(busy=True, started_at=time.time(), error=None, summary=None)
+        threading.Thread(target=_run_graph_export, name="graph-export", daemon=True).start()
+        return JSONResponse({"started": True, "busy": True}, status_code=202)
 
     @application.get("/{full_path:path}")
     async def serve_spa(full_path: str, request: Request):
