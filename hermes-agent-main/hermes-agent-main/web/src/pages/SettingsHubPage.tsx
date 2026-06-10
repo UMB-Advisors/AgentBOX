@@ -9,6 +9,7 @@ import {
   KeyRound,
   Mail,
   MessageSquare,
+  Mic,
   Package,
   Plug,
   Puzzle,
@@ -91,6 +92,12 @@ const CONNECTION_ITEMS: HubItem[] = [
 const AGENT_ITEMS: HubItem[] = [
   { path: "/sessions", label: "Sessions", icon: MessageSquare },
   { path: "/profiles", label: "Profiles", icon: Users },
+  {
+    path: "/settings/persona",
+    label: "Persona voice",
+    icon: Mic,
+    description: "Tune the reply voice the drafting pipeline writes in",
+  },
   { path: "/skills", label: "Skills", icon: Package },
   { path: "/models", label: "Models", icon: Cpu },
   { path: "/analytics", label: "Analytics", icon: BarChart3 },
