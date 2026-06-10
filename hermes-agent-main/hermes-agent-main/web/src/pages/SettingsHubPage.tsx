@@ -13,6 +13,7 @@ import {
   Plug,
   Puzzle,
   Rocket,
+  Send,
   Settings,
   ShoppingBag,
   Sparkles,
@@ -84,6 +85,16 @@ const CONNECTION_ITEMS: HubItem[] = [
     label: "Model providers",
     icon: Plug,
     description: "Sign in to OpenAI, Anthropic, Nous & more",
+  },
+];
+
+// Mailbox pipeline settings ported from the mailbox-dashboard (MBOX-469).
+const MAILBOX_ITEMS: HubItem[] = [
+  {
+    path: "/settings/auto-send",
+    label: "Auto-send rules",
+    icon: Send,
+    description: "Gate which drafts send without manual approval",
   },
 ];
 
@@ -169,6 +180,7 @@ export default function SettingsHubPage() {
       <div className="flex flex-col gap-4">
         <HubGroup title="Home" items={HOME_ITEMS} />
         <HubGroup title="Connections" items={CONNECTION_ITEMS} />
+        <HubGroup title="Mailbox" items={MAILBOX_ITEMS} />
         <HubGroup title="Organization" items={ORG_ITEMS} />
         <HubGroup title="Agent" items={AGENT_ITEMS} />
         <HubGroup title="System" items={SYSTEM_ITEMS} />
