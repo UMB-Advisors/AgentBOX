@@ -782,6 +782,29 @@ export const api = {
       { method: "POST" },
     ),
 
+  // ── VIP senders (MBOX-474 — mailbox-dashboard /dashboard/api/vip-senders) ──
+  // Drive the urgency engine's 'vip' signal. These proxy through the same
+  // /dashboard/* reverse proxy as the inbox routes to the on-box
+  // mailbox-dashboard, which owns the mailbox.vip_senders table the pipeline
+  // reads — there is no hermes-side copy of the list.
+
+  /** List VIP senders (newest first). */
+  listVipSenders: () =>
+    fetchJSON<VipSendersResponse>("/dashboard/api/vip-senders"),
+  /** Idempotent upsert of a VIP sender on (email_or_domain, kind). */
+  addVipSender: (body: VipSenderCreateBody) =>
+    fetchJSON<VipSenderCreated>("/dashboard/api/vip-senders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  /** Remove a VIP sender by id (the source maps an unknown id to 404). */
+  removeVipSender: (id: number) =>
+    fetchJSON<{ deleted: boolean; id: number }>(
+      `/dashboard/api/vip-senders/${encodeURIComponent(String(id))}`,
+      { method: "DELETE" },
+    ),
+
   // ── Google accounts (multi-account connect) ────────────────────────────
   /** List connected Google accounts + whether an OAuth client is installed
    * on the box. ``client_configured === false`` means the operator hasn't
@@ -1088,6 +1111,40 @@ export interface ShopifyAccount {
 export interface ShopifyAccountsResponse {
   client_configured: boolean;
   accounts: ShopifyAccount[];
+}
+
+/** VIP-sender match kind (MBOX-474). Mirrors the mailbox-dashboard
+ * ``VIP_SENDER_KINDS`` — exact email or whole domain, no regex. */
+export type VipSenderKind = "email" | "domain";
+
+/** A VIP sender row as returned by the mailbox-dashboard
+ * ``GET /api/vip-senders`` (proxied at ``/dashboard/api/vip-senders``). */
+export interface VipSender {
+  id: number;
+  email_or_domain: string;
+  kind: VipSenderKind;
+  added_at: string;
+  added_by: string | null;
+  note: string | null;
+}
+
+/** Response shape for ``GET /dashboard/api/vip-senders``. */
+export interface VipSendersResponse {
+  senders: VipSender[];
+}
+
+/** Request body for ``POST /dashboard/api/vip-senders``. ``email_or_domain``
+ * is lowercased + validated server-side; ``kind`` must match the value shape
+ * (email vs bare domain). */
+export interface VipSenderCreateBody {
+  email_or_domain: string;
+  kind: VipSenderKind;
+  note?: string;
+}
+
+/** Response shape for ``POST /dashboard/api/vip-senders`` (idempotent upsert). */
+export interface VipSenderCreated {
+  sender: VipSender;
 }
 
 // ── Mail accounts (Microsoft 365 + IMAP, MBOX-468) ──────────────────────────

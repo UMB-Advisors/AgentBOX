@@ -5,6 +5,7 @@ import {
   BookOpen,
   Building2,
   Cpu,
+  Crown,
   FileText,
   KeyRound,
   Mail,
@@ -94,6 +95,12 @@ const AGENT_ITEMS: HubItem[] = [
   { path: "/skills", label: "Skills", icon: Package },
   { path: "/models", label: "Models", icon: Cpu },
   { path: "/analytics", label: "Analytics", icon: BarChart3 },
+  {
+    path: "/settings/vip",
+    label: "VIP senders",
+    icon: Crown,
+    description: "Always flag email from key people or domains as urgent",
+  },
 ];
 
 const SYSTEM_ITEMS: HubItem[] = [
