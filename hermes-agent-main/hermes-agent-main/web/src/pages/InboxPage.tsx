@@ -24,6 +24,7 @@ import type {
   ActionItem,
   DraftRow,
   InboxCategory,
+  InboxCooldownState,
   InboxDraftStatus,
   InboxRejectReasonCode,
   ThreadHistoryMessage,
@@ -38,6 +39,7 @@ import { SenderHistoryPanel } from "@/components/inbox/SenderHistoryPanel";
 import { CrossAccountPanel } from "@/components/inbox/CrossAccountPanel";
 import { ClassificationOverride } from "@/components/inbox/ClassificationOverride";
 import { RedraftPanel } from "@/components/inbox/RedraftPanel";
+import { GmailCooldownBanner } from "@/components/inbox/GmailCooldownBanner";
 
 // ── Static config ───────────────────────────────────────────────────────
 
@@ -151,6 +153,10 @@ export default function InboxPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // System-wide Gmail rate-limit cooldown (MBOX-481). Null until the first
+  // poll resolves; the banner self-hides unless ``is_active``.
+  const [cooldown, setCooldown] = useState<InboxCooldownState | null>(null);
+
   // Selection
   const [selectedDraftId, setSelectedDraftId] = useState<number | null>(null);
 
@@ -217,6 +223,30 @@ export default function InboxPage() {
     loadDrafts();
   }, [loadDrafts]);
 
+  // Poll the system-wide Gmail cooldown. Read-only; a 429 anywhere flips the
+  // gate, so refresh on an interval rather than only on draft mutation. On
+  // error keep the last known state (a transient proxy blip shouldn't dismiss
+  // an active warning).
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      api
+        .inboxGmailCooldown()
+        .then((c) => {
+          if (!cancelled) setCooldown(c);
+        })
+        .catch(() => {
+          /* keep prior state */
+        });
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
   // Channel filter is scaffolded from the distinct channels actually present
   // (today: just ``email``). Inert single-option until Phase 2 adds channels.
   const channelOptions = useMemo(() => {
@@ -259,6 +289,9 @@ export default function InboxPage() {
   return (
     <div className="flex h-[calc(100dvh-7rem)] flex-col gap-4">
       <Toast toast={toast} />
+
+      {/* System-wide Gmail rate-limit cooldown warning (self-hides). */}
+      <GmailCooldownBanner cooldown={cooldown} />
 
       {/* Filter bar */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
