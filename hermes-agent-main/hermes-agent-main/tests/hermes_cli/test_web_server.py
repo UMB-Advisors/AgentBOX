@@ -330,6 +330,98 @@ class TestWebServerEndpoints:
         resp = self.client.get("/api/dashboard/plugins/rescan")
         assert resp.status_code == 200
 
+    def test_dashboard_api_proxy_requires_session(self, monkeypatch):
+        """Proxied ``/dashboard/api/*`` must session-gate like ``/api/*``.
+
+        Unauthenticated → 401 (never reaches upstream). Authenticated →
+        proxied to the upstream and the upstream response is streamed back.
+        """
+        import httpx
+        from starlette.testclient import TestClient
+        from hermes_cli.web_server import app
+
+        sent: list[str] = []
+
+        class _FakeResponse:
+            status_code = 200
+            headers = {"content-type": "application/json"}
+
+            async def aiter_raw(self):
+                yield b'{"ok": true}'
+
+            async def aclose(self):
+                return None
+
+        class _FakeClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            def build_request(self, method, url, **kw):
+                return ("req", method, url)
+
+            async def send(self, req, stream=False):
+                sent.append(req[2])  # upstream url
+                return _FakeResponse()
+
+            async def aclose(self):
+                return None
+
+        monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+
+        # Unauthenticated: blocked before any upstream call.
+        unauth_client = TestClient(app)
+        resp = unauth_client.get("/dashboard/api/auto-send-rules")
+        assert resp.status_code == 401
+        assert sent == []  # upstream never contacted
+
+        # Authenticated: proxied through to the upstream.
+        resp = self.client.get("/dashboard/api/auto-send-rules")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        assert sent == [
+            "http://127.0.0.1:3001/dashboard/api/auto-send-rules",
+        ]
+
+    def test_dashboard_non_api_proxy_passthrough(self, monkeypatch):
+        """Non-API ``/dashboard/*`` paths stay passthrough (no 401).
+
+        HTML pages and assets must load without the session token so direct
+        page loads keep working.
+        """
+        import httpx
+        from starlette.testclient import TestClient
+        from hermes_cli.web_server import app
+
+        class _FakeResponse:
+            status_code = 200
+            headers = {"content-type": "text/html"}
+
+            async def aiter_raw(self):
+                yield b"<html>dashboard</html>"
+
+            async def aclose(self):
+                return None
+
+        class _FakeClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            def build_request(self, method, url, **kw):
+                return ("req", method, url)
+
+            async def send(self, req, stream=False):
+                return _FakeResponse()
+
+            async def aclose(self):
+                return None
+
+        monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+
+        unauth_client = TestClient(app)
+        resp = unauth_client.get("/dashboard/inbox")
+        assert resp.status_code == 200
+        assert b"dashboard" in resp.content
+
     def test_path_traversal_blocked(self):
         """Verify URL-encoded path traversal is blocked."""
         # %2e%2e = ..

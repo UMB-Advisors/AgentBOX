@@ -35,7 +35,10 @@ declare global {
 let _sessionToken: string | null = null;
 const SESSION_HEADER = "X-Hermes-Session-Token";
 
-function setSessionHeader(headers: Headers, token: string): void {
+/** Attach the dashboard session token header (idempotent). Shared so non-JSON
+ * clients (e.g. the CRM client, which handles its own responses) gate their
+ * proxied ``/dashboard/api/*`` requests with the same header. */
+export function setSessionHeader(headers: Headers, token: string): void {
   if (!headers.has(SESSION_HEADER)) {
     headers.set(SESSION_HEADER, token);
   }
@@ -812,6 +815,44 @@ export const api = {
     fetchJSON<{ success?: boolean; [k: string]: unknown }>(
       `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/clear-send-attempt`,
       { method: "POST" },
+    ),
+
+  // ── Auto-send rules (MBOX-477) ─────────────────────────────────────────
+  // SAFETY SURFACE: these gate what the mailbox Postgres pipeline sends WITHOUT
+  // human approval. They proxy the on-box mailbox-dashboard's CRUD API
+  // (``/dashboard/api/auto-send-rules[/:id]``) through the SAME reverse-proxy
+  // the Unified Inbox rides — so the rules edited here are byte-for-byte the
+  // rows the draft-finalize evaluator (lib/auto-send/rules.ts) enforces. A
+  // disconnected copy would silently disable the safety behaviour; do NOT add
+  // a parallel data path. The mailbox route owns the zod validation (recipient
+  // filters, time window, confidence floor); the UI only shapes the form body.
+
+  /** List all auto-send rules in (priority asc, id asc) order. */
+  autoSendListRules: () =>
+    fetchJSON<{ rules: AutoSendRule[] }>("/dashboard/api/auto-send-rules"),
+  /** Create a rule. Body is the mailbox schema surface (time window as
+   * ``active_from``/``active_to`` "HH:MM"; blank conditions => null = any). */
+  autoSendCreateRule: (body: AutoSendRuleBody) =>
+    fetchJSON<{ rule: AutoSendRule }>("/dashboard/api/auto-send-rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  /** Partial update (PATCH). Explicit ``null`` on a condition clears it. */
+  autoSendUpdateRule: (id: number, body: AutoSendRuleBody) =>
+    fetchJSON<{ rule: AutoSendRule }>(
+      `/dashboard/api/auto-send-rules/${encodeURIComponent(String(id))}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  /** Delete a rule by id (404 if missing). */
+  autoSendDeleteRule: (id: number) =>
+    fetchJSON<{ deleted: boolean }>(
+      `/dashboard/api/auto-send-rules/${encodeURIComponent(String(id))}`,
+      { method: "DELETE" },
     ),
 
   // ── VIP senders (MBOX-474 — mailbox-dashboard /dashboard/api/vip-senders) ──
@@ -2416,6 +2457,52 @@ export const INBOX_CATEGORIES = [
   "unknown",
 ] as const;
 export type InboxCategory = (typeof INBOX_CATEGORIES)[number];
+
+// ── Auto-send rules (MBOX-477) ───────────────────────────────────────────────
+// Mirrors the mailbox-dashboard contract (lib/types.ts AutoSendRule + the zod
+// surface in lib/schemas/auto-send.ts). The mailbox API is the source of truth;
+// these types only describe the wire shapes the proxy passes through.
+
+/** The action a matched rule declares. ``auto_send`` sends without operator
+ * approval (still subject to the hard confidence + cooldown guardrails);
+ * ``queue`` leaves the draft for manual review; ``drop`` rejects it. */
+export const AUTO_SEND_ACTIONS = ["auto_send", "queue", "drop"] as const;
+export type AutoSendAction = (typeof AUTO_SEND_ACTIONS)[number];
+
+/** One auto-send rule row as the mailbox CRUD API returns it. ``min_confidence``
+ * is a string because pg returns NUMERIC as a string; the time window is stored
+ * as minutes-from-midnight (the UI round-trips to "HH:MM"). */
+export interface AutoSendRule {
+  id: number;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  action: AutoSendAction;
+  category: string | null;
+  sender_domain: string | null;
+  min_confidence: string | null;
+  active_from_min: number | null;
+  active_to_min: number | null;
+  shadow_until: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+/** Create/update body. Conditions accept ``null`` (= match any / clear). The
+ * time window is "HH:MM" strings, all-or-nothing (the mailbox schema enforces
+ * both-or-neither and rejects equal endpoints). */
+export interface AutoSendRuleBody {
+  name?: string;
+  enabled?: boolean;
+  priority?: number;
+  action?: AutoSendAction;
+  category?: string | null;
+  sender_domain?: string | null;
+  min_confidence?: number | null;
+  active_from?: string | null;
+  active_to?: string | null;
+}
 
 export interface EmailSourceRef {
   source: "email";
