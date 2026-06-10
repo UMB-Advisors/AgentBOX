@@ -76,6 +76,7 @@ import DigestSettingsPage from "@/pages/DigestSettingsPage";
 import SettingsGooglePage from "@/pages/SettingsGooglePage";
 import SettingsShopifyPage from "@/pages/SettingsShopifyPage";
 import SettingsMailPage from "@/pages/SettingsMailPage";
+import SettingsPersonaPage from "@/pages/SettingsPersonaPage";
 import SettingsTuningPage from "@/pages/SettingsTuningPage";
 import OnboardingPage from "@/pages/OnboardingPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -121,6 +122,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/settings/google": SettingsGooglePage,
   "/settings/shopify": SettingsShopifyPage,
   "/settings/mail": SettingsMailPage,
+  "/settings/persona": SettingsPersonaPage,
   "/settings/tuning": SettingsTuningPage,
   "/onboarding": OnboardingPage,
   "/sessions": SessionsPage,

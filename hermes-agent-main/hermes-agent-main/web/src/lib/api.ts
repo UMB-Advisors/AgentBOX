@@ -709,6 +709,38 @@ export const api = {
   inboxListAccounts: () =>
     fetchJSON<InboxAccountsResponse>("/dashboard/api/accounts"),
 
+  // ── Persona voice tuning (MBOX-476) ────────────────────────────────────
+  // The persona row is the voice fingerprint the mailbox drafting pipeline
+  // reads (statistical_markers + category_exemplars, JSONB in mailbox
+  // Postgres). hermes_cli has NO Postgres driver by decision, so these — like
+  // the inbox bindings above — call the on-box mailbox-dashboard REST API
+  // (basePath ``/dashboard``) through the SAME ``/dashboard/{path}`` proxy.
+  // Default account only; per-account voice ("Learn voice") is triggered from
+  // the accounts registry (MBOX-470/MBOX-373), not here.
+
+  /** Read the default account's persona (voice config). ``persona`` is null
+   * until the first save/refresh creates the row. */
+  personaGet: () => fetchJSON<PersonaResponse>("/dashboard/api/persona"),
+  /** Manual override — replace ``statistical_markers`` + ``category_exemplars``
+   * verbatim (the operator-edited JSON). ``source_email_count`` is preserved
+   * server-side from the current row. */
+  personaSave: (body: {
+    statistical_markers: Record<string, unknown>;
+    category_exemplars: Record<string, unknown>;
+  }) =>
+    fetchJSON<PersonaResponse>("/dashboard/api/persona", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  /** Re-extract the voice from ``sent_history`` (on-appliance; no cloud).
+   * 409 if the inbox has no sent rows yet. Returns the new persona + the row
+   * count it learned from. */
+  personaRefresh: () =>
+    fetchJSON<PersonaRefreshResponse>("/dashboard/api/persona/refresh", {
+      method: "POST",
+    }),
+
   // ── Review-panel data (mailbox-dashboard /dashboard/api/drafts/[id]/*) ──
 
   /** Replace the full action-items array (the route does a whole-array replace). */
@@ -962,7 +994,7 @@ export const api = {
    * account only — the mailbox persona GET is not account-scoped; per-account
    * style seeding is a documented follow-up gap). */
   tuningGetPersona: () =>
-    fetchJSON<PersonaResponse>("/dashboard/api/persona"),
+    fetchJSON<TuningPersonaSeedResponse>("/dashboard/api/persona"),
 
   /** Save the voice-style knobs. The route MERGES the marker subset into the
    * persona (preserving extraction markers + exemplars) and echoes the resolved
@@ -2461,7 +2493,7 @@ export interface TuningStyleResponse {
 /** A row from ``GET /dashboard/api/persona`` — used only to seed the Style tab
  * (``statistical_markers`` → ``markersToStyle``). The persona surface itself is
  * owned by MBOX-476; this read is the Style-seed dependency only. */
-export interface PersonaResponse {
+export interface TuningPersonaSeedResponse {
   persona: {
     statistical_markers?: Record<string, unknown> | null;
     [key: string]: unknown;
@@ -2537,4 +2569,38 @@ export interface InboxSnoozeResult {
   success: boolean;
   id: number;
   snooze_until: string;
+}
+
+// ── Persona voice tuning (MBOX-476) ──────────────────────────────────────
+// Shapes for the mailbox ``persona`` row surfaced through the proxy. The two
+// JSONB columns are the application contract for the drafting pipeline's voice;
+// they carry arbitrary operator-edited keys, so they stay ``Record`` here and
+// the page edits them as raw JSON (same as the mailbox surface).
+
+/** The mailbox ``persona`` row — the voice fingerprint the drafting pipeline
+ * reads. ``statistical_markers`` holds the voice profile (sentence length,
+ * sign-offs, tone, reject-feedback signals); ``category_exemplars`` holds the
+ * per-route few-shot pairs. Both are JSONB — untyped here by design. */
+export interface PersonaRow {
+  id: number;
+  customer_key: string;
+  statistical_markers: Record<string, unknown>;
+  category_exemplars: Record<string, unknown>;
+  source_email_count: number;
+  last_refreshed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET/PUT ``/dashboard/api/persona`` — ``persona`` is null when no row exists
+ * yet (first save/refresh creates it). */
+export interface PersonaResponse {
+  persona: PersonaRow | null;
+}
+
+/** POST ``/dashboard/api/persona/refresh`` — the re-extracted persona plus how
+ * many ``sent_history`` rows it learned from. */
+export interface PersonaRefreshResponse {
+  persona: PersonaRow;
+  source_email_count: number;
 }
