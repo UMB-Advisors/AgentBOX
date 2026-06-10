@@ -57,7 +57,10 @@ export default function SettingsVipPage() {
   const [value, setValue] = useState("");
   const [note, setNote] = useState("");
   const [adding, setAdding] = useState(false);
-  const [removingId, setRemovingId] = useState<number | null>(null);
+  // In-flight remove ids. A Set (not a single id) so two quick clicks on
+  // different rows don't clobber each other's finally-cleanup — each row
+  // tracks its own DELETE independently.
+  const [removingIds, setRemovingIds] = useState<Set<number>>(new Set());
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -75,6 +78,14 @@ export default function SettingsVipPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Auto-dismiss the SUCCESS banner after a few seconds; error banners stay
+  // until the next action so the operator can read what failed.
+  useEffect(() => {
+    if (banner?.kind !== "success") return;
+    const id = window.setTimeout(() => setBanner(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [banner]);
 
   const trimmed = value.trim();
   const addDisabled = adding || trimmed.length === 0;
@@ -113,7 +124,7 @@ export default function SettingsVipPage() {
       )
     )
       return;
-    setRemovingId(s.id);
+    setRemovingIds((prev) => new Set(prev).add(s.id));
     setBanner(null);
     try {
       await api.removeVipSender(s.id);
@@ -125,7 +136,11 @@ export default function SettingsVipPage() {
         text: e instanceof Error ? e.message : "Failed to remove VIP sender",
       });
     } finally {
-      setRemovingId(null);
+      setRemovingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(s.id);
+        return next;
+      });
     }
   }, []);
 
@@ -178,6 +193,7 @@ export default function SettingsVipPage() {
                   <select
                     value={kind}
                     onChange={(e) => setKind(e.target.value as VipSenderKind)}
+                    disabled={adding}
                     className="mt-1 rounded border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
                   >
                     <option value="email">Email</option>
@@ -263,9 +279,9 @@ export default function SettingsVipPage() {
                         outlined
                         destructive
                         size="sm"
-                        disabled={removingId === s.id}
+                        disabled={removingIds.has(s.id)}
                         prefix={
-                          removingId === s.id ? (
+                          removingIds.has(s.id) ? (
                             <Spinner />
                           ) : (
                             <Trash2 className="h-3.5 w-3.5" />
