@@ -35,7 +35,10 @@ declare global {
 let _sessionToken: string | null = null;
 const SESSION_HEADER = "X-Hermes-Session-Token";
 
-function setSessionHeader(headers: Headers, token: string): void {
+/** Attach the dashboard session token header (idempotent). Shared so non-JSON
+ * clients (e.g. the CRM client, which handles its own responses) gate their
+ * proxied ``/dashboard/api/*`` requests with the same header. */
+export function setSessionHeader(headers: Headers, token: string): void {
   if (!headers.has(SESSION_HEADER)) {
     headers.set(SESSION_HEADER, token);
   }

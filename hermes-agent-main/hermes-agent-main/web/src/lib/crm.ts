@@ -1,8 +1,11 @@
 // Client for the AgentBOX CRM API. These endpoints live in the Node
 // mailbox-dashboard (migration 047) and are reached SAME-ORIGIN through the
 // hermes dashboard's reverse proxy: `/dashboard/api/crm/*` →
-// mailbox-dashboard:3001. No hermes session token needed (the proxy gates only
-// `/api/*`; the mailbox app has no auth on loopback, Caddy gates the funnel).
+// mailbox-dashboard:3001. The proxy now session-gates the proxied
+// `/dashboard/api/*` namespace (MBOX-477), so this client attaches the same
+// dashboard session token as `fetchJSON` via the shared `setSessionHeader`.
+
+import { setSessionHeader } from "./api";
 
 const CRM_BASE = "/dashboard/api/crm";
 
@@ -59,10 +62,16 @@ export interface Contact {
 }
 
 async function crm<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const token = window.__HERMES_SESSION_TOKEN__;
+  if (token) setSessionHeader(headers, token);
   const res = await fetch(`${CRM_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
     ...init,
+    headers,
   });
   if (!res.ok) {
     let detail = `${res.status}`;

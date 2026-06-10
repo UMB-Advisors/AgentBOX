@@ -81,7 +81,9 @@ function blankForm(): RuleForm {
     name: "",
     enabled: true,
     priority: "100",
-    action: "auto_send",
+    // Safe default: operators must opt into auto-send explicitly; new rules
+    // queue for review until the action is deliberately changed (MBOX-477).
+    action: "queue",
     category: "",
     sender_domain: "",
     min_confidence: "",
@@ -119,6 +121,20 @@ function formToBody(f: RuleForm): AutoSendRuleBody {
     active_from: f.active_from === "" ? null : f.active_from,
     active_to: f.active_to === "" ? null : f.active_to,
   };
+}
+
+// Client-side cross-field guard: the active time window is all-or-nothing —
+// ``active_from`` and ``active_to`` must be provided together (or both left
+// blank). The server remains authoritative; this just warns before submit so
+// a half-filled window doesn't silently round-trip. Returns an error string,
+// or null when valid.
+function validateRuleForm(f: RuleForm): string | null {
+  const hasFrom = f.active_from !== "";
+  const hasTo = f.active_to !== "";
+  if (hasFrom !== hasTo) {
+    return "Active window needs both a start and an end time (or leave both blank).";
+  }
+  return null;
 }
 
 // Re-sort by (priority asc, id asc) to mirror the server's list order.
@@ -293,6 +309,11 @@ export default function SettingsAutoSendPage() {
     async (e: React.FormEvent) => {
       e.preventDefault();
       if (form.name.trim().length === 0) return;
+      const invalid = validateRuleForm(form);
+      if (invalid) {
+        setBanner({ kind: "error", text: invalid });
+        return;
+      }
       setBusy(true);
       try {
         const { rule } = await api.autoSendCreateRule(formToBody(form));
@@ -321,6 +342,11 @@ export default function SettingsAutoSendPage() {
   const onSaveEdit = useCallback(
     async (id: number) => {
       if (editForm.name.trim().length === 0) return;
+      const invalid = validateRuleForm(editForm);
+      if (invalid) {
+        setBanner({ kind: "error", text: invalid });
+        return;
+      }
       setSavingId(id);
       try {
         const { rule } = await api.autoSendUpdateRule(id, formToBody(editForm));

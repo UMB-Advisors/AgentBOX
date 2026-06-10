@@ -2257,8 +2257,18 @@ async def google_import_contacts(request: Request):
 # correct on the kiosk, but over an ``ssh -L 9119:…`` tunnel it hits the
 # operator's OWN localhost:3001 (a different app). Routing through /dashboard/*
 # on the Hermes origin (:9119, which IS tunneled) makes the tab work from
-# anywhere. Loopback only; the dashboard is unauthenticated on the appliance,
-# and the auth middleware above only gates /api/*, so this passes through.
+# anywhere.
+#
+# Auth posture: the legacy ``auth_middleware`` above only gates the Hermes
+# origin's own ``/api/*`` — it does NOT match the proxied ``/dashboard/api/*``
+# namespace, which the upstream mailbox-dashboard serves without auth on
+# loopback. To avoid exposing those proxied data/mutation APIs unauthenticated
+# on the shared origin, this route applies the SAME session-token check
+# (``_has_valid_session_token``) to any proxied path under ``dashboard/api/``.
+# Non-API ``/dashboard/*`` paths (HTML pages, assets) stay passthrough so
+# direct page loads keep working. When the OAuth gate is active (non-loopback
+# bind), ``gated_auth_middleware`` is authoritative and this check defers to
+# it — mirroring ``auth_middleware``'s ``auth_required`` short-circuit.
 # ---------------------------------------------------------------------------
 _DASHBOARD_UPSTREAM: str = os.environ.get(
     "MAILBOX_DASHBOARD_URL", "http://127.0.0.1:3001"
@@ -2278,9 +2288,28 @@ _HOP_BY_HOP = frozenset({
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 )
 async def _proxy_mailbox_dashboard(path: str, request: Request):
-    """Stream-proxy /dashboard/* to the on-box mailbox-dashboard (:3001)."""
+    """Stream-proxy /dashboard/* to the on-box mailbox-dashboard (:3001).
+
+    Proxied API paths (``dashboard/api/*``) require the same dashboard session
+    token as the Hermes-origin ``/api/*`` routes; non-API paths (HTML, assets)
+    pass through so direct page loads work. When the OAuth gate is active the
+    cookie-based ``gated_auth_middleware`` is authoritative, so this loopback
+    token check is skipped (mirrors ``auth_middleware``).
+    """
     import httpx
     from starlette.responses import StreamingResponse
+
+    # Session-gate proxied API surface. ``path`` is the segment AFTER
+    # ``/dashboard/`` (FastAPI strips the prefix), so the upstream
+    # ``/dashboard/api/*`` namespace appears here as ``api/*``.
+    if path.startswith("api/") and not getattr(
+        request.app.state, "auth_required", False
+    ):
+        if not _has_valid_session_token(request):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Unauthorized"},
+            )
 
     upstream_url = f"{_DASHBOARD_UPSTREAM}/dashboard/{path}"
     fwd_headers = {
