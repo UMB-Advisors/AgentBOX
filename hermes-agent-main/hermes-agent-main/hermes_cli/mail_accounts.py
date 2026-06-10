@@ -148,24 +148,25 @@ def _read_all() -> List[Dict[str, Any]]:
 # Public read surface (NEVER returns the secret)
 # ---------------------------------------------------------------------------
 def list_accounts() -> List[Dict[str, Any]]:
-    """Connected mailboxes, oldest first, WITHOUT ``secret_enc`` /
-    ``provider_config`` internals -- only the operator-facing summary."""
-    rows = sorted(_read_all(), key=lambda r: r.get("connected_at") or "")
+    """Connected mailboxes, default-first then oldest, WITHOUT ``secret_enc`` /
+    ``provider_config`` internals -- only the operator-facing summary.
+
+    Ordering (MBOX-470): the default inbox sorts first, then by connect time, so
+    the registry UI can render the default at the top with a badge. ``is_default``
+    is surfaced so the page can show the badge and gate the set-default/remove
+    controls. The default flag is dashboard-side registry metadata only -- no
+    send/receive runtime reads it yet (same scope boundary as MBOX-468)."""
+    rows = sorted(
+        _read_all(),
+        key=lambda r: (not bool(r.get("is_default")), r.get("connected_at") or ""),
+    )
     out: List[Dict[str, Any]] = []
     for r in rows:
-        email = r.get("email")
-        if not email:
+        if not r.get("email"):
             continue
-        out.append(
-            {
-                "id": r.get("id"),
-                "provider": r.get("provider"),
-                "email": email,
-                "display_label": r.get("display_label"),
-                "mailbox": (r.get("provider_config") or {}).get("mailbox") or email,
-                "connected_at": r.get("connected_at"),
-            }
-        )
+        # Build each row via _summary so the safe-field selection lives in one
+        # place (shared with the single-record mutation echoes).
+        out.append(_summary(r))
     return out
 
 
@@ -189,6 +190,98 @@ def delete_account(account_id: str) -> bool:
                 _log.warning("mail account delete failed", exc_info=True)
                 return False
     return False
+
+
+# ---------------------------------------------------------------------------
+# Registry mutations (MBOX-470) -- relabel + set-default
+# Operate on the SAME 0600 file store the connect orchestration writes; manage
+# exactly the accounts MBOX-468 onboarding creates. No Postgres (no driver in
+# hermes_cli core; the mailbox is_default sentinel has no host-side schema -- we
+# model the flag directly on the file record instead).
+# ---------------------------------------------------------------------------
+def _find_path_by_id(account_id: str) -> Optional[Path]:
+    """Return the record path whose ``id`` matches, or None. Scans the dir
+    (records are keyed by email on disk, not id)."""
+    d = accounts_dir()
+    if not d.is_dir():
+        return None
+    for p in sorted(d.glob("*.json")):
+        try:
+            data = json.loads(p.read_text())
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(data, dict) and data.get("id") == account_id:
+            return p
+    return None
+
+
+def _summary(record: Dict[str, Any]) -> Dict[str, Any]:
+    """The same secret-free, operator-facing shape ``list_accounts`` emits, for a
+    single record -- so a mutation can echo the updated row back."""
+    email = record.get("email")
+    return {
+        "id": record.get("id"),
+        "provider": record.get("provider"),
+        "email": email,
+        "display_label": record.get("display_label"),
+        "mailbox": (record.get("provider_config") or {}).get("mailbox") or email,
+        "is_default": bool(record.get("is_default")),
+        "connected_at": record.get("connected_at"),
+    }
+
+
+def update_label(account_id: str, display_label: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Relabel a connected mailbox. ``display_label`` of ``None`` (or empty after
+    strip) clears the label so the UI falls back to the email. Returns the updated
+    secret-free summary, or None if no record matches. Rewrites the record 0600
+    via the same atomic idiom -- the encrypted secret is preserved untouched."""
+    p = _find_path_by_id(account_id)
+    if p is None:
+        return None
+    try:
+        record = json.loads(p.read_text())
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(record, dict):
+        return None
+    label = (display_label or "").strip()
+    record["display_label"] = label or None
+    _write_json_600(p, record)
+    return _summary(record)
+
+
+def set_default(account_id: str) -> Optional[Dict[str, Any]]:
+    """Promote one mailbox to the default and demote every other (exactly-one
+    invariant, enforced server-side). Returns the promoted account's secret-free
+    summary, or None if no record matches. Each rewrite preserves the record's
+    encrypted secret. The default flag is registry metadata only -- it drives the
+    list ordering/badge today; no send/receive runtime reads it yet (deferred,
+    same boundary as MBOX-468)."""
+    d = accounts_dir()
+    if not d.is_dir():
+        return None
+    promoted: Optional[Dict[str, Any]] = None
+    # Single scan: detect the target, set/clear flags, and capture the promoted
+    # record in one pass. "Not found" is promoted is None at the end -- no
+    # separate pre-check (avoids a double traversal + a TOCTOU window vs a
+    # concurrent delete between the lookup and the rewrite).
+    for p in sorted(d.glob("*.json")):
+        try:
+            record = json.loads(p.read_text())
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(record, dict):
+            continue
+        want_default = record.get("id") == account_id
+        # Only rewrite rows whose flag actually changes -- avoids needless 0600
+        # rewrites on the untouched majority (including the no-op case where the
+        # target is already the default).
+        if bool(record.get("is_default")) != want_default:
+            record["is_default"] = want_default
+            _write_json_600(p, record)
+        if want_default:
+            promoted = record
+    return _summary(promoted) if promoted is not None else None
 
 
 # ---------------------------------------------------------------------------

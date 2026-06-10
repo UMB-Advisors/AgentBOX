@@ -356,6 +356,8 @@ export const api = {
       // Optional skills / toolsets to preload (used by Agent Template instantiation).
       skills?: string[] | null;
       enabled_toolsets?: string[] | null;
+      // Operator's end-goal for the job (persisted; drives the Reprompt action).
+      objective?: string | null;
       department_id?: number | null;
       department_name?: string | null;
       employee_id?: number | null;
@@ -377,6 +379,7 @@ export const api = {
       deliver?: string;
       model?: string | null;
       provider?: string | null;
+      objective?: string | null;
       department_id?: number | null;
       department_name?: string | null;
       employee_id?: number | null;
@@ -416,6 +419,23 @@ export const api = {
     fetchJSON<{ templates: AgentTemplateSummary[] }>("/api/cron/templates"),
   getAgentTemplate: (id: string) =>
     fetchJSON<AgentTemplate>(`/api/cron/templates/${encodeURIComponent(id)}`),
+
+  // Live LLM reprompt — improve a draft job prompt toward an outcome objective.
+  // model/provider optional (empty → box default). One-shot; UI shows the result.
+  repromptCronPrompt: (body: {
+    draft_prompt: string;
+    outcome_objective?: string;
+    model?: string | null;
+    provider?: string | null;
+  }) =>
+    fetchJSON<{ improved_prompt: string; model: string; provider: string }>(
+      "/api/cron/reprompt",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
 
   // Profiles (minimal)
   getProfiles: () =>
@@ -909,6 +929,20 @@ export const api = {
         body: JSON.stringify({ email }),
       },
     ),
+  /** Relabel and/or set-default a connected mail account (MBOX-470 registry
+   * mutation). PATCH the same file-store record the connect routes write.
+   * ``display_label: null`` clears the label (falls back to the email);
+   * ``make_default: true`` promotes this inbox and demotes the others. Returns
+   * the updated secret-free account summary. Never includes any secret. */
+  updateMailAccount: (id: string, body: MailAccountUpdateBody) =>
+    fetchJSON<{ account: MailAccount }>(
+      `/api/accounts/mail/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
 };
 
 /** POST an onboarding stage transition and return ``{ status, body }`` WITHOUT
@@ -1164,7 +1198,19 @@ export interface MailAccount {
   email: string;
   display_label: string | null;
   mailbox: string | null;
+  /** Whether this is the default inbox (MBOX-470). Exactly one account is the
+   * default; the registry sorts it first and badges it. Registry metadata only —
+   * no send/receive runtime reads it yet (same boundary as MBOX-468). */
+  is_default: boolean;
   connected_at: string | null;
+}
+
+/** Body for ``PATCH /api/accounts/mail/{id}`` (MBOX-470 registry mutation). All
+ * fields optional: relabel, set-default, or both in one call. ``display_label``
+ * present-but-``null`` clears the label; omit a field to leave it unchanged. */
+export interface MailAccountUpdateBody {
+  display_label?: string | null;
+  make_default?: boolean;
 }
 
 /** Response shape for ``GET /api/accounts/mail``. ``crypto_configured`` is
@@ -1657,6 +1703,8 @@ export interface CronJob {
   is_default_profile?: boolean;
   name?: string | null;
   prompt?: string | null;
+  // Operator's end-goal for the job (persisted; seeds the Outcome box on edit).
+  objective?: string | null;
   script?: string | null;
   schedule?: { kind?: string; expr?: string; display?: string };
   schedule_display?: string | null;
@@ -1734,6 +1782,7 @@ export interface AgentTemplateRoutingRow {
 
 export interface AgentTemplateDefaults {
   name: string;
+  objective: string;
   prompt: string;
   schedule: string;
   deliver: string;
