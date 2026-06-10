@@ -278,6 +278,15 @@ export default function CronPage() {
   const [templateSkills, setTemplateSkills] = useState<string[]>([]);
   const [templateToolsets, setTemplateToolsets] = useState<string[]>([]);
   const [showPattern, setShowPattern] = useState(false);
+  // Outcome objective + live reprompt. `objective` is the end-goal the operator
+  // describes (persisted on the job); it steers the reprompt rewrite. The
+  // reprompt is one-shot: call -> `repromptResult` preview -> Accept/Discard.
+  // `repromptModel` defaults to the job's model ("" = box default) and is
+  // independently selectable.
+  const [objective, setObjective] = useState("");
+  const [repromptModel, setRepromptModel] = useState("");
+  const [reprompting, setReprompting] = useState(false);
+  const [repromptResult, setRepromptResult] = useState<string | null>(null);
   const isEditing = editingKey !== null;
 
   // Clear any template association from the current draft.
@@ -297,6 +306,14 @@ export default function CronPage() {
   });
   const createProfile = selectedProfile === "all" ? "default" : selectedProfile;
 
+  // Reset the transient reprompt preview + objective for a fresh draft.
+  const resetReprompt = useCallback(() => {
+    setObjective("");
+    setRepromptModel("");
+    setRepromptResult(null);
+    setReprompting(false);
+  }, []);
+
   const openCreate = useCallback(() => {
     setEditingKey(null);
     setName("");
@@ -307,8 +324,9 @@ export default function CronPage() {
     setDepartmentId("");
     setEmployeeId("");
     clearTemplate();
+    resetReprompt();
     setCreateModalOpen(true);
-  }, [clearTemplate]);
+  }, [clearTemplate, resetReprompt]);
 
   // Interactive, LLM-assisted "build from a template" flow. The builder hands
   // back a draft (and a matched Department from the template category); we drop
@@ -341,8 +359,11 @@ export default function CronPage() {
     setDepartmentId(job.department_id != null ? String(job.department_id) : "");
     setEmployeeId(job.employee_id != null ? String(job.employee_id) : "");
     clearTemplate();
+    resetReprompt();
+    setObjective(asText(job.objective));
+    setRepromptModel(asText(job.model) || "");
     setCreateModalOpen(true);
-  }, [clearTemplate]);
+  }, [clearTemplate, resetReprompt]);
 
   // Open the template picker (fetches the list lazily the first time).
   const openTemplatePicker = useCallback(() => {
@@ -364,10 +385,13 @@ export default function CronPage() {
         const d = tpl.defaults;
         setEditingKey(null);
         setName(d.name ?? "");
+        setObjective(d.objective ?? "");
         setPrompt(d.prompt ?? "");
         setSchedule(d.schedule ?? "");
         setDeliver(d.deliver || "local");
         setModel(d.model || "");
+        setRepromptModel(d.model || "");
+        setRepromptResult(null);
         setDepartmentId("");
         setEmployeeId("");
         setTemplateSkills(d.skills ?? []);
@@ -437,6 +461,43 @@ export default function CronPage() {
     });
   }, [jobs, sortBy, departments]);
 
+  // Resolve a model name to its provider slug from the picker options.
+  const providerForModel = useCallback(
+    (m: string) =>
+      modelProviders.find((p) => (p.models ?? []).includes(m))?.slug ?? null,
+    [modelProviders],
+  );
+
+  // Live reprompt: ask the model to improve the draft prompt toward the
+  // objective. One-shot — the result lands in `repromptResult` for accept/discard.
+  const handleReprompt = async () => {
+    if (!prompt.trim()) {
+      showToast("Write a draft prompt first", "error");
+      return;
+    }
+    setReprompting(true);
+    setRepromptResult(null);
+    try {
+      const chosen = repromptModel.trim() || null;
+      const res = await api.repromptCronPrompt({
+        draft_prompt: prompt.trim(),
+        outcome_objective: objective.trim(),
+        model: chosen,
+        provider: chosen ? providerForModel(chosen) : null,
+      });
+      const improved = (res.improved_prompt || "").trim();
+      if (!improved) {
+        showToast("Reprompt returned nothing", "error");
+      } else {
+        setRepromptResult(improved);
+      }
+    } catch (e) {
+      showToast(`Reprompt failed: ${e}`, "error");
+    } finally {
+      setReprompting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!prompt.trim() || !schedule.trim()) {
       showToast(`${t.cron.prompt} & ${t.cron.schedule} required`, "error");
@@ -474,6 +535,7 @@ export default function CronPage() {
             schedule: scheduleToSend,
             name: name.trim(),
             deliver,
+            objective: objective.trim() || null,
             ...modelFields,
             ...crmFields,
           },
@@ -487,6 +549,7 @@ export default function CronPage() {
             schedule: scheduleToSend,
             name: name.trim() || undefined,
             deliver,
+            objective: objective.trim() || null,
             ...modelFields,
             // From an applied template, if any (omitted when empty).
             skills: templateSkills.length ? templateSkills : undefined,
@@ -505,6 +568,7 @@ export default function CronPage() {
       setDepartmentId("");
       setEmployeeId("");
       clearTemplate();
+      resetReprompt();
       setEditingKey(null);
       setCreateModalOpen(false);
       loadJobs();
@@ -716,7 +780,7 @@ export default function CronPage() {
           aria-modal="true"
           aria-labelledby="create-cron-title"
         >
-          <div className={cn(themedBody, "relative w-full max-w-lg border border-border bg-card shadow-2xl flex flex-col")}>
+          <div className={cn(themedBody, "relative w-full max-w-2xl border border-border bg-card shadow-2xl flex flex-col")}>
             <Button
               ghost
               size="icon"
@@ -813,6 +877,95 @@ export default function CronPage() {
                   )}
                 </div>
               )}
+
+              {/* Objective & prompt — the hero of the form */}
+              <div className="grid gap-4 border border-border bg-background/30 p-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="cron-objective">Outcome / objective</Label>
+                  <textarea
+                    id="cron-objective"
+                    className="flex min-h-[64px] w-full resize-y border border-border bg-background/40 px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/30 focus-visible:border-foreground/25"
+                    placeholder="Describe the end goal — e.g. “a crisp daily digest of overnight email, grouped by sender.” The model uses this to improve your prompt."
+                    value={objective}
+                    onChange={(e) => setObjective(e.target.value)}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Label htmlFor="cron-prompt">{t.cron.prompt}</Label>
+                    <div className="flex items-center gap-2">
+                      <div className="w-44">
+                        <Select
+                          id="cron-reprompt-model"
+                          value={repromptModel}
+                          onValueChange={(v) => setRepromptModel(v)}
+                        >
+                          <SelectOption value="">Reprompt: box default</SelectOption>
+                          {repromptModel &&
+                            !modelProviders.some((p) => (p.models ?? []).includes(repromptModel)) && (
+                              <SelectOption value={repromptModel}>{repromptModel}</SelectOption>
+                            )}
+                          {modelProviders.flatMap((p) =>
+                            (p.models ?? []).map((m) => (
+                              <SelectOption key={`rp:${p.slug}:${m}`} value={m}>
+                                {modelProviders.length > 1 ? `${p.name} · ${m}` : m}
+                              </SelectOption>
+                            )),
+                          )}
+                        </Select>
+                      </div>
+                      <Button
+                        size="sm"
+                        ghost
+                        onClick={handleReprompt}
+                        disabled={reprompting || !prompt.trim()}
+                        prefix={reprompting ? <Spinner /> : <Sparkles />}
+                        title="Improve this prompt with the model, steered by your objective"
+                      >
+                        {reprompting ? "Reprompting…" : "Reprompt"}
+                      </Button>
+                    </div>
+                  </div>
+                  <textarea
+                    id="cron-prompt"
+                    className="flex min-h-[140px] w-full resize-y border border-border bg-background/40 px-3 py-2 text-sm font-courier shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/30 focus-visible:border-foreground/25"
+                    placeholder={t.cron.promptPlaceholder}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                  />
+                </div>
+
+                {repromptResult !== null && (
+                  <div className="grid gap-2 border border-primary/40 bg-primary/5 p-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Sparkles className="h-3.5 w-3.5 text-primary" />
+                      <span>Suggested rewrite — review before accepting</span>
+                    </div>
+                    <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-courier text-sm">
+                      {repromptResult}
+                    </pre>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button size="sm" ghost onClick={() => setRepromptResult(null)}>
+                        Discard
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setPrompt(repromptResult);
+                          setRepromptResult(null);
+                        }}
+                      >
+                        Accept
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                Job settings
+              </p>
               <div className="grid gap-2">
                 <Label htmlFor="cron-profile">Profile</Label>
                 <Select
@@ -839,17 +992,6 @@ export default function CronPage() {
                   placeholder={t.cron.namePlaceholder}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="cron-prompt">{t.cron.prompt}</Label>
-                <textarea
-                  id="cron-prompt"
-                  className="flex min-h-[80px] w-full border border-border bg-background/40 px-3 py-2 text-sm font-courier shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/30 focus-visible:border-foreground/25"
-                  placeholder={t.cron.promptPlaceholder}
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
                 />
               </div>
 

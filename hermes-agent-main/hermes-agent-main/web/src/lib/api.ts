@@ -356,6 +356,8 @@ export const api = {
       // Optional skills / toolsets to preload (used by Agent Template instantiation).
       skills?: string[] | null;
       enabled_toolsets?: string[] | null;
+      // Operator's end-goal for the job (persisted; drives the Reprompt action).
+      objective?: string | null;
       department_id?: number | null;
       department_name?: string | null;
       employee_id?: number | null;
@@ -377,6 +379,7 @@ export const api = {
       deliver?: string;
       model?: string | null;
       provider?: string | null;
+      objective?: string | null;
       department_id?: number | null;
       department_name?: string | null;
       employee_id?: number | null;
@@ -416,6 +419,23 @@ export const api = {
     fetchJSON<{ templates: AgentTemplateSummary[] }>("/api/cron/templates"),
   getAgentTemplate: (id: string) =>
     fetchJSON<AgentTemplate>(`/api/cron/templates/${encodeURIComponent(id)}`),
+
+  // Live LLM reprompt — improve a draft job prompt toward an outcome objective.
+  // model/provider optional (empty → box default). One-shot; UI shows the result.
+  repromptCronPrompt: (body: {
+    draft_prompt: string;
+    outcome_objective?: string;
+    model?: string | null;
+    provider?: string | null;
+  }) =>
+    fetchJSON<{ improved_prompt: string; model: string; provider: string }>(
+      "/api/cron/reprompt",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
 
   // Profiles (minimal)
   getProfiles: () =>
@@ -1562,6 +1582,8 @@ export interface CronJob {
   is_default_profile?: boolean;
   name?: string | null;
   prompt?: string | null;
+  // Operator's end-goal for the job (persisted; seeds the Outcome box on edit).
+  objective?: string | null;
   script?: string | null;
   schedule?: { kind?: string; expr?: string; display?: string };
   schedule_display?: string | null;
@@ -1639,6 +1661,7 @@ export interface AgentTemplateRoutingRow {
 
 export interface AgentTemplateDefaults {
   name: string;
+  objective: string;
   prompt: string;
   schedule: string;
   deliver: string;
