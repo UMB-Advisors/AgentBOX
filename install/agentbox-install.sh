@@ -95,6 +95,30 @@ else
   fi
 fi
 
+# ── STAGE 0.2: Tailscale SSH — admin access for every box (default ON) ─────
+# Every AgentBOX must be reachable from the tailnet admin WITHOUT per-box key
+# management. Plain `tailscale up` does NOT enable the Tailscale SSH server, so
+# enrolled boxes drifted into key-only/unreachable states (agentbox3, 2026-06 —
+# admin had to chase the operator for a password). We force the SSH server on
+# here so it's a property of the install, not of how the operator typed
+# `tailscale up`. Idempotent; needs no re-auth (the node is already enrolled by
+# the time the installer runs). The tailnet ACL must also grant the admin an
+# `ssh` rule for the box's tag — see docs/runbook/provisioning.v0.1.0.md §2.
+log "STAGE 0.2 — Tailscale SSH (admin access default)"
+if command -v tailscale >/dev/null; then
+  if tailscale status >/dev/null 2>&1; then
+    if sudo tailscale set --ssh=true >/dev/null 2>&1; then
+      log "  Tailscale SSH enabled (sudo tailscale set --ssh=true)"
+    else
+      log "  WARN: 'tailscale set --ssh=true' failed — enable manually: sudo tailscale up --ssh"
+    fi
+  else
+    log "  WARN: tailscale not up yet — enroll with: sudo tailscale up --ssh --hostname=<box> (admin SSH won't work until then)"
+  fi
+else
+  log "  WARN: tailscale not installed — install + enroll with --ssh (see docs/runbook/provisioning.v0.1.0.md §2)"
+fi
+
 # ── STAGE 0.5: MailBOX stack (VENDORED in this monorepo; sync into place) ──
 # AgentBOX absorbs the MailBOX stack — it lives at $REPO/mailbox (no external
 # clone). Sync the source-controlled stack into $STACK_DIR (the runtime

@@ -119,9 +119,10 @@ One appliance per customer site = no collision risk in practice. Avahi auto-appe
 **Naming convention:** `mailboxN` (e.g. `mailbox1` is customer #1 / Heron Labs).
 
 - [ ] `curl -fsSL https://tailscale.com/install.sh | sh`
-- [ ] `sudo tailscale up --ssh --hostname=mailboxN`
+- [ ] `sudo tailscale up --ssh --hostname=mailboxN`  ← **`--ssh` is mandatory** (see §2b)
 - [ ] Approve device in admin console; assign tag `tag:mailbox-appliance`
 - [ ] Verify MagicDNS: `tailscale ping mailboxN.tail377a9a.ts.net` from workstation
+- [ ] Verify admin reach: `ssh <unix-user>@mailboxN` from the workstation lands a shell
 - [ ] Document local SSH alias addition for ops team
 
 ### 2a. DNS sanity (STAQPRO-228)
@@ -151,11 +152,45 @@ One appliance per customer site = no collision risk in practice. Avahi auto-appe
 
   After the admin-console fix lands, revert with `sudo tailscale set --accept-dns=true` and confirm `dig @100.100.100.100 ports.ubuntu.com` returns an answer.
 
+### 2b. Admin SSH access (Tailscale SSH is the standard)
+
+**Decision (2026-06-10, supersedes the prior open question):** admin shell access to every
+appliance is **Tailscale SSH**, not per-box `~/.ssh/authorized_keys`. Authorized-key copying
+doesn't scale across the fleet and silently fails closed — agentbox3 was enrolled with a plain
+`tailscale up` (no `--ssh`) and the admin had no way in without chasing the flashing operator
+for a password. Tailscale SSH makes access a property of tailnet identity + ACL, centrally
+managed, revocable, and key-free.
+
+Two halves — **both** are required, or `ssh <user>@mailboxN` falls through to OpenSSH and
+prompts for a password the admin doesn't have:
+
+1. **Node side (automated).** `install/agentbox-install.sh` STAGE 0.2 runs
+   `sudo tailscale set --ssh=true` on every install, so the SSH server is on regardless of how
+   the operator typed `tailscale up`. The `--ssh` flag in the §2 enrollment command does the
+   same at first enrollment; keep it. Factory-reset re-auth also keeps `--ssh`.
+
+2. **Tailnet side (one-time, admin console).** The tailnet policy must carry an `ssh` rule
+   granting the admin the unix accounts the appliances expose (`bob`, `mailbox`). Add once to
+   the ACL at [login.tailscale.com/admin/acls](https://login.tailscale.com/admin/acls):
+
+   ```jsonc
+   "ssh": [
+     {
+       "action": "accept",
+       "src":    ["autogroup:admin"],
+       "dst":    ["tag:mailbox-appliance", "tag:mailbox"],
+       "users":  ["bob", "mailbox", "autogroup:nonroot"]
+     }
+   ]
+   ```
+
+   Without this rule, `tailscale set --ssh=true` on the box is a no-op for the admin.
+
+**ACL tags:** all appliances share `tag:mailbox-appliance` (legacy boxes also carry `tag:mailbox`).
+No per-box ACL group — fleet-wide grants via the shared tag are the intent. Per-box isolation,
+if ever needed, is a future change, not the default.
+
 `OPEN Q:` `iptables v1.8.7 (legacy): unknown option "--restore-mark"` shows up in `journalctl -u tailscaled` on JetPack 6.2 (STAQPRO-228 side-observation). Known iptables/tailscaled mismatch; **does not** affect DNS in practice, and the daemon recovers via the legacy code path. File a follow-up issue if a customer ever traces a tailnet connectivity problem back to it — otherwise leave alone.
-
-`TODO:` Confirm `--ssh` (Tailscale SSH) is the standard, or whether we always copy `~/.ssh/authorized_keys` instead. Customer #1 + Dustin's box both have working sshd — picking one path.
-
-`OPEN Q:` ACL tags and node-key signing — does each appliance get its own ACL group, or do they all share `tag:mailbox-appliance`?
 
 ---
 
