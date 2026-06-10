@@ -12,6 +12,7 @@ import {
   Package,
   Plug,
   Puzzle,
+  Rocket,
   Settings,
   ShoppingBag,
   Sparkles,
@@ -44,6 +45,12 @@ interface HubItem {
 
 // Home/landing configuration.
 const HOME_ITEMS: HubItem[] = [
+  {
+    path: "/onboarding",
+    label: "Setup wizard",
+    icon: Rocket,
+    description: "First-run setup: connect a mailbox & get triaging",
+  },
   { path: "/settings/digest", label: "Daily Digest", icon: Sparkles },
 ];
 
