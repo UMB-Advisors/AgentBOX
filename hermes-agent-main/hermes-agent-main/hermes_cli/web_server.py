@@ -1888,11 +1888,12 @@ class ImapConnectBody(BaseModel):
 
 
 @app.post("/api/accounts/microsoft")
-async def connect_microsoft_account(body: GraphConnectBody):
+async def connect_microsoft_account(request: Request, body: GraphConnectBody):
     """Probe BYO Azure app credentials and (on mode:'connect') persist the M365
     mailbox with the client secret encrypted at rest. A failed probe → 422 and
     persists nothing; a green probe → 200 (test: legs only; connect: account_id).
     Session-gated (operator credentials)."""
+    _require_token(request)
     from hermes_cli import mail_accounts
 
     status, result = await mail_accounts.connect_graph(body.model_dump())
@@ -1900,11 +1901,12 @@ async def connect_microsoft_account(body: GraphConnectBody):
 
 
 @app.post("/api/accounts/imap")
-async def connect_imap_account(body: ImapConnectBody):
+async def connect_imap_account(request: Request, body: ImapConnectBody):
     """Probe IMAP+SMTP credentials and (on mode:'connect') persist the mailbox
     with the app password encrypted at rest. A failed probe → 422 and persists
     nothing; a green probe → 200 (test: legs only; connect: account_id).
     Session-gated (operator credentials)."""
+    _require_token(request)
     from hermes_cli import mail_accounts
 
     status, result = await mail_accounts.connect_imap(body.model_dump())
@@ -1928,9 +1930,10 @@ async def list_mail_accounts():
 
 
 @app.delete("/api/accounts/mail/{account_id}")
-async def delete_mail_account(account_id: str):
+async def delete_mail_account(request: Request, account_id: str):
     """Forget a connected mail account by its record id (local removal only).
     Session-gated."""
+    _require_token(request)
     from hermes_cli import mail_accounts
 
     # Record ids are uuid4().hex (32 lowercase hex). Reject anything else up
@@ -2016,10 +2019,11 @@ async def onboarding_state():
 
 
 @app.post("/api/onboarding/advance")
-async def onboarding_advance(body: OnboardingAdvanceBody):
+async def onboarding_advance(request: Request, body: OnboardingAdvanceBody):
     """Advance the onboarding stage by a strict adjacent pair. 200 on success;
     409 ``stale_from`` if the wizard's view is stale; 409 ``invalid_transition``
     for a non-adjacent move. Session-gated."""
+    _require_token(request)
     from hermes_cli import onboarding_state as ob
 
     loop = asyncio.get_running_loop()
@@ -2030,10 +2034,11 @@ async def onboarding_advance(body: OnboardingAdvanceBody):
 
 
 @app.post("/api/onboarding/active-mailbox")
-async def onboarding_active_mailbox(body: OnboardingActiveMailboxBody):
+async def onboarding_active_mailbox(request: Request, body: OnboardingActiveMailboxBody):
     """Record the active/default mailbox on a successful wizard connect
     (MBOX-484). Verifies the email is a connected mail account before recording,
     so a typo can't pin onboarding to a mailbox Hermes can't see. Session-gated."""
+    _require_token(request)
     from hermes_cli import mail_accounts, onboarding_state as ob
 
     loop = asyncio.get_running_loop()
