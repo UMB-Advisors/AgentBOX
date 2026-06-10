@@ -1450,6 +1450,9 @@ export interface KbUploadResponse {
   sha256?: string;
   error?: string;
   message?: string;
+  // The session-gating proxy returns ``{"detail": "Unauthorized"}`` on 401;
+  // surface it so the upload feedback can show the proxy's reason.
+  detail?: string;
 }
 
 /** Response shape for ``DELETE /dashboard/api/kb-documents/:id``. */

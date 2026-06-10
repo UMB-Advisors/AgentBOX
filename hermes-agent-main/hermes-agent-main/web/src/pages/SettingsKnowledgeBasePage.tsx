@@ -43,6 +43,10 @@ const ACCEPT_MIME =
 // without a manual refresh. Matches the source dashboard's 3s cadence.
 const POLL_INTERVAL_MS = 3000;
 
+// Mirror the proxy/mailbox 10 MB cap client-side so an oversize file fails fast
+// with a clear per-file message instead of a round-trip + opaque server error.
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
 type Banner = { kind: "success" | "error"; text: string };
 
 interface UploadFeedback {
@@ -181,7 +185,26 @@ export default function SettingsKnowledgeBasePage() {
 
   const handleUpload = useCallback(
     async (files: FileList | File[]) => {
-      const fileArr = Array.from(files);
+      const allFiles = Array.from(files);
+      if (allFiles.length === 0) return;
+
+      // Reject oversize files client-side with a per-file error, but keep
+      // uploading the valid remainder instead of aborting the whole batch.
+      const oversize = allFiles.filter((f) => f.size > MAX_UPLOAD_BYTES);
+      const fileArr = allFiles.filter((f) => f.size <= MAX_UPLOAD_BYTES);
+
+      if (oversize.length > 0) {
+        const rejected = oversize.map(
+          (f): UploadFeedback => ({
+            id: nextFeedbackId(),
+            filename: f.name,
+            status: "error",
+            message: `exceeds 10 MB limit (${formatBytes(f.size)})`,
+          }),
+        );
+        setFeedback((prev) => [...prev, ...rejected]);
+      }
+
       if (fileArr.length === 0) return;
 
       const newEntries = fileArr.map(
@@ -204,6 +227,13 @@ export default function SettingsKnowledgeBasePage() {
             selectedAccountId ?? undefined,
           );
           const ok = status >= 200 && status < 300;
+          // The session-gating proxy returns 401 ``{"detail": "Unauthorized"}``
+          // when the dashboard session has expired; give the operator the fix
+          // rather than a bare "Unauthorized" / "HTTP 401".
+          const errorMessage =
+            status === 401
+              ? "session expired — reload the dashboard"
+              : (body.message ?? body.error ?? body.detail ?? `HTTP ${status}`);
           setFeedback((prev) =>
             prev.map((f) =>
               f.id === entryId
@@ -214,7 +244,7 @@ export default function SettingsKnowledgeBasePage() {
                       ? body.duplicate
                         ? "already uploaded"
                         : "queued"
-                      : (body.message ?? body.error ?? `HTTP ${status}`),
+                      : errorMessage,
                   }
                 : f,
             ),
@@ -252,7 +282,8 @@ export default function SettingsKnowledgeBasePage() {
       setBanner(null);
       try {
         await api.deleteKbDocument(doc.id);
-        setRows((prev) => prev.filter((r) => r.id !== doc.id));
+        // refresh() below is the single source of truth for the row list; no
+        // optimistic setRows filter (it would just be overwritten anyway).
         setBanner({ kind: "success", text: `Deleted ${doc.title}` });
       } catch (err) {
         setBanner({
