@@ -2322,6 +2322,89 @@ async def _proxy_mailbox_dashboard(path: str, request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Classifications management (MBOX-472) — port of the mailbox-dashboard
+# /classifications surface to the Hermes dash.
+#
+# The classification data lives in the mailbox Postgres pipeline; hermes_cli has
+# NO Postgres driver by decision (see docs/plan-mbox-468-onboarding-port). So
+# these routes are thin JSON proxies to the on-box mailbox-dashboard
+# (``_DASHBOARD_UPSTREAM`` :3001) — the SAME data-access model the Job Outcomes
+# (PR #29) and Unified Inbox surfaces use to reach mailbox-owned data. We do NOT
+# add a parallel DB client here.
+#
+#   GET  /api/classifications                 -> /dashboard/api/classifications
+#   POST /api/classifications/reclassify-sender
+#        -> /dashboard/api/classifications/reclassify-sender   (MBOX-370 action)
+#
+# Note (MBOX-472 gap): the mailbox-dashboard exposes the reclassify-sender HTTP
+# route today, but the classification LIST is only rendered server-side (Next.js
+# page calling listClassifications directly); there is no GET JSON endpoint yet.
+# The list proxy below therefore returns whatever the upstream gives (404 until a
+# mailbox-side ``/dashboard/api/classifications`` JSON route is added — tracked
+# separately so this port does not modify mailbox/). The UI degrades to an empty
+# state in that case.
+# ---------------------------------------------------------------------------
+
+
+async def _proxy_classifications_json(
+    method: str, suffix: str, request: Request
+) -> JSONResponse:
+    """Forward a classifications request to the mailbox-dashboard as JSON.
+
+    Buffers (not streamed) — these payloads are small (<=200 rows / a status
+    object). Forwards the query string + JSON body and relays the upstream
+    status + JSON body. Upstream unreachable -> 502.
+    """
+    import httpx
+
+    upstream_url = f"{_DASHBOARD_UPSTREAM}/dashboard/api/classifications{suffix}"
+    body = await request.body()
+    fwd_headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in _HOP_BY_HOP
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            upstream = await client.request(
+                method,
+                upstream_url,
+                params=request.query_params,
+                headers=fwd_headers,
+                content=body if body else None,
+            )
+    except httpx.HTTPError as exc:
+        return JSONResponse(
+            status_code=502,
+            content={"error": f"mailbox-dashboard unreachable: {exc}"},
+        )
+    try:
+        payload = upstream.json()
+    except ValueError:
+        # Non-JSON upstream (e.g. the Next.js HTML 404 page when the list route
+        # does not exist yet) — surface a clean JSON error the SPA can render.
+        return JSONResponse(
+            status_code=upstream.status_code if upstream.status_code >= 400 else 502,
+            content={"error": f"upstream returned non-JSON ({upstream.status_code})"},
+        )
+    return JSONResponse(status_code=upstream.status_code, content=payload)
+
+
+@app.get("/api/classifications")
+async def list_classifications(request: Request):
+    """Proxy the classification log list from the mailbox-dashboard."""
+    return await _proxy_classifications_json("GET", "", request)
+
+
+@app.post("/api/classifications/reclassify-sender")
+async def reclassify_sender(request: Request):
+    """Proxy the MBOX-370 'reclassify automatically' action to the dashboard."""
+    return await _proxy_classifications_json(
+        "POST", "/reclassify-sender", request
+    )
+
+
+# ---------------------------------------------------------------------------
 # Gateway + update actions (invoked from the Status page).
 #
 # Both commands are spawned as detached subprocesses so the HTTP request
