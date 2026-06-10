@@ -2435,6 +2435,157 @@ async def reclassify_sender(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Operator status aggregation (MBOX-478) — port of the mailbox-dashboard
+# /status surface to the Hermes dash.
+#
+# Metric split (see docs/mailbox-to-hermes-migration-audit.v0.1.0.md +
+# the architecture rules on the port issue):
+#
+#   * hermes-NATIVE metrics are gathered here directly. Today that is disk
+#     free (``shutil.disk_usage`` — no new dependency, genuinely local to the
+#     hermes host) plus the existing gateway/session state already exposed by
+#     ``/api/status``.
+#   * mailbox-PIPELINE metrics (queue depth, drafts, cloud spend, Qdrant
+#     health, Ollama loaded models, n8n workflow health, appliance git state,
+#     orphan containers, OTA-availability, alerts) live in the mailbox
+#     Postgres/Qdrant/docker world. hermes_cli has NO Postgres/Qdrant/docker
+#     client by decision, so we PROXY the on-box mailbox-dashboard's already
+#     aggregated snapshot at ``/dashboard/api/system/status`` — the same
+#     data-access model as the classifications (MBOX-472) and Job Outcomes
+#     proxies. We do NOT add a parallel DB/queue client here.
+#
+# When the mailbox-dashboard is unreachable (or absent — agentbox2 is being
+# retired) the ``pipeline`` block is returned as ``{"available": false,
+# "reason": ...}`` so the SPA renders a clean "unavailable" state. We never
+# fabricate values.
+#
+# GAPS (mailbox metrics with NO upstream HTTP route — page-only in the source
+# StatusPage, not in /api/system/status): draft-backlog-age, per-category edit
+# rate, classification-health lag, and the drafting-routes breakdown. These are
+# server-rendered directly in the Next.js page from Postgres and have no JSON
+# route to proxy; surfacing them would require either modifying mailbox/ (out of
+# scope) or a DB client in hermes_cli (forbidden). They are reported as
+# unavailable and listed as gaps rather than faked. (edit-rate IS partially
+# available via the proxied ``rag_eval`` block.)
+# ---------------------------------------------------------------------------
+
+# Mailbox metrics that exist in the source /status page but have no upstream
+# HTTP route to proxy (server-rendered straight from Postgres). Surfaced to the
+# SPA so the operator sees *why* a tile is missing instead of a silent gap.
+_OPERATOR_STATUS_GAPS: List[Dict[str, str]] = [
+    {
+        "metric": "draft_backlog_age",
+        "reason": "no /dashboard/api route upstream (page-only DB read)",
+    },
+    {
+        "metric": "edit_rate_by_category",
+        "reason": "no /dashboard/api route upstream (page-only DB read)",
+    },
+    {
+        "metric": "classification_health",
+        "reason": "no /dashboard/api route upstream (page-only DB read)",
+    },
+    {
+        "metric": "drafting_routes",
+        "reason": "no /dashboard/api route upstream (page-only DB read)",
+    },
+]
+
+
+# Process-start reference for real uptime. ``time.monotonic()`` is an
+# arbitrary-epoch monotonic clock, so a bare reading is not uptime — only the
+# delta from this module-load reference is. Captured once at import time.
+_PROCESS_START: float = time.monotonic()
+
+
+def _native_disk_free(path: str = "/") -> Dict[str, Any]:
+    """Hermes-native disk-free metric. ``shutil.disk_usage`` is a local syscall
+    — no Postgres/Qdrant/docker client involved — so it is gathered directly per
+    the metric-split rule. Total-failure-safe: returns ``available=False`` with a
+    reason on any error rather than raising."""
+    import shutil
+
+    try:
+        usage = shutil.disk_usage(path)
+        return {
+            "available": True,
+            "path": path,
+            "free_bytes": usage.free,
+            "total_bytes": usage.total,
+        }
+    except Exception as exc:
+        return {"available": False, "path": path, "reason": str(exc)}
+
+
+async def _proxy_mailbox_status_snapshot() -> Dict[str, Any]:
+    """Fetch the mailbox-dashboard's aggregated ``/dashboard/api/system/status``
+    snapshot (queue depth, drafts, cloud spend, Qdrant, Ollama models, n8n,
+    git_state, orphans, OTA-availability, alerts).
+
+    Buffered (the payload is a single status object). Returns a ``status``
+    discriminant the SPA can branch on:
+
+    * ``"ok"``            — ``{"status": "ok", "available": True, "data": ...}``
+    * ``"unreachable"``   — connection failed (box down / wrong host / DNS)
+    * ``"upstream_error"``— reached, but HTTP >= 400 (e.g. 5xx, 404 route)
+    * ``"non_json"``      — reached with 2xx/3xx, but body wasn't JSON
+
+    ``available`` is retained for backward compat (True only for ``"ok"``).
+    Never raises into the aggregation endpoint.
+    """
+    import httpx
+
+    upstream_url = f"{_DASHBOARD_UPSTREAM}/dashboard/api/system/status"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+            upstream = await client.get(upstream_url)
+    except httpx.HTTPError as exc:
+        return {
+            "status": "unreachable",
+            "available": False,
+            "reason": f"mailbox-dashboard unreachable: {exc}",
+        }
+    if upstream.status_code >= 400:
+        return {
+            "status": "upstream_error",
+            "available": False,
+            "reason": f"upstream returned {upstream.status_code}",
+        }
+    try:
+        return {"status": "ok", "available": True, "data": upstream.json()}
+    except ValueError:
+        return {
+            "status": "non_json",
+            "available": False,
+            "reason": f"upstream returned non-JSON ({upstream.status_code})",
+        }
+
+
+@app.get("/api/operator-status")
+async def get_operator_status(request: Request):
+    """Aggregated operator status (MBOX-478).
+
+    Combines hermes-native metrics (disk free + gateway/session state) with the
+    proxied mailbox-pipeline snapshot. Always 200; per-source degradation is
+    carried in the ``native``/``pipeline`` ``available`` flags so the SPA can
+    render partial data. ``gaps`` lists mailbox metrics with no upstream route.
+    """
+    _require_token(request)
+    from datetime import datetime, timezone
+
+    # Measure free space on the data volume (where Hermes state/queues live),
+    # not the root filesystem — those can differ on the appliance.
+    disk = _native_disk_free(os.environ.get("HERMES_DATA_DIR", "/"))
+    pipeline = await _proxy_mailbox_status_snapshot()
+    return {
+        "native": {
+            "disk_free": disk,
+            "uptime_seconds": round(time.monotonic() - _PROCESS_START),
+        },
+        "pipeline": pipeline,
+        "gaps": _OPERATOR_STATUS_GAPS,
+        "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+    }
 # Daily-brief view (MBOX-479) — port of the mailbox-dashboard /daily-brief
 # surface's pipeline widgets to the Hermes dash.
 #
