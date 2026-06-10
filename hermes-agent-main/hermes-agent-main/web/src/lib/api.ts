@@ -1109,6 +1109,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(reason ? { email, reason } : { email }),
     }),
+
+  // ── Daily brief (MBOX-479) ─────────────────────────────────────────────
+  /** Mailbox pipeline rollup for the daily-brief view: pending counts by
+   * category, urgent-untouched drafts, oldest-waiting tail. Proxied to the
+   * on-box mailbox-dashboard (``/api/daily-brief`` → ``/dashboard/api/daily-brief``);
+   * degrades to an empty brief if the upstream JSON route is absent. */
+  getDailyBrief: () => fetchJSON<DailyBriefResponse>("/api/daily-brief"),
   // ── Drafting tuning / guidelines (MBOX-475) ──────────────────────────────
   // Proxied to the on-box mailbox dashboard (Next.js ``basePath=/dashboard``)
   // through the SAME ``/dashboard/{path}`` reverse proxy the inbox calls use.
@@ -2949,6 +2956,40 @@ export interface ReclassifySenderResult {
   queued: number;
   capped: boolean;
   error?: string;
+}
+
+// ── Daily brief (MBOX-479) ───────────────────────────────────────────────────
+// Mirrors the mailbox-dashboard DigestPayload widgets (lib/queries-digest.ts):
+// pending counts by category, urgent-untouched drafts, and the oldest-waiting
+// tail. Read through the hermes ``/api/daily-brief`` proxy → on-box
+// mailbox-dashboard (same data-access model as Classifications / Job Outcomes;
+// hermes_cli has no Postgres driver). The narrative digest the page also shows
+// comes from the NATIVE ``/api/digest/latest`` (gbrain), not this proxy.
+
+/** One pending-by-category bucket. ``category`` is null for unclassified. */
+export interface BriefCategoryCount {
+  category: string | null;
+  count: number;
+}
+
+/** A lean draft row as the brief lists it (urgent + oldest-waiting sections). */
+export interface BriefDraftItem {
+  draft_id: number;
+  from_addr: string | null;
+  subject: string | null;
+  category: string | null;
+  age_hours: number;
+  signals: string[];
+}
+
+/** GET /api/daily-brief — the mailbox pipeline rollup the brief renders. All
+ * lists default to empty so an upstream that is absent (404) or unreachable
+ * degrades to a clean empty brief rather than an error surface. */
+export interface DailyBriefResponse {
+  counts_by_category: BriefCategoryCount[];
+  urgent_untouched: BriefDraftItem[];
+  oldest_pending: BriefDraftItem[];
+  health?: { sent_24h?: number; stuck_approved?: number };
 }
 
 // ── Persona voice tuning (MBOX-476) ──────────────────────────────────────

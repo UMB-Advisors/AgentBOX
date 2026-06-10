@@ -73,6 +73,7 @@ import ContactsPage from "@/pages/ContactsPage";
 import BusinessesPage from "@/pages/BusinessesPage";
 import SettingsHubPage from "@/pages/SettingsHubPage";
 import DigestSettingsPage from "@/pages/DigestSettingsPage";
+import DailyBriefPage from "@/pages/DailyBriefPage";
 import SettingsGooglePage from "@/pages/SettingsGooglePage";
 import SettingsShopifyPage from "@/pages/SettingsShopifyPage";
 import SettingsMailPage from "@/pages/SettingsMailPage";
@@ -123,6 +124,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/businesses": BusinessesPage,
   "/settings": SettingsHubPage,
   "/settings/digest": DigestSettingsPage,
+  "/daily-brief": DailyBriefPage,
   "/settings/google": SettingsGooglePage,
   "/settings/shopify": SettingsShopifyPage,
   "/settings/mail": SettingsMailPage,
