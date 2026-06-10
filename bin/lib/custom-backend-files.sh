@@ -21,11 +21,15 @@ ABX_STOCK_IMPORT="${ABX_STOCK_IMPORT:-9a8c7c0}"
 # authoritative whenever it works.
 ABX_STATIC_BACKEND=(
   web_server.py
+  config.py
   google_brief.py
   google_accounts.py
   google_people.py
   shopify_accounts.py
   agent_templates.py
+  mail_accounts.py
+  mail_probe.py
+  token_crypto.py
   onboarding_state.py
   dashboard_auth/public_paths.py
 )
