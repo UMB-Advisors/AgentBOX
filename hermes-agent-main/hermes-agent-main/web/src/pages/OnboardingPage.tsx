@@ -199,9 +199,14 @@ function CompleteBody({ activeMailbox }: { activeMailbox: string | null }) {
 function EmailConnectBody({
   cryptoConfigured,
   onConnected,
+  busy,
 }: {
   cryptoConfigured: boolean;
   onConnected: (email: string) => void;
+  /** Wizard in-flight state (MBOX-485): true while handleConnected records the
+   * active mailbox + advances the stage. Disables the forms' Connect button so
+   * a second connect can't fire during that post-connect window. */
+  busy: boolean;
 }) {
   const [provider, setProvider] = useState<"microsoft" | "imap">("microsoft");
 
@@ -231,9 +236,14 @@ function EmailConnectBody({
         <MicrosoftForm
           cryptoConfigured={cryptoConfigured}
           onConnected={onConnected}
+          disabled={busy}
         />
       ) : (
-        <ImapForm cryptoConfigured={cryptoConfigured} onConnected={onConnected} />
+        <ImapForm
+          cryptoConfigured={cryptoConfigured}
+          onConnected={onConnected}
+          disabled={busy}
+        />
       )}
     </div>
   );
@@ -430,6 +440,7 @@ export default function OnboardingPage() {
             <EmailConnectBody
               cryptoConfigured={cryptoConfigured}
               onConnected={handleConnected}
+              busy={busy}
             />
           )}
           {slug === "complete" && (
