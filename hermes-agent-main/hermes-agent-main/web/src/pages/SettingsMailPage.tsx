@@ -858,8 +858,9 @@ export default function SettingsMailPage() {
       setError(null);
       try {
         // Empty after trim clears the label (server normalises "" -> null).
+        const label = editLabel.trim();
         await api.updateMailAccount(acct.id, {
-          display_label: editLabel.trim() === "" ? null : editLabel.trim(),
+          display_label: label === "" ? null : label,
         });
         setEditingId(null);
         setEditLabel("");

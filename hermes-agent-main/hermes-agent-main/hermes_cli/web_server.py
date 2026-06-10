@@ -1955,7 +1955,7 @@ class MailAccountUpdateBody(BaseModel):
     ``model_fields_set`` in the handler -- pydantic preserves it."""
 
     display_label: Optional[str] = None
-    make_default: Optional[bool] = None
+    make_default: bool = False
 
     @field_validator("display_label")
     @classmethod
@@ -1972,13 +1972,14 @@ class MailAccountUpdateBody(BaseModel):
 
 
 @app.patch("/api/accounts/mail/{account_id}")
-async def update_mail_account(account_id: str, body: MailAccountUpdateBody):
+async def update_mail_account(request: Request, account_id: str, body: MailAccountUpdateBody):
     """Relabel and/or set-default a connected mail account (MBOX-470 registry
     mutation). Operates on the same 0600 file store the connect routes write.
     Relabel applies first, then the default swap, mirroring the mailbox source so
     a combined PATCH lands both and returns the authoritative is_default. Returns
     the updated secret-free account summary, or 404 if no record matches.
     Session-gated."""
+    _require_token(request)
     from hermes_cli import mail_accounts
 
     # Record ids are uuid4().hex (32 lowercase hex). Reject anything else up

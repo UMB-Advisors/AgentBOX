@@ -162,20 +162,11 @@ def list_accounts() -> List[Dict[str, Any]]:
     )
     out: List[Dict[str, Any]] = []
     for r in rows:
-        email = r.get("email")
-        if not email:
+        if not r.get("email"):
             continue
-        out.append(
-            {
-                "id": r.get("id"),
-                "provider": r.get("provider"),
-                "email": email,
-                "display_label": r.get("display_label"),
-                "mailbox": (r.get("provider_config") or {}).get("mailbox") or email,
-                "is_default": bool(r.get("is_default")),
-                "connected_at": r.get("connected_at"),
-            }
-        )
+        # Build each row via _summary so the safe-field selection lives in one
+        # place (shared with the single-record mutation echoes).
+        out.append(_summary(r))
     return out
 
 
@@ -266,11 +257,14 @@ def set_default(account_id: str) -> Optional[Dict[str, Any]]:
     encrypted secret. The default flag is registry metadata only -- it drives the
     list ordering/badge today; no send/receive runtime reads it yet (deferred,
     same boundary as MBOX-468)."""
-    target = _find_path_by_id(account_id)
-    if target is None:
-        return None
     d = accounts_dir()
+    if not d.is_dir():
+        return None
     promoted: Optional[Dict[str, Any]] = None
+    # Single scan: detect the target, set/clear flags, and capture the promoted
+    # record in one pass. "Not found" is promoted is None at the end -- no
+    # separate pre-check (avoids a double traversal + a TOCTOU window vs a
+    # concurrent delete between the lookup and the rewrite).
     for p in sorted(d.glob("*.json")):
         try:
             record = json.loads(p.read_text())
@@ -280,12 +274,11 @@ def set_default(account_id: str) -> Optional[Dict[str, Any]]:
             continue
         want_default = record.get("id") == account_id
         # Only rewrite rows whose flag actually changes -- avoids needless 0600
-        # rewrites on the untouched majority.
+        # rewrites on the untouched majority (including the no-op case where the
+        # target is already the default).
         if bool(record.get("is_default")) != want_default:
             record["is_default"] = want_default
             _write_json_600(p, record)
-        elif want_default:
-            record["is_default"] = True
         if want_default:
             promoted = record
     return _summary(promoted) if promoted is not None else None
