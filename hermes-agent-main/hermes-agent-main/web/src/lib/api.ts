@@ -821,6 +821,12 @@ export const api = {
       `/dashboard/api/drafts/${encodeURIComponent(String(draftId))}/clear-send-attempt`,
       { method: "POST" },
     ),
+  /** System-wide Gmail rate-limit cooldown state (MBOX-481). Read-only GET —
+   * powers the cooldown banner above the queue. Proxies the on-box
+   * mailbox-dashboard ``/api/system/gmail-cooldown`` through the SAME
+   * ``/dashboard/*`` reverse-proxy as every other inbox binding. */
+  inboxGmailCooldown: () =>
+    fetchJSON<InboxCooldownState>("/dashboard/api/system/gmail-cooldown"),
 
   // ── Auto-send rules (MBOX-477) ─────────────────────────────────────────
   // SAFETY SURFACE: these gate what the mailbox Postgres pipeline sends WITHOUT
@@ -881,6 +887,44 @@ export const api = {
     fetchJSON<{ deleted: boolean; id: number }>(
       `/dashboard/api/vip-senders/${encodeURIComponent(String(id))}`,
       { method: "DELETE" },
+    ),
+
+  // ── Knowledge base / RAG documents (MBOX-473 — mailbox-dashboard
+  //    /dashboard/api/kb-documents) ──────────────────────────────────────────
+  // Operator-uploaded SOPs / price sheets / policies that the drafting
+  // pipeline retrieves against (RAG over Qdrant). Every read and write rides
+  // the SAME /dashboard/* reverse proxy to the on-box mailbox-dashboard
+  // (:3001), which owns the mailbox.kb_documents table + Qdrant collection —
+  // there is no hermes-side copy. Adds/deletes here change the SAME corpus the
+  // pipeline retrieves from. hermes_cli holds no Postgres/Qdrant client (see
+  // docs/mailbox-to-hermes-migration-audit), so this is a pure frontend port.
+  // The multipart UPLOAD can't go through fetchJSON (JSON-only wrapper) — it
+  // uses uploadKbDocument() below, which attaches the session token via
+  // setSessionHeader the same way fetchJSON does.
+
+  /** Upload one document (multipart) into the KB, optionally scoped to one
+   * inbox. Resolves ``{ status, body }`` for both 2xx and the body-carrying
+   * 4xx rejects so the page can surface validation messages. */
+  uploadKbDocument,
+  /** List KB documents (newest first), optionally scoped to one inbox. */
+  listKbDocuments: (accountId?: number) => {
+    const qs =
+      accountId != null
+        ? `?account_id=${encodeURIComponent(String(accountId))}&limit=200`
+        : "?limit=200";
+    return fetchJSON<KbDocumentsResponse>(`/dashboard/api/kb-documents${qs}`);
+  },
+  /** Delete a KB document (cascades Qdrant points → DB row → on-disk file). */
+  deleteKbDocument: (id: number) =>
+    fetchJSON<KbDocumentDeleted>(
+      `/dashboard/api/kb-documents/${encodeURIComponent(String(id))}`,
+      { method: "DELETE" },
+    ),
+  /** Retry the embed pipeline for a failed/stuck document. */
+  retryKbDocument: (id: number) =>
+    fetchJSON<KbDocumentRetried>(
+      `/dashboard/api/kb-documents/${encodeURIComponent(String(id))}/retry`,
+      { method: "POST" },
     ),
 
   // ── Google accounts (multi-account connect) ────────────────────────────
@@ -1070,6 +1114,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(reason ? { email, reason } : { email }),
     }),
+
+  // ── Daily brief (MBOX-479) ─────────────────────────────────────────────
+  /** Mailbox pipeline rollup for the daily-brief view: pending counts by
+   * category, urgent-untouched drafts, oldest-waiting tail. Proxied to the
+   * on-box mailbox-dashboard (``/api/daily-brief`` → ``/dashboard/api/daily-brief``);
+   * degrades to an empty brief if the upstream JSON route is absent. */
+  getDailyBrief: () => fetchJSON<DailyBriefResponse>("/api/daily-brief"),
   // ── Drafting tuning / guidelines (MBOX-475) ──────────────────────────────
   // Proxied to the on-box mailbox dashboard (Next.js ``basePath=/dashboard``)
   // through the SAME ``/dashboard/{path}`` reverse proxy the inbox calls use.
@@ -1214,6 +1265,51 @@ async function mailConnectFetch(
   throw new Error(`${res.status}: ${text}`);
 }
 
+/** Upload one KB document (multipart) to the mailbox-dashboard via the
+ * ``/dashboard/api/kb-documents`` reverse proxy (MBOX-473). {@link fetchJSON}
+ * is JSON-only — it sets ``Content-Type: application/json`` and stringifies the
+ * body — so a multipart upload must bypass it. We attach the session token with
+ * {@link setSessionHeader} exactly like fetchJSON (proxied ``/dashboard/api/*``
+ * is session-gated since PR #47) and DELIBERATELY do not set Content-Type: the
+ * browser must emit ``multipart/form-data; boundary=…`` itself so the upstream
+ * Next.js ``request.formData()`` parse succeeds.
+ *
+ * The whole file rides in the request body; the on-box proxy buffers it
+ * (``await request.body()``) before forwarding, so uploads are bounded by the
+ * upstream KB_MAX_FILE_BYTES cap (10 MB) — well within a single buffered POST.
+ *
+ * Returns the parsed body for both success (200, ``{ok,duplicate,doc_id,…}``)
+ * and the upstream's body-carrying validation rejects (400/413 carry
+ * ``{error,message}``) so the caller can show the operator why a file bounced.
+ * Network/5xx without a JSON body throws. */
+async function uploadKbDocument(
+  file: File,
+  accountId?: number,
+): Promise<{ status: number; body: KbUploadResponse }> {
+  const fd = new FormData();
+  fd.set("file", file);
+  if (accountId != null) fd.set("account_id", String(accountId));
+
+  const headers = new Headers();
+  const token = window.__HERMES_SESSION_TOKEN__;
+  if (token) {
+    setSessionHeader(headers, token);
+  }
+  const res = await fetch(`${BASE}/dashboard/api/kb-documents`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: fd,
+  });
+  try {
+    const parsed = (await res.json()) as KbUploadResponse;
+    return { status: res.status, body: parsed };
+  } catch {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`${res.status}: ${text}`);
+  }
+}
+
 export interface GoogleImportResult {
   connected: boolean;
   accounts: string[];
@@ -1326,6 +1422,68 @@ export interface VipSenderCreateBody {
 /** Response shape for ``POST /dashboard/api/vip-senders`` (idempotent upsert). */
 export interface VipSenderCreated {
   sender: VipSender;
+}
+
+// ── Knowledge base / RAG documents (MBOX-473) ───────────────────────────────
+// Shapes mirror the mailbox-dashboard's ``/api/kb-documents`` contracts
+// (proxied at ``/dashboard/api/kb-documents``). The list/upload/delete/retry
+// values stay the SAME corpus the drafting pipeline retrieves against.
+
+/** Processing lifecycle of an uploaded KB document. */
+export type KbDocStatus = "processing" | "ready" | "failed";
+
+/** A KB document row as returned by the mailbox-dashboard
+ * ``GET /api/kb-documents`` (proxied at ``/dashboard/api/kb-documents``). */
+export interface KbDocument {
+  id: number;
+  account_id: number;
+  title: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  sha256: string;
+  chunk_count: number;
+  status: KbDocStatus;
+  error_message: string | null;
+  uploaded_by: string | null;
+  uploaded_at: string;
+  processing_started_at: string;
+  ready_at: string | null;
+}
+
+/** Response shape for ``GET /dashboard/api/kb-documents``. */
+export interface KbDocumentsResponse {
+  documents: KbDocument[];
+}
+
+/** Upload result. 200 carries ``ok``/``duplicate``/``doc_id``/``status``;
+ * the upstream's body-carrying rejects (400 bad filename/mime/empty, 413 too
+ * large, 500) carry ``error``/``message``. Optional fields make one shape
+ * cover both the success and the reject body. */
+export interface KbUploadResponse {
+  ok?: boolean;
+  duplicate?: boolean;
+  doc_id?: number;
+  status?: KbDocStatus;
+  sha256?: string;
+  error?: string;
+  message?: string;
+  // The session-gating proxy returns ``{"detail": "Unauthorized"}`` on 401;
+  // surface it so the upload feedback can show the proxy's reason.
+  detail?: string;
+}
+
+/** Response shape for ``DELETE /dashboard/api/kb-documents/:id``. */
+export interface KbDocumentDeleted {
+  deleted: boolean;
+  doc_id: number;
+  sha256: string;
+}
+
+/** Response shape for ``POST /dashboard/api/kb-documents/:id/retry``. */
+export interface KbDocumentRetried {
+  retrying: boolean;
+  doc_id: number;
 }
 
 // ── Mail accounts (Microsoft 365 + IMAP, MBOX-468) ──────────────────────────
@@ -2856,6 +3014,17 @@ export interface InboxSnoozeResult {
   snooze_until: string;
 }
 
+/** System-wide Gmail rate-limit cooldown (MBOX-481, ported from mailbox
+ * GmailCooldownBanner / STAQPRO-331). Read from the on-box mailbox-dashboard
+ * ``/api/system/gmail-cooldown`` GET — ``is_active`` is the operator gate; the
+ * timestamps drive the banner's "next safe send" copy. All ISO-8601 or null. */
+export interface InboxCooldownState {
+  is_active: boolean;
+  until: string | null;
+  set_at: string | null;
+  recommended_safe_at: string | null;
+}
+
 // ── Classifications (MBOX-472) ───────────────────────────────────────────────
 // Mirrors the mailbox-dashboard ClassificationRow shape
 // (lib/queries-classifications.ts). ``route`` is derived server-side from the
@@ -2903,6 +3072,40 @@ export interface ReclassifySenderResult {
   queued: number;
   capped: boolean;
   error?: string;
+}
+
+// ── Daily brief (MBOX-479) ───────────────────────────────────────────────────
+// Mirrors the mailbox-dashboard DigestPayload widgets (lib/queries-digest.ts):
+// pending counts by category, urgent-untouched drafts, and the oldest-waiting
+// tail. Read through the hermes ``/api/daily-brief`` proxy → on-box
+// mailbox-dashboard (same data-access model as Classifications / Job Outcomes;
+// hermes_cli has no Postgres driver). The narrative digest the page also shows
+// comes from the NATIVE ``/api/digest/latest`` (gbrain), not this proxy.
+
+/** One pending-by-category bucket. ``category`` is null for unclassified. */
+export interface BriefCategoryCount {
+  category: string | null;
+  count: number;
+}
+
+/** A lean draft row as the brief lists it (urgent + oldest-waiting sections). */
+export interface BriefDraftItem {
+  draft_id: number;
+  from_addr: string | null;
+  subject: string | null;
+  category: string | null;
+  age_hours: number;
+  signals: string[];
+}
+
+/** GET /api/daily-brief — the mailbox pipeline rollup the brief renders. All
+ * lists default to empty so an upstream that is absent (404) or unreachable
+ * degrades to a clean empty brief rather than an error surface. */
+export interface DailyBriefResponse {
+  counts_by_category: BriefCategoryCount[];
+  urgent_untouched: BriefDraftItem[];
+  oldest_pending: BriefDraftItem[];
+  health?: { sent_24h?: number; stuck_approved?: number };
 }
 
 // ── Persona voice tuning (MBOX-476) ──────────────────────────────────────

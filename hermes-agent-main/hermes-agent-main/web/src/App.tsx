@@ -73,6 +73,7 @@ import ContactsPage from "@/pages/ContactsPage";
 import BusinessesPage from "@/pages/BusinessesPage";
 import SettingsHubPage from "@/pages/SettingsHubPage";
 import DigestSettingsPage from "@/pages/DigestSettingsPage";
+import DailyBriefPage from "@/pages/DailyBriefPage";
 import SettingsGooglePage from "@/pages/SettingsGooglePage";
 import SettingsShopifyPage from "@/pages/SettingsShopifyPage";
 import SettingsMailPage from "@/pages/SettingsMailPage";
@@ -82,6 +83,7 @@ import SettingsClassificationsPage from "@/pages/SettingsClassificationsPage";
 import SettingsPersonaPage from "@/pages/SettingsPersonaPage";
 import SettingsTuningPage from "@/pages/SettingsTuningPage";
 import StatusPage from "@/pages/StatusPage";
+import SettingsKnowledgeBasePage from "@/pages/SettingsKnowledgeBasePage";
 import OnboardingPage from "@/pages/OnboardingPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
@@ -123,6 +125,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/businesses": BusinessesPage,
   "/settings": SettingsHubPage,
   "/settings/digest": DigestSettingsPage,
+  "/daily-brief": DailyBriefPage,
   "/settings/google": SettingsGooglePage,
   "/settings/shopify": SettingsShopifyPage,
   "/settings/mail": SettingsMailPage,
@@ -132,6 +135,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/settings/persona": SettingsPersonaPage,
   "/settings/tuning": SettingsTuningPage,
   "/status": StatusPage,
+  "/settings/knowledge-base": SettingsKnowledgeBasePage,
   "/onboarding": OnboardingPage,
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,

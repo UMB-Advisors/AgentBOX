@@ -2586,6 +2586,69 @@ async def get_operator_status(request: Request):
         "gaps": _OPERATOR_STATUS_GAPS,
         "generated_at": datetime.now(tz=timezone.utc).isoformat(),
     }
+# Daily-brief view (MBOX-479) — port of the mailbox-dashboard /daily-brief
+# surface's pipeline widgets to the Hermes dash.
+#
+# The brief's pending-by-category / urgent-untouched / oldest-waiting numbers
+# are computed from the mailbox Postgres pipeline (lib/queries-digest.ts:
+# getDigestPayload). hermes_cli has NO Postgres driver by decision (see the
+# Classifications / Job Outcomes ports above), so this is a thin JSON proxy to
+# the on-box mailbox-dashboard — the SAME data-access model the sibling ports
+# use. We do NOT add a parallel DB client here.
+#
+#   GET /api/daily-brief -> /dashboard/api/daily-brief
+#
+# Note (MBOX-479 gap, mirrors MBOX-472): the mailbox-dashboard renders the brief
+# server-side (Next.js page calling getDigestPayload directly) and exposes the
+# digest payload only as rendered HTML (``/dashboard/api/internal/digest``);
+# there is no structured JSON route for the brief widgets yet. This proxy targets
+# ``/dashboard/api/daily-brief`` so the mailbox side can add that JSON route later
+# WITHOUT this port modifying mailbox/. Until it exists the upstream 404s and the
+# SPA degrades to a clean empty state. The narrative digest content the brief
+# page also shows comes from the NATIVE ``/api/digest/latest`` (gbrain), not this
+# proxy.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/daily-brief")
+async def get_daily_brief(request: Request):
+    """Proxy the daily-brief pipeline rollup from the mailbox-dashboard.
+
+    Buffers (not streamed) — the payload is small (a handful of category counts
+    plus two short draft lists). Relays the upstream status + JSON body; upstream
+    unreachable -> 502, non-JSON upstream (e.g. the Next.js HTML 404 page before
+    the JSON route exists) -> a clean JSON error the SPA renders as empty.
+    """
+    import httpx
+
+    upstream_url = f"{_DASHBOARD_UPSTREAM}/dashboard/api/daily-brief"
+    fwd_headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in _HOP_BY_HOP
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            upstream = await client.request(
+                "GET",
+                upstream_url,
+                params=request.query_params,
+                headers=fwd_headers,
+            )
+    except httpx.HTTPError as exc:
+        return JSONResponse(
+            status_code=502,
+            content={"detail": f"mailbox-dashboard unreachable: {exc}"},
+        )
+    try:
+        payload = upstream.json()
+    except ValueError:
+        status_code = 502 if upstream.status_code < 400 else upstream.status_code
+        return JSONResponse(
+            status_code=status_code,
+            content={"detail": f"upstream returned non-JSON ({upstream.status_code})"},
+        )
+    return JSONResponse(status_code=upstream.status_code, content=payload)
 
 
 # ---------------------------------------------------------------------------
