@@ -1947,6 +1947,80 @@ async def delete_mail_account(account_id: str):
     return JSONResponse({"removed": removed})
 
 
+class MailAccountUpdateBody(BaseModel):
+    """Registry mutation for a connected mailbox (MBOX-470). All fields optional;
+    a request may relabel, set-default, or both in one PATCH. ``display_label``
+    present-but-null clears the label (falls back to the email). The distinction
+    between "omitted" and "explicit null" is carried by ``set()``-membership on
+    ``model_fields_set`` in the handler -- pydantic preserves it."""
+
+    display_label: Optional[str] = None
+    make_default: bool = False
+
+    @field_validator("display_label")
+    @classmethod
+    def _label_len(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        # Empty after strip means "clear the label" -> normalise to None.
+        if v == "":
+            return None
+        if len(v) > 100:
+            raise ValueError("must be 1..100 chars")
+        return v
+
+
+@app.patch("/api/accounts/mail/{account_id}")
+async def update_mail_account(request: Request, account_id: str, body: MailAccountUpdateBody):
+    """Relabel and/or set-default a connected mail account (MBOX-470 registry
+    mutation). Operates on the same 0600 file store the connect routes write.
+    Relabel applies first, then the default swap, mirroring the mailbox source so
+    a combined PATCH lands both and returns the authoritative is_default. Returns
+    the updated secret-free account summary, or 404 if no record matches.
+    Session-gated."""
+    _require_token(request)
+    from hermes_cli import mail_accounts
+
+    # Record ids are uuid4().hex (32 lowercase hex). Reject anything else up
+    # front -- a malformed id can never match, so skip the scan.
+    if not re.fullmatch(r"[0-9a-f]{32}", account_id or ""):
+        return JSONResponse(
+            {"error": "invalid account id"}, status_code=400
+        )
+
+    fields = body.model_fields_set
+    loop = asyncio.get_running_loop()
+    account = None
+
+    # Apply the label edit first (only when the caller actually sent the field),
+    # then the default swap -- so a single PATCH that does both lands both, with
+    # the set-default result (authoritative is_default) returned.
+    if "display_label" in fields:
+        account = await loop.run_in_executor(
+            None, mail_accounts.update_label, account_id, body.display_label
+        )
+        if account is None:
+            return JSONResponse({"error": "not_found", "id": account_id}, status_code=404)
+
+    if body.make_default:
+        account = await loop.run_in_executor(
+            None, mail_accounts.set_default, account_id
+        )
+        if account is None:
+            return JSONResponse({"error": "not_found", "id": account_id}, status_code=404)
+
+    if account is None:
+        # No-op PATCH (no recognised field) -- treat as a read of the current row
+        # so the client always gets the authoritative summary back, or 404.
+        rows = await loop.run_in_executor(None, mail_accounts.list_accounts)
+        account = next((r for r in rows if r.get("id") == account_id), None)
+        if account is None:
+            return JSONResponse({"error": "not_found", "id": account_id}, status_code=404)
+
+    return JSONResponse({"account": account})
+
+
 class CalendarEventBody(BaseModel):
     """Payload for create/update on the Calendar tab. ``account`` selects which
     connected account's primary calendar to write to (blank = primary). Timed
