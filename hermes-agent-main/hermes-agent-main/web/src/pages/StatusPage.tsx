@@ -8,6 +8,7 @@ import {
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { api } from "@/lib/api";
 import type {
+  OperatorPipeline,
   OperatorPipelineSnapshot,
   OperatorStatusResponse,
 } from "@/lib/api";
@@ -76,6 +77,29 @@ function formatRelative(iso: string | null | undefined): string {
   if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
   return `${d}d ago`;
+}
+
+/** Distinct operator-facing copy per pipeline degradation mode. Falls back to
+ * the raw upstream reason when the discriminant is absent (older backend). */
+function pipelineUnavailableCopy(
+  pipeline: OperatorPipeline | undefined,
+): string | undefined {
+  switch (pipeline?.status) {
+    case "unreachable":
+      return `mailbox-dashboard unreachable — ${
+        pipeline.reason ?? "the on-box dashboard is not responding"
+      }`;
+    case "upstream_error":
+      return `mailbox-dashboard returned an error — ${
+        pipeline.reason ?? "upstream error"
+      }`;
+    case "non_json":
+      return `mailbox-dashboard returned an unexpected (non-JSON) response — ${
+        pipeline.reason ?? "non-JSON body"
+      }`;
+    default:
+      return pipeline?.reason;
+  }
 }
 
 type Tone = "default" | "green" | "orange" | "red";
@@ -149,10 +173,12 @@ function OtaUpdateButton() {
   const [phase, setPhase] = useState<OtaPhase>("idle");
   const [detail, setDetail] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
+  const armTimerRef = useRef<number | null>(null);
 
   useEffect(
     () => () => {
       if (pollRef.current !== null) window.clearInterval(pollRef.current);
+      if (armTimerRef.current !== null) window.clearTimeout(armTimerRef.current);
     },
     [],
   );
@@ -179,7 +205,7 @@ function OtaUpdateButton() {
   const arm = useCallback(() => {
     setPhase("arming");
     setDetail("Confirm within 5s to apply the update.");
-    window.setTimeout(() => {
+    armTimerRef.current = window.setTimeout(() => {
       setPhase((p) => (p === "arming" ? "idle" : p));
     }, 5000);
   }, []);
@@ -540,14 +566,22 @@ export default function StatusPage() {
             <Stat
               label="Disk free"
               value={formatBytes(native.disk_free.free_bytes ?? 0)}
-              sub={`of ${formatBytes(native.disk_free.total_bytes ?? 0)}`}
+              sub={`of ${formatBytes(native.disk_free.total_bytes ?? 0)} on ${
+                native.disk_free.path
+              }`}
               mono
             />
           ) : (
             <Stat
               label="Disk free"
               value="—"
-              sub={native?.disk_free.reason ?? "unavailable"}
+              sub={
+                native?.disk_free
+                  ? `${native.disk_free.path}: ${
+                      native.disk_free.reason ?? "unavailable"
+                    }`
+                  : "unavailable"
+              }
               tone="orange"
               mono
             />
@@ -558,7 +592,7 @@ export default function StatusPage() {
       {!pipeline?.available ? (
         <section className="mb-6">
           <SectionTitle>Mailbox pipeline</SectionTitle>
-          <Unavailable reason={pipeline?.reason} />
+          <Unavailable reason={pipelineUnavailableCopy(pipeline)} />
         </section>
       ) : (
         snap && (

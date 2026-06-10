@@ -2492,6 +2492,12 @@ _OPERATOR_STATUS_GAPS: List[Dict[str, str]] = [
 ]
 
 
+# Process-start reference for real uptime. ``time.monotonic()`` is an
+# arbitrary-epoch monotonic clock, so a bare reading is not uptime — only the
+# delta from this module-load reference is. Captured once at import time.
+_PROCESS_START: float = time.monotonic()
+
+
 def _native_disk_free(path: str = "/") -> Dict[str, Any]:
     """Hermes-native disk-free metric. ``shutil.disk_usage`` is a local syscall
     — no Postgres/Qdrant/docker client involved — so it is gathered directly per
@@ -2507,7 +2513,7 @@ def _native_disk_free(path: str = "/") -> Dict[str, Any]:
             "free_bytes": usage.free,
             "total_bytes": usage.total,
         }
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:
         return {"available": False, "path": path, "reason": str(exc)}
 
 
@@ -2516,10 +2522,16 @@ async def _proxy_mailbox_status_snapshot() -> Dict[str, Any]:
     snapshot (queue depth, drafts, cloud spend, Qdrant, Ollama models, n8n,
     git_state, orphans, OTA-availability, alerts).
 
-    Buffered (the payload is a single status object). Returns
-    ``{"available": True, "data": <snapshot>}`` on success, or
-    ``{"available": False, "reason": ...}`` when the upstream is unreachable /
-    returns non-JSON / errors — never raises into the aggregation endpoint.
+    Buffered (the payload is a single status object). Returns a ``status``
+    discriminant the SPA can branch on:
+
+    * ``"ok"``            — ``{"status": "ok", "available": True, "data": ...}``
+    * ``"unreachable"``   — connection failed (box down / wrong host / DNS)
+    * ``"upstream_error"``— reached, but HTTP >= 400 (e.g. 5xx, 404 route)
+    * ``"non_json"``      — reached with 2xx/3xx, but body wasn't JSON
+
+    ``available`` is retained for backward compat (True only for ``"ok"``).
+    Never raises into the aggregation endpoint.
     """
     import httpx
 
@@ -2528,23 +2540,29 @@ async def _proxy_mailbox_status_snapshot() -> Dict[str, Any]:
         async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
             upstream = await client.get(upstream_url)
     except httpx.HTTPError as exc:
-        return {"available": False, "reason": f"mailbox-dashboard unreachable: {exc}"}
+        return {
+            "status": "unreachable",
+            "available": False,
+            "reason": f"mailbox-dashboard unreachable: {exc}",
+        }
     if upstream.status_code >= 400:
         return {
+            "status": "upstream_error",
             "available": False,
             "reason": f"upstream returned {upstream.status_code}",
         }
     try:
-        return {"available": True, "data": upstream.json()}
+        return {"status": "ok", "available": True, "data": upstream.json()}
     except ValueError:
         return {
+            "status": "non_json",
             "available": False,
             "reason": f"upstream returned non-JSON ({upstream.status_code})",
         }
 
 
 @app.get("/api/operator-status")
-async def get_operator_status():
+async def get_operator_status(request: Request):
     """Aggregated operator status (MBOX-478).
 
     Combines hermes-native metrics (disk free + gateway/session state) with the
@@ -2552,14 +2570,17 @@ async def get_operator_status():
     carried in the ``native``/``pipeline`` ``available`` flags so the SPA can
     render partial data. ``gaps`` lists mailbox metrics with no upstream route.
     """
+    _require_token(request)
     from datetime import datetime, timezone
 
-    disk = _native_disk_free("/")
+    # Measure free space on the data volume (where Hermes state/queues live),
+    # not the root filesystem — those can differ on the appliance.
+    disk = _native_disk_free(os.environ.get("HERMES_DATA_DIR", "/"))
     pipeline = await _proxy_mailbox_status_snapshot()
     return {
         "native": {
             "disk_free": disk,
-            "uptime_seconds": round(time.monotonic()),
+            "uptime_seconds": round(time.monotonic() - _PROCESS_START),
         },
         "pipeline": pipeline,
         "gaps": _OPERATOR_STATUS_GAPS,

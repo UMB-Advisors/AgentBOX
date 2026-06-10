@@ -1836,7 +1836,16 @@ export interface OperatorPipelineSnapshot {
   generated_at?: string;
 }
 
+/** Pipeline-proxy degradation discriminant (MBOX-478). ``available`` is kept
+ * for backward compat (true only when ``status === "ok"``). */
+export type OperatorPipelineStatus =
+  | "ok"
+  | "unreachable"
+  | "upstream_error"
+  | "non_json";
+
 export interface OperatorPipeline {
+  status?: OperatorPipelineStatus;
   available: boolean;
   reason?: string;
   data?: OperatorPipelineSnapshot;

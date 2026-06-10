@@ -2793,6 +2793,7 @@ class TestOperatorStatus:
         assert isinstance(body["native"]["uptime_seconds"], int)
         # Pipeline snapshot proxied verbatim from the dashboard.
         assert body["pipeline"]["available"] is True
+        assert body["pipeline"]["status"] == "ok"
         assert body["pipeline"]["data"] == snapshot
         assert captured["url"] == (
             f"{_DASHBOARD_UPSTREAM}/dashboard/api/system/status"
@@ -2815,16 +2816,59 @@ class TestOperatorStatus:
         body = resp.json()
         assert body["native"]["disk_free"]["available"] is True
         assert body["pipeline"]["available"] is False
+        assert body["pipeline"]["status"] == "unreachable"
         assert "unreachable" in body["pipeline"]["reason"]
 
-    def test_pipeline_unavailable_on_non_json(self, monkeypatch):
-        # Next.js HTML 404 page → non-JSON upstream.
+    def test_pipeline_upstream_error_on_http_4xx(self, monkeypatch):
+        # Next.js HTML 404 page → HTTP error (status checked before body parse).
         self._install_fake_httpx(monkeypatch, status=404, json_body=None)
         resp = self.client.get("/api/operator-status")
         assert resp.status_code == 200
         body = resp.json()
         assert body["pipeline"]["available"] is False
+        assert body["pipeline"]["status"] == "upstream_error"
         assert "404" in body["pipeline"]["reason"]
+
+    def test_pipeline_non_json_on_2xx_garbage(self, monkeypatch):
+        # Reached with 200 but body wasn't JSON → distinct non_json discriminant.
+        self._install_fake_httpx(monkeypatch, status=200, json_body=None)
+        resp = self.client.get("/api/operator-status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["pipeline"]["available"] is False
+        assert body["pipeline"]["status"] == "non_json"
+        assert "non-JSON" in body["pipeline"]["reason"]
+
+    def test_native_disk_free_degrades_on_exception(self, monkeypatch):
+        # shutil.disk_usage raising must degrade to available=False, not 500.
+        import shutil
+
+        self._install_fake_httpx(
+            monkeypatch, status=200, json_body={"queue_depth": 0}
+        )
+        monkeypatch.setattr(
+            shutil,
+            "disk_usage",
+            lambda *_a, **_k: (_ for _ in ()).throw(OSError("disk gone")),
+        )
+        resp = self.client.get("/api/operator-status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["native"]["disk_free"]["available"] is False
+        assert "disk gone" in body["native"]["disk_free"]["reason"]
+
+    def test_uptime_is_process_relative(self, monkeypatch):
+        # Reported uptime is the delta from process start, not the raw monotonic
+        # clock — so it must be small right after import, never a huge epoch.
+        self._install_fake_httpx(
+            monkeypatch, status=200, json_body={"queue_depth": 0}
+        )
+        resp = self.client.get("/api/operator-status")
+        assert resp.status_code == 200
+        body = resp.json()
+        uptime = body["native"]["uptime_seconds"]
+        assert isinstance(uptime, int)
+        assert 0 <= uptime < 86_400
 
     def test_requires_session(self):
         """/api/operator-status must be auth-gated like the rest of /api/*."""
