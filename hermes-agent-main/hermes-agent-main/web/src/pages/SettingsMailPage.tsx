@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Mail, Plus } from "lucide-react";
+import { Check, Mail, Pencil, Plus, Star } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import {
@@ -791,6 +791,12 @@ export default function SettingsMailPage() {
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  // Registry mutations (MBOX-470): inline relabel + set-default. ``rowBusy`` is
+  // the id of the account whose PATCH is in flight (disables that row's
+  // controls); ``editingId`` is the account whose label is being edited inline.
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -831,6 +837,59 @@ export default function SettingsMailPage() {
         setError(e instanceof Error ? e.message : "Failed to remove mailbox");
       } finally {
         setRemoving(null);
+      }
+    },
+    [refresh],
+  );
+
+  const startEdit = useCallback((acct: MailAccount) => {
+    setEditingId(acct.id);
+    setEditLabel(acct.display_label ?? "");
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditingId(null);
+    setEditLabel("");
+  }, []);
+
+  const saveLabel = useCallback(
+    async (acct: MailAccount) => {
+      setRowBusy(acct.id);
+      setError(null);
+      try {
+        // Empty after trim clears the label (server normalises "" -> null).
+        await api.updateMailAccount(acct.id, {
+          display_label: editLabel.trim() === "" ? null : editLabel.trim(),
+        });
+        setEditingId(null);
+        setEditLabel("");
+        setBanner({ kind: "success", text: "Label updated." });
+        await refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to update label");
+      } finally {
+        setRowBusy(null);
+      }
+    },
+    [editLabel, refresh],
+  );
+
+  const makeDefault = useCallback(
+    async (acct: MailAccount) => {
+      if (acct.is_default) return;
+      setRowBusy(acct.id);
+      setError(null);
+      try {
+        await api.updateMailAccount(acct.id, { make_default: true });
+        setBanner({
+          kind: "success",
+          text: `${acct.display_label || acct.email} is now the default inbox.`,
+        });
+        await refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to set default");
+      } finally {
+        setRowBusy(null);
       }
     },
     [refresh],
@@ -939,39 +998,104 @@ export default function SettingsMailPage() {
               ) : (
                 accounts.map((acct) => {
                   const connectedAt = formatConnectedAt(acct.connected_at);
+                  const editing = editingId === acct.id;
+                  const busyRow = rowBusy === acct.id;
                   return (
                     <div
                       key={acct.id}
                       className="flex items-center gap-3 rounded border border-border px-3 py-2"
                     >
                       <Mail className="h-4 w-4 shrink-0 text-text-tertiary" />
-                      <div className="flex min-w-0 flex-1 flex-col">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-sm font-bold">
-                            {acct.display_label || acct.email}
-                          </span>
-                          <Badge tone="secondary">
-                            {PROVIDER_LABEL[acct.provider]}
-                          </Badge>
+                      {editing ? (
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <input
+                            type="text"
+                            value={editLabel}
+                            onChange={(e) => setEditLabel(e.target.value)}
+                            placeholder={acct.email}
+                            maxLength={100}
+                            autoFocus
+                            className="mt-0 min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-sm text-foreground outline-none focus:border-primary"
+                          />
+                          <Button
+                            size="sm"
+                            disabled={busyRow}
+                            prefix={busyRow ? <Spinner /> : undefined}
+                            onClick={() => void saveLabel(acct)}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            outlined
+                            size="sm"
+                            disabled={busyRow}
+                            onClick={cancelEdit}
+                          >
+                            Cancel
+                          </Button>
                         </div>
-                        <span className="truncate text-xs text-text-tertiary">
-                          {acct.email}
-                          {acct.mailbox && acct.mailbox !== acct.email
-                            ? ` · ${acct.mailbox}`
-                            : ""}
-                          {connectedAt ? ` · connected ${connectedAt}` : ""}
-                        </span>
-                      </div>
-                      <Button
-                        outlined
-                        destructive
-                        size="sm"
-                        disabled={removing === acct.id}
-                        prefix={removing === acct.id ? <Spinner /> : undefined}
-                        onClick={() => void remove(acct)}
-                      >
-                        Remove
-                      </Button>
+                      ) : (
+                        <>
+                          <div className="flex min-w-0 flex-1 flex-col">
+                            <div className="flex items-center gap-2">
+                              <span className="truncate text-sm font-bold">
+                                {acct.display_label || acct.email}
+                              </span>
+                              {acct.is_default && (
+                                <Badge
+                                  tone="success"
+                                  className="flex items-center gap-1"
+                                >
+                                  <Star className="h-3 w-3" />
+                                  Default
+                                </Badge>
+                              )}
+                              <Badge tone="secondary">
+                                {PROVIDER_LABEL[acct.provider]}
+                              </Badge>
+                            </div>
+                            <span className="truncate text-xs text-text-tertiary">
+                              {acct.email}
+                              {acct.mailbox && acct.mailbox !== acct.email
+                                ? ` · ${acct.mailbox}`
+                                : ""}
+                              {connectedAt ? ` · connected ${connectedAt}` : ""}
+                            </span>
+                          </div>
+                          {!acct.is_default && (
+                            <Button
+                              outlined
+                              size="sm"
+                              disabled={busyRow}
+                              prefix={
+                                busyRow ? <Spinner /> : <Check className="h-3.5 w-3.5" />
+                              }
+                              onClick={() => void makeDefault(acct)}
+                            >
+                              Set default
+                            </Button>
+                          )}
+                          <Button
+                            outlined
+                            size="sm"
+                            disabled={busyRow}
+                            prefix={<Pencil className="h-3.5 w-3.5" />}
+                            onClick={() => startEdit(acct)}
+                          >
+                            Rename
+                          </Button>
+                          <Button
+                            outlined
+                            destructive
+                            size="sm"
+                            disabled={removing === acct.id || busyRow}
+                            prefix={removing === acct.id ? <Spinner /> : undefined}
+                            onClick={() => void remove(acct)}
+                          >
+                            Remove
+                          </Button>
+                        </>
+                      )}
                     </div>
                   );
                 })

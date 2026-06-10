@@ -83,3 +83,74 @@ def test_list_accounts_strips_secret(store):
     assert "provider_config" not in r
     assert r["email"] == "ops@acme.com"
     assert r["mailbox"] == "ops@acme.com"
+    assert r["is_default"] is False
+
+
+# ── MBOX-470: relabel + set-default registry mutations ──────────────────────
+
+
+def _seed(store, *, email, provider="imap", label=None, is_default=False, when=None):
+    """Write a minimal 0600 record straight to disk for mutation tests."""
+    rec = {
+        "id": __import__("uuid").uuid4().hex,
+        "provider": provider,
+        "email": email,
+        "display_label": label,
+        "provider_config": {"mailbox": email},
+        "secret_enc": "iv.tag.ct",
+        "connected_at": when or "2026-01-01T00:00:00+00:00",
+    }
+    if is_default:
+        rec["is_default"] = True
+    mail_accounts._write_json_600(mail_accounts._record_path(email), rec)
+    return rec["id"]
+
+
+def test_update_label_sets_and_clears(store):
+    aid = _seed(store, email="ops@acme.com", label="Ops")
+    out = mail_accounts.update_label(aid, "Support")
+    assert out is not None
+    assert out["display_label"] == "Support"
+    assert "secret_enc" not in out  # summary never leaks the secret
+    # The on-disk record keeps the encrypted secret untouched.
+    raw = json.loads((mail_accounts.accounts_dir() / "ops@acme.com.json").read_text())
+    assert raw["secret_enc"] == "iv.tag.ct"
+    # Empty/whitespace clears the label back to None.
+    cleared = mail_accounts.update_label(aid, "   ")
+    assert cleared is not None
+    assert cleared["display_label"] is None
+
+
+def test_update_label_unknown_id_returns_none(store):
+    _seed(store, email="ops@acme.com")
+    assert mail_accounts.update_label("0" * 32, "x") is None
+
+
+def test_set_default_promotes_one_and_demotes_others(store):
+    a = _seed(store, email="a@x.com", when="2026-01-01T00:00:00+00:00")
+    b = _seed(store, email="b@x.com", is_default=True, when="2026-01-02T00:00:00+00:00")
+
+    out = mail_accounts.set_default(a)
+    assert out is not None
+    assert out["id"] == a
+    assert out["is_default"] is True
+
+    rows = {r["id"]: r for r in mail_accounts.list_accounts()}
+    assert rows[a]["is_default"] is True
+    assert rows[b]["is_default"] is False
+    # Exactly one default across the whole store.
+    assert sum(1 for r in rows.values() if r["is_default"]) == 1
+
+
+def test_set_default_unknown_id_returns_none(store):
+    _seed(store, email="a@x.com")
+    assert mail_accounts.set_default("0" * 32) is None
+
+
+def test_list_accounts_orders_default_first(store):
+    # Older non-default first, then a newer default — default must sort first.
+    _seed(store, email="a@x.com", when="2026-01-01T00:00:00+00:00")
+    b = _seed(store, email="b@x.com", is_default=True, when="2026-02-01T00:00:00+00:00")
+    rows = mail_accounts.list_accounts()
+    assert rows[0]["id"] == b
+    assert rows[0]["is_default"] is True
