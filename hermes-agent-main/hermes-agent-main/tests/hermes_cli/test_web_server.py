@@ -2705,3 +2705,133 @@ class TestClassificationsProxy:
         resp = unauth_client.get("/api/classifications")
         assert resp.status_code == 401
 
+
+class TestOperatorStatus:
+    """MBOX-478 — the /api/operator-status aggregation endpoint. Combines
+    hermes-native metrics (disk free, gathered directly) with the proxied
+    mailbox-pipeline snapshot (``/dashboard/api/system/status``). These assert
+    the native block is always present, the pipeline block degrades cleanly when
+    the upstream is unreachable / non-JSON, and the gaps list is surfaced.
+    ``httpx`` is faked at the module level (the proxy helper imports it lazily)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_test_client(self, monkeypatch, _isolate_hermes_home):
+        try:
+            from starlette.testclient import TestClient
+        except ImportError:
+            pytest.skip("fastapi/starlette not installed")
+
+        import hermes_state
+        from hermes_constants import get_hermes_home
+        from hermes_cli.web_server import app, _SESSION_HEADER_NAME, _SESSION_TOKEN
+
+        monkeypatch.setattr(
+            hermes_state, "DEFAULT_DB_PATH", get_hermes_home() / "state.db"
+        )
+        self.client = TestClient(app)
+        self.client.headers[_SESSION_HEADER_NAME] = _SESSION_TOKEN
+
+    def _install_fake_httpx(self, monkeypatch, *, status, json_body=None,
+                            raise_exc=None):
+        """Patch ``httpx`` so the proxy helper's lazy ``import httpx`` resolves
+        to a fake AsyncClient with a ``.get``. Mirrors the classifications-proxy
+        test harness."""
+        import sys
+        import types
+        import httpx as real_httpx
+
+        captured = {}
+
+        class _FakeResponse:
+            def __init__(self):
+                self.status_code = status
+
+            def json(self):
+                if json_body is None:
+                    raise ValueError("no json")
+                return json_body
+
+        class _FakeAsyncClient:
+            def __init__(self, *a, **k):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get(self, url, **k):
+                captured["url"] = url
+                if raise_exc is not None:
+                    raise raise_exc
+                return _FakeResponse()
+
+        fake_httpx = types.SimpleNamespace(
+            AsyncClient=_FakeAsyncClient,
+            Timeout=real_httpx.Timeout,
+            HTTPError=real_httpx.HTTPError,
+        )
+        monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+        return captured
+
+    def test_native_disk_always_present(self, monkeypatch):
+        from hermes_cli.web_server import _DASHBOARD_UPSTREAM
+
+        snapshot = {"queue_depth": 3, "drafts_24h": {"total": 5}}
+        captured = self._install_fake_httpx(
+            monkeypatch, status=200, json_body=snapshot
+        )
+
+        resp = self.client.get("/api/operator-status")
+        assert resp.status_code == 200
+        body = resp.json()
+        # Native disk-free is gathered directly (real shutil call) — always
+        # present and available on the test host.
+        assert body["native"]["disk_free"]["available"] is True
+        assert body["native"]["disk_free"]["total_bytes"] > 0
+        assert isinstance(body["native"]["uptime_seconds"], int)
+        # Pipeline snapshot proxied verbatim from the dashboard.
+        assert body["pipeline"]["available"] is True
+        assert body["pipeline"]["data"] == snapshot
+        assert captured["url"] == (
+            f"{_DASHBOARD_UPSTREAM}/dashboard/api/system/status"
+        )
+        # Gaps are surfaced, not faked.
+        metrics = {g["metric"] for g in body["gaps"]}
+        assert "draft_backlog_age" in metrics
+
+    def test_pipeline_unavailable_when_upstream_unreachable(self, monkeypatch):
+        import httpx as real_httpx
+
+        self._install_fake_httpx(
+            monkeypatch,
+            status=0,
+            raise_exc=real_httpx.ConnectError("boom"),
+        )
+        resp = self.client.get("/api/operator-status")
+        # Endpoint never fails as a whole — native still renders.
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["native"]["disk_free"]["available"] is True
+        assert body["pipeline"]["available"] is False
+        assert "unreachable" in body["pipeline"]["reason"]
+
+    def test_pipeline_unavailable_on_non_json(self, monkeypatch):
+        # Next.js HTML 404 page → non-JSON upstream.
+        self._install_fake_httpx(monkeypatch, status=404, json_body=None)
+        resp = self.client.get("/api/operator-status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["pipeline"]["available"] is False
+        assert "404" in body["pipeline"]["reason"]
+
+    def test_requires_session(self):
+        """/api/operator-status must be auth-gated like the rest of /api/*."""
+        from starlette.testclient import TestClient
+        from hermes_cli.web_server import app
+
+        unauth_client = TestClient(app)
+        resp = unauth_client.get("/api/operator-status")
+        assert resp.status_code == 401
+

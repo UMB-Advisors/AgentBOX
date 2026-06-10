@@ -197,6 +197,11 @@ export async function buildWsAuthParam(): Promise<[string, string]> {
 
 export const api = {
   getStatus: () => fetchJSON<StatusResponse>("/api/status"),
+  /** Aggregated operator status (MBOX-478): hermes-native disk/uptime plus the
+   * proxied mailbox-pipeline snapshot. Always 200; per-source availability is
+   * carried in the ``native``/``pipeline`` flags. */
+  getOperatorStatus: () =>
+    fetchJSON<OperatorStatusResponse>("/api/operator-status"),
   /** Most-recent daily digest for the Home landing pane (Phase 3).
    *
    * Always 200, even when no digest exists yet — an empty digest carries
@@ -1745,6 +1750,108 @@ export interface StatusResponse {
   latest_config_version: number;
   release_date: string;
   version: string;
+}
+
+// ── Operator status (MBOX-478) ───────────────────────────────────────────────
+// The aggregation endpoint returns hermes-native metrics it gathers directly
+// plus the mailbox-pipeline snapshot it proxies from the on-box
+// mailbox-dashboard. The pipeline ``data`` shape mirrors the upstream
+// /dashboard/api/system/status payload; fields are optional/nullable because
+// each upstream sub-fetch degrades to null independently.
+
+export interface OperatorDiskFree {
+  available: boolean;
+  path: string;
+  free_bytes?: number;
+  total_bytes?: number;
+  reason?: string;
+}
+
+export interface OperatorStatusNative {
+  disk_free: OperatorDiskFree;
+  uptime_seconds: number;
+}
+
+/** Git state of the appliance repo (proxied from mailbox). */
+export interface OperatorGitState {
+  available: boolean;
+  reason?: string | null;
+  git_branch?: string | null;
+  git_short_sha?: string | null;
+  commits_behind_master?: number | null;
+  commits_ahead_master?: number | null;
+  fetch_age_seconds?: number | null;
+  dirty?: boolean | null;
+}
+
+export interface OperatorOllamaModel {
+  name: string;
+  size_vram?: number;
+}
+
+export interface OperatorCloudSpend {
+  total_usd: number;
+  call_count: number;
+  by_source?: Record<string, { total_usd: number; call_count: number }>;
+}
+
+export interface OperatorDraftCounts {
+  total: number;
+  sent: number;
+  pending: number;
+  failed: number;
+  rejected: number;
+}
+
+export interface OperatorQdrantHealth {
+  exists: boolean;
+  points_count?: number | null;
+}
+
+export interface OperatorStatusAlert {
+  code: string;
+  severity: string;
+  message: string;
+}
+
+/** The proxied mailbox snapshot — mirrors /dashboard/api/system/status. All
+ * fields optional/nullable: each upstream sub-fetch degrades independently. */
+export interface OperatorPipelineSnapshot {
+  uptime_seconds?: number;
+  queue_depth?: number | null;
+  last_error?: string | null;
+  last_error_at?: string | null;
+  last_inference_latency_ms?: number | null;
+  last_inference_at?: string | null;
+  last_email_received_at?: string | null;
+  n8n_workflow_active?: number | null;
+  disk_free_bytes?: number | null;
+  disk_total_bytes?: number | null;
+  ollama_models_loaded?: OperatorOllamaModel[] | null;
+  drafts_24h?: OperatorDraftCounts | null;
+  cloud_spend_24h?: OperatorCloudSpend | null;
+  qdrant_collection?: OperatorQdrantHealth | null;
+  alerts?: OperatorStatusAlert[];
+  git_state?: OperatorGitState;
+  generated_at?: string;
+}
+
+export interface OperatorPipeline {
+  available: boolean;
+  reason?: string;
+  data?: OperatorPipelineSnapshot;
+}
+
+export interface OperatorStatusGap {
+  metric: string;
+  reason: string;
+}
+
+export interface OperatorStatusResponse {
+  native: OperatorStatusNative;
+  pipeline: OperatorPipeline;
+  gaps: OperatorStatusGap[];
+  generated_at: string;
 }
 
 export interface SessionInfo {

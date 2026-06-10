@@ -1,6 +1,7 @@
 import { useEffect, type ComponentType } from "react";
 import { NavLink } from "react-router-dom";
 import {
+  Activity,
   BarChart3,
   BookOpen,
   Building2,
@@ -136,6 +137,12 @@ const AGENT_ITEMS: HubItem[] = [
 ];
 
 const SYSTEM_ITEMS: HubItem[] = [
+  {
+    path: "/status",
+    label: "Operator status",
+    icon: Activity,
+    description: "Queue, drafts, spend, models, disk & pipeline health",
+  },
   { path: "/config", label: "Config", icon: Settings },
   { path: "/env", label: "Keys", icon: KeyRound },
   { path: "/logs", label: "Logs", icon: FileText },
