@@ -295,6 +295,11 @@ def _builtin_templates() -> List[Dict[str, Any]]:
             ],
             "defaults": {
                 "name": "New pack agent (from pattern)",
+                "objective": (
+                    "Turn each inbound trigger into the right deterministic "
+                    "actions for this pack, escalating to cloud only for the "
+                    "step that genuinely needs it, with a human approve gate."
+                ),
                 "prompt": _pattern_skeleton_prompt(),
                 "schedule": "every 30m",
                 "deliver": "local",
@@ -364,6 +369,11 @@ def _builtin_templates() -> List[Dict[str, Any]]:
             ],
             "defaults": {
                 "name": "Gemini-Notes agent",
+                "objective": (
+                    "Turn each Gemini Notes email into the right human tasks, "
+                    "agent jobs, and a CRM update for the counterparty — and a "
+                    "clean approve-gated proposal draft when one is warranted."
+                ),
                 "prompt": _gemini_notes_prompt(),
                 # Notes arrive irregularly; poll a few times an hour. Operator can
                 # switch this to an inbound trigger once n8n ingestion is wired.

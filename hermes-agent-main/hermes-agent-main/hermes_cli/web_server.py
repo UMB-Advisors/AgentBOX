@@ -4105,6 +4105,10 @@ class CronJobCreate(BaseModel):
     # default behaviour (all tools loaded, no skills).
     skills: Optional[List[str]] = None
     enabled_toolsets: Optional[List[str]] = None
+    # Optional end-goal the operator described for this job. Persisted on the job
+    # (via a post-create update, since stock create_job has no objective param) so
+    # the review loop / future reprompts can reuse it. Drives the Reprompt action.
+    objective: Optional[str] = None
     # CRM assignment (soft links into the mailbox-dashboard CRM). Optional.
     department_id: Optional[int] = None
     department_name: Optional[str] = None
@@ -4114,6 +4118,16 @@ class CronJobCreate(BaseModel):
 
 class CronJobUpdate(BaseModel):
     updates: dict
+
+
+class CronRepromptBody(BaseModel):
+    """Request to improve a draft cron-job prompt with a live LLM call."""
+    draft_prompt: str
+    outcome_objective: str = ""
+    # Optional model/provider override for the reprompt call itself. Empty → the
+    # box-default model (resolved via inventory.load_picker_context).
+    model: Optional[str] = None
+    provider: Optional[str] = None
 
 
 _CRON_PROFILE_LOCK = threading.RLock()
@@ -4228,7 +4242,7 @@ async def get_cron_job(job_id: str, profile: Optional[str] = None):
 @app.post("/api/cron/jobs")
 async def create_cron_job(body: CronJobCreate, profile: str = "default"):
     try:
-        return _call_cron_for_profile(
+        job = _call_cron_for_profile(
             profile,
             "create_job",
             prompt=body.prompt,
@@ -4244,6 +4258,15 @@ async def create_cron_job(body: CronJobCreate, profile: str = "default"):
             employee_id=body.employee_id,
             employee_name=body.employee_name,
         )
+        # Persist the operator's objective on the job. Stock create_job has no
+        # objective param, but update_job merges arbitrary keys into the job
+        # JSON (and read-normalization preserves them), so stash it post-create.
+        objective = (body.objective or "").strip()
+        if objective and isinstance(job, dict) and job.get("id"):
+            job = _call_cron_for_profile(
+                profile, "update_job", job["id"], {"objective": objective}
+            )
+        return job
     except Exception as e:
         _log.exception("POST /api/cron/jobs failed")
         raise HTTPException(status_code=400, detail=str(e))
@@ -4336,6 +4359,67 @@ async def get_cron_template(template_id: str):
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
     return template
+
+
+_REPROMPT_SYSTEM = (
+    "You are an expert prompt engineer improving a scheduled-agent (cron job) "
+    "prompt. Rewrite the user's draft so it is clear, self-contained, and "
+    "specific — a single instruction the agent can act on every run with no "
+    "outside context. Keep it concise; preserve the user's intent and any "
+    "concrete details (names, channels, formats). Do not invent requirements. "
+    "Return ONLY the improved prompt text — no preamble, no explanation, no "
+    "markdown fences."
+)
+
+
+@app.post("/api/cron/reprompt")
+async def reprompt_cron_prompt(body: CronRepromptBody):
+    """Improve a draft cron-job prompt with one live LLM call.
+
+    Steered by the operator's outcome objective. Model is selectable; when
+    unset it falls back to the box default (on T2 that's the resident local
+    model). One-shot — the UI shows the result for accept/discard.
+    """
+    draft = (body.draft_prompt or "").strip()
+    if not draft:
+        raise HTTPException(status_code=400, detail="draft_prompt is required")
+
+    provider = (body.provider or "").strip() or None
+    model = (body.model or "").strip() or None
+    if not model and not provider:
+        try:
+            from hermes_cli.inventory import load_picker_context
+            ctx = load_picker_context()
+            provider = getattr(ctx, "current_provider", None) or None
+            model = getattr(ctx, "current_model", None) or None
+        except Exception:
+            _log.exception("reprompt: could not resolve box-default model")
+
+    objective = (body.outcome_objective or "").strip()
+    user_msg = (
+        (f"Desired outcome / objective:\n{objective}\n\n" if objective else "")
+        + f"Draft prompt to improve:\n{draft}"
+    )
+
+    try:
+        from agent.auxiliary_client import async_call_llm
+        resp = await async_call_llm(
+            provider=provider,
+            model=model,
+            messages=[
+                {"role": "system", "content": _REPROMPT_SYSTEM},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.4,
+            max_tokens=2000,
+        )
+        improved = (resp.choices[0].message.content or "").strip()
+        if not improved:
+            raise RuntimeError("model returned an empty response")
+        return {"improved_prompt": improved, "model": model or "", "provider": provider or ""}
+    except Exception as e:
+        _log.exception("POST /api/cron/reprompt failed")
+        raise HTTPException(status_code=502, detail=f"Reprompt failed: {e}")
 
 
 def _read_recent_outputs(home: Path, limit: int, jobs_by_id: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
