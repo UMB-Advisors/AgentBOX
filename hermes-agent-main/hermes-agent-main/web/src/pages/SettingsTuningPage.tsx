@@ -55,15 +55,26 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "guidelines", label: "Guidelines" },
 ];
 
-const SENTENCE_OPTIONS: { value: SentenceLength; label: string; hint: string }[] =
-  [
-    { value: "", label: "Auto", hint: "model picks" },
-    { value: "short", label: "Short", hint: "5–12 words" },
-    { value: "medium", label: "Medium", hint: "12–22 words" },
-    { value: "long", label: "Long", hint: "22+ words" },
-  ];
+// Mailbox parity guard (type-level): the option arrays must render an entry for
+// every non-empty member of the source-of-truth enum tuples (plus the "" auto
+// option). If `tuningStyle` gains an enum member without a matching option here,
+// these `satisfies` clauses fail to compile.
+type Option<T extends string> = { value: T; label: string; hint: string };
+type SentenceOption = Option<SentenceLength> & {
+  value: (typeof SENTENCE_LENGTHS)[number] | "";
+};
+type EmojiOption = Option<EmojiPolicy> & {
+  value: (typeof EMOJI_POLICIES)[number] | "";
+};
 
-const EMOJI_OPTIONS: { value: EmojiPolicy; label: string; hint: string }[] = [
+const SENTENCE_OPTIONS: SentenceOption[] = [
+  { value: "", label: "Auto", hint: "model picks" },
+  { value: "short", label: "Short", hint: "5–12 words" },
+  { value: "medium", label: "Medium", hint: "12–22 words" },
+  { value: "long", label: "Long", hint: "22+ words" },
+];
+
+const EMOJI_OPTIONS: EmojiOption[] = [
   { value: "", label: "Auto", hint: "model decides" },
   { value: "never", label: "Never", hint: "no emoji" },
   { value: "sparingly", label: "Sparingly", hint: "at most one" },
@@ -99,6 +110,15 @@ export default function SettingsTuningPage() {
 
   // Guidelines tab state.
   const [rules, setRules] = useState<PromptRule[]>([]);
+
+  // The persona GET is not account-scoped — it always returns the DEFAULT
+  // inbox's markers, but tuningSaveStyle writes to the SELECTED account. On a
+  // non-default selection that would silently overwrite that account's style
+  // with the default's, so the Style tab is read-only there until per-account
+  // persona loading lands. Guidelines stay fully account-scoped.
+  const selectedIsNonDefault =
+    accountId != null &&
+    accounts.some((a) => a.id === accountId && !a.is_default);
 
   useEffect(() => {
     setTitle("Drafting tuning");
@@ -224,19 +244,27 @@ export default function SettingsTuningPage() {
     }
   }
 
-  async function patchRule(id: number, body: PromptRuleUpdateBody) {
+  // Returns whether the update persisted, so callers (e.g. the inline edit
+  // form) can stay open and preserve the operator's input on failure.
+  async function patchRule(
+    id: number,
+    body: PromptRuleUpdateBody,
+  ): Promise<boolean> {
     try {
       const res = await api.tuningUpdateRule(id, body, accountId);
       setRules((rs) => rs.map((r) => (r.id === id ? res.rule : r)));
+      return true;
     } catch (err) {
       setBanner({
         kind: "error",
         text: err instanceof Error ? err.message : "Request failed",
       });
+      return false;
     }
   }
 
   async function deleteRule(id: number) {
+    if (!window.confirm("Delete this guideline?")) return;
     try {
       await api.tuningDeleteRule(id, accountId);
       setRules((rs) => rs.filter((r) => r.id !== id));
@@ -320,6 +348,7 @@ export default function SettingsTuningPage() {
         <StyleTab
           style={style}
           toneOverride={toneOverride}
+          seedingLocked={selectedIsNonDefault}
           jargonDraft={jargonDraft}
           saving={savingStyle}
           onPatch={patch}
@@ -353,6 +382,7 @@ export default function SettingsTuningPage() {
 function StyleTab({
   style,
   toneOverride,
+  seedingLocked,
   jargonDraft,
   saving,
   onPatch,
@@ -364,6 +394,7 @@ function StyleTab({
 }: {
   style: StyleProfile;
   toneOverride: boolean;
+  seedingLocked: boolean;
   jargonDraft: string;
   saving: boolean;
   onPatch: (next: Partial<StyleProfile>) => void;
@@ -375,6 +406,18 @@ function StyleTab({
 }) {
   return (
     <div className="space-y-4">
+      {seedingLocked && (
+        <div
+          role="alert"
+          className="rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          Style is seeded from the default inbox; per-account style editing is
+          unavailable until account-scoped persona loading lands. Saving is
+          disabled for this inbox to avoid overwriting it with the default
+          inbox&apos;s style.
+        </div>
+      )}
+
       {toneOverride && (
         <div className="rounded border border-border bg-muted/20 px-3 py-2 text-sm text-text-secondary">
           A literal <code>tone</code> override is set in the persona editor. It
@@ -516,7 +559,7 @@ function StyleTab({
               </span>
             </div>
 
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || seedingLocked}>
               {saving ? "Saving…" : "Save voice style"}
             </Button>
           </form>
@@ -569,11 +612,6 @@ function RadioRow<T extends string>({
   );
 }
 
-// Keep the enum constants referenced so the validated source-of-truth lists
-// stay in sync with the option arrays above (mailbox parity guard).
-void SENTENCE_LENGTHS;
-void EMOJI_POLICIES;
-
 // ───────────────────────────────────────────────────────────────────────────
 // Guidelines tab
 // ───────────────────────────────────────────────────────────────────────────
@@ -589,7 +627,7 @@ function GuidelinesTab({
     draft: { scope: PromptRuleScope; rule: string; rationale: string },
     reset: () => void,
   ) => void;
-  onPatch: (id: number, body: PromptRuleUpdateBody) => void;
+  onPatch: (id: number, body: PromptRuleUpdateBody) => Promise<boolean>;
   onDelete: (id: number) => void;
 }) {
   const [scope, setScope] = useState<PromptRuleScope>("never");
@@ -705,7 +743,7 @@ function RuleRow({
 }: {
   rule: PromptRule;
   onToggle: () => void;
-  onSave: (body: PromptRuleUpdateBody) => void;
+  onSave: (body: PromptRuleUpdateBody) => Promise<boolean>;
   onDelete: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -735,10 +773,12 @@ function RuleRow({
           <Button
             type="button"
             size="sm"
-            onClick={() => {
+            onClick={async () => {
               if (text.trim().length === 0) return;
-              onSave({ scope, rule: text, rationale });
-              setEditing(false);
+              // Keep the form open (and the operator's edits intact) if the
+              // save fails; only collapse once it persists.
+              const ok = await onSave({ scope, rule: text, rationale });
+              if (ok) setEditing(false);
             }}
           >
             Save

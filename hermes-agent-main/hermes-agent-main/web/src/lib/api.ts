@@ -1004,7 +1004,7 @@ export const api = {
   ) => {
     const qs = accountId != null ? `?account=${accountId}` : "";
     return fetchJSON<PromptRuleResponse>(
-      `/dashboard/api/prompt-rules/${encodeURIComponent(String(id))}${qs}`,
+      `/dashboard/api/prompt-rules/${id}${qs}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1017,7 +1017,7 @@ export const api = {
   tuningDeleteRule: (id: number, accountId?: number) => {
     const qs = accountId != null ? `?account=${accountId}` : "";
     return fetchJSON<{ deleted: boolean; id: number }>(
-      `/dashboard/api/prompt-rules/${encodeURIComponent(String(id))}${qs}`,
+      `/dashboard/api/prompt-rules/${id}${qs}`,
       { method: "DELETE" },
     );
   },
