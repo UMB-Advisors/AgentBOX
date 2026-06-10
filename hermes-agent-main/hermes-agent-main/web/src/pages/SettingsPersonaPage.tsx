@@ -375,6 +375,7 @@ export default function SettingsPersonaPage() {
   const [exemplars, setExemplars] = useState("{}");
   const [statError, setStatError] = useState<string | null>(null);
   const [exemError, setExemError] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -384,6 +385,23 @@ export default function SettingsPersonaPage() {
     setPersona(next);
     setStatistical(formatJson(next?.statistical_markers ?? {}));
     setExemplars(formatJson(next?.category_exemplars ?? {}));
+    setStatError(null);
+    setExemError(null);
+    setDirty(false);
+  }, []);
+
+  const onStatisticalChange = useCallback((v: string) => {
+    setStatistical(v);
+    setDirty(true);
+    const parsed = parseJsonObject(v);
+    setStatError(parsed.ok ? null : parsed.error);
+  }, []);
+
+  const onExemplarsChange = useCallback((v: string) => {
+    setExemplars(v);
+    setDirty(true);
+    const parsed = parseJsonObject(v);
+    setExemError(parsed.ok ? null : parsed.error);
   }, []);
 
   const load = useCallback(async () => {
@@ -404,6 +422,7 @@ export default function SettingsPersonaPage() {
   }, [load]);
 
   const onSave = useCallback(async () => {
+    if (saving) return;
     setStatError(null);
     setExemError(null);
 
@@ -431,9 +450,18 @@ export default function SettingsPersonaPage() {
     } finally {
       setSaving(false);
     }
-  }, [statistical, exemplars, applyPersona, showToast]);
+  }, [saving, statistical, exemplars, applyPersona, showToast]);
 
   const onRefresh = useCallback(async () => {
+    if (refreshing) return;
+    if (
+      dirty &&
+      !window.confirm(
+        "Unsaved edits will be replaced by the re-extracted persona. Continue?",
+      )
+    ) {
+      return;
+    }
     setRefreshing(true);
     try {
       const res = await api.personaRefresh();
@@ -447,7 +475,7 @@ export default function SettingsPersonaPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [applyPersona, showToast]);
+  }, [refreshing, dirty, applyPersona, showToast]);
 
   const busy = saving || refreshing;
 
@@ -509,7 +537,7 @@ export default function SettingsPersonaPage() {
             label="statistical_markers"
             help="Voice profile fingerprint (avg sentence length, common words, signature, tone descriptors). Auto-populated by extraction; edit here to override."
             value={statistical}
-            onChange={setStatistical}
+            onChange={onStatisticalChange}
             error={statError}
           />
 
@@ -517,7 +545,7 @@ export default function SettingsPersonaPage() {
             label="category_exemplars"
             help="Few-shot example pairs per classification category (reorder, scheduling, follow_up, etc.). Each entry is a sample inbound + ideal reply driving the per-route drafting prompt."
             value={exemplars}
-            onChange={setExemplars}
+            onChange={onExemplarsChange}
             error={exemError}
           />
 
