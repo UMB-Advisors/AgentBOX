@@ -398,6 +398,9 @@ services:
       # service env above. Reference the secret from .env; never hardcode.
       HERMES_STORE_DIR: /hermes-store
       HERMES_INTERNAL_TOKEN: ${HERMES_INTERNAL_TOKEN}
+      # Dogfood escape hatch: bypass the onboarding live-gate so classify→draft
+      # runs on a box that hasn't completed the onboarding wizard. Set =1 in .env.
+      MAILBOX_LIVE_GATE_BYPASS: ${MAILBOX_LIVE_GATE_BYPASS:-}
     volumes:
       - mailbox_kb_uploads:/var/lib/mailbox/kb
       # MBOX-466 (transport OPTION B) — mount the host Hermes Google store
