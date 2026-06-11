@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic';
 // probation (each rate-limited call extends the cooldown +15 min).
 const RETRY_COOLDOWN_MS = 5 * 60 * 1000;
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, idParamSchema);
   if (!p.ok) return p.response;
 

@@ -30,7 +30,7 @@ const MIN_SAMPLE_PER_CATEGORY = 5;
 const MIN_TOTAL_FOR_SIGNAL = 20;
 
 interface SettingsKbPageProps {
-  searchParams?: { account?: string | string[] };
+  searchParams?: Promise<{ account?: string | string[] }>;
 }
 
 function parseAccountId(raw: string | string[] | undefined): number | null {
@@ -40,7 +40,8 @@ function parseAccountId(raw: string | string[] | undefined): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-export default async function SettingsKbPage({ searchParams }: SettingsKbPageProps) {
+export default async function SettingsKbPage(props: SettingsKbPageProps) {
+  const searchParams = await props.searchParams;
   // Lazy reconciler boot hook — same pattern as /knowledge-base. Catches
   // stuck 'processing' rows from dashboard restarts.
   await reconcileOnce();

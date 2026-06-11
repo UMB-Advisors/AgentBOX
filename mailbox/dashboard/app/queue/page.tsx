@@ -69,10 +69,11 @@ function parseAccountId(raw: string | string[] | undefined): number | undefined 
 }
 
 interface QueuePageProps {
-  searchParams?: { folder?: string | string[]; account?: string | string[] };
+  searchParams?: Promise<{ folder?: string | string[]; account?: string | string[] }>;
 }
 
-export default async function QueuePage({ searchParams }: QueuePageProps) {
+export default async function QueuePage(props: QueuePageProps) {
+  const searchParams = await props.searchParams;
   const folder = parseFolder(searchParams?.folder);
   // MBOX-360 (MBOX-162 V3) — the active account filter (undefined = all inboxes).
   const accountId = parseAccountId(searchParams?.account);

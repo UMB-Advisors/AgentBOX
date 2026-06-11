@@ -11,8 +11,9 @@ export const dynamic = 'force-dynamic';
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } },
+  props: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
+  const params = await props.params;
   const p = parseParams(params, vipSenderIdParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

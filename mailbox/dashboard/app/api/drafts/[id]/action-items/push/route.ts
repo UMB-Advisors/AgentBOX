@@ -26,7 +26,8 @@ export const dynamic = 'force-dynamic';
 // surfaced in the response. 200 with per-item results; 207-style partial is
 // represented as ok=false entries in the results array (HTTP stays 200 when at
 // least one item was addressed and the request itself was valid).
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, idParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

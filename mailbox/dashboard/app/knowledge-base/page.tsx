@@ -7,7 +7,7 @@ import type { KbDocument } from '@/lib/types';
 export const dynamic = 'force-dynamic';
 
 interface KnowledgeBasePageProps {
-  searchParams?: { account?: string | string[] };
+  searchParams?: Promise<{ account?: string | string[] }>;
 }
 
 function parseAccountId(raw: string | string[] | undefined): number | null {
@@ -25,7 +25,8 @@ function parseAccountId(raw: string | string[] | undefined): number | null {
 // once-per-process latch) and means the first page render after a
 // dashboard restart catches stuck rows immediately.
 
-export default async function KnowledgeBasePage({ searchParams }: KnowledgeBasePageProps) {
+export default async function KnowledgeBasePage(props: KnowledgeBasePageProps) {
+  const searchParams = await props.searchParams;
   await reconcileOnce();
 
   const accountParam = parseAccountId(searchParams?.account);
