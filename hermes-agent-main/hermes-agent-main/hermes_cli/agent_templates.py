@@ -246,6 +246,64 @@ def _gemini_notes_prompt() -> str:
     )
 
 
+def _task_miner_prompt() -> str:
+    """Instance #2 — the gBrain Task Miner (docs/gbrain-task-miner.v0.1.0.md)."""
+    return (
+        "You are the gBrain Task Miner (AgentBOX Agent Template Pattern, tier "
+        "T2 / 8 GB Jetson). Each run: mine newly-ingested gbrain memory pages "
+        "for actionable commitments and route them by executor — agent-doable "
+        "work into the native kanban TRIAGE column, human work into Linear. "
+        "You are PROPOSE-ONLY: both destinations are triage states a human (or "
+        "the orchestrator profile) promotes; never promote, assign, schedule, "
+        "or unblock anything yourself.\n"
+        "\n"
+        "FAN (node -> probabilistic? -> artifact):\n"
+        "1. LOAD LEDGER (no): read ~/.hermes/task-miner/mined.jsonl (create "
+        "dir/file if missing). Each line: {source_page, title_hash, dest, ref, "
+        "ts}. Build the seen-set of (source_page, title_hash).\n"
+        "2. RECALL (no model needed for the query itself): query gbrain memory "
+        "for pages new/updated since the newest ledger ts (first run: last 48h) "
+        "across meeting notes, feedback pages, calendar, and agent outcomes.\n"
+        "3. EXTRACT (yes, local) -> candidates[]{title, why, source_page, "
+        "owner_kind: human|agent, confidence 0-1}. A candidate is a concrete "
+        "commitment, follow-up, or repair — not a topic. Drop confidence < 0.6. "
+        "owner_kind=agent only when the work is executable on this box by an "
+        "agent profile (drafting, research, data chores, code on repos the box "
+        "has); external-world actions (calls, payments, negotiations, anything "
+        "requiring a human relationship or judgment) are human.\n"
+        "4. DEDUPE (no): title_hash = sha1(lowercased, whitespace-collapsed "
+        "title)[:16]; skip candidates whose (source_page, title_hash) is in the "
+        "seen-set.\n"
+        "5a. AGENT TASKS (no): for each agent candidate, kanban_create with "
+        "triage=true, title, body = why + 'Source: <source_page>', and "
+        "idempotency_key = 'miner:' + sha1(source_page + '|' + title_hash)[:16]. "
+        "Leave assignee empty — triage auto-decompose routes it.\n"
+        "5b. HUMAN TASKS (no): read linear_team_id from "
+        "~/.hermes/tasks-prefs.json. If null/missing, create NOTHING on the "
+        "Linear side and report that the operator must pick a team in "
+        "Operations > Tasks > Linear. Otherwise POST to "
+        "https://api.linear.app/graphql with header 'Authorization: "
+        "$LINEAR_API_KEY' (env; fallback: the LINEAR_API_KEY line in "
+        "~/.hermes/.env — never echo the key) using mutation issueCreate "
+        "(input: {teamId, title, description: why + source link}). New issues "
+        "land in the team's default Triage state — do not set a state.\n"
+        "6. APPEND LEDGER (no): one line per successful creation with the "
+        "kanban task id or Linear identifier as ref.\n"
+        "7. REPORT (no): created (with refs + source pages), skipped-as-seen "
+        "count, dropped-low-confidence count, deferred-over-cap list.\n"
+        "\n"
+        "Hard rules:\n"
+        "- Caps: max 5 kanban creations and 5 Linear creations per run; defer "
+        "the rest to the next run (report them).\n"
+        "- Never put secrets, raw email bodies, or full transcripts in task "
+        "bodies — titles, one-line why, and source page references only.\n"
+        "- If gbrain recall or the ledger is unavailable, stop and report; do "
+        "not guess or re-create.\n"
+        "- Kanban writes go through the kanban toolset (kanban_create), never "
+        "raw sqlite."
+    )
+
+
 def _builtin_templates() -> List[Dict[str, Any]]:
     return [
         {
@@ -385,6 +443,84 @@ def _builtin_templates() -> List[Dict[str, Any]]:
                 "enabled_toolsets": [],
             },
             "tags": ["instance", "gemini-notes", "crm", "proposal", "T2"],
+            "provenance": _PROVENANCE,
+        },
+        {
+            "id": "gbrain-task-miner",
+            "name": "gBrain Task Miner (instance #2)",
+            "summary": (
+                "Mines newly-ingested gbrain pages (meeting notes, feedback, "
+                "calendar, agent outcomes) for actionable commitments and "
+                "routes them by executor: agent-doable work into kanban triage "
+                "(auto-decompose + dispatcher take over), human work into "
+                "Linear Triage. Propose-only with a dedupe ledger and per-run "
+                "caps. Spec: docs/gbrain-task-miner.v0.1.0.md."
+            ),
+            "category": "instance",
+            "hardware_tier": DEFAULT_TIER,
+            "tier_label": TIER_LABEL,
+            "primitives": _PRIMITIVES,
+            "routing_table": _ROUTING_TABLE,
+            "optimizations": _OPTIMIZATIONS,
+            "nodes": [
+                {"n": "1", "node": "Load dedupe ledger", "probabilistic": False,
+                 "capability": "— (jsonl read)", "routing_t2": "native",
+                 "artifact": "seen_set{(source_page, title_hash)}"},
+                {"n": "2", "node": "Recall new gbrain pages", "probabilistic": False,
+                 "capability": "— (gbrain recall)", "routing_t2": "native",
+                 "artifact": "pages[]{id, kind, body}"},
+                {"n": "3", "node": "Extract candidates", "probabilistic": True,
+                 "capability": "structured extraction", "routing_t2": "local (box default)",
+                 "artifact": "candidates[]{title, why, source_page, owner_kind, confidence}"},
+                {"n": "4", "node": "Dedupe vs ledger", "probabilistic": False,
+                 "capability": "— (hash compare)", "routing_t2": "native",
+                 "artifact": "fresh_candidates[]"},
+                {"n": "5a", "node": "Agent tasks -> kanban triage", "probabilistic": False,
+                 "capability": "— (kanban_create, idempotent)", "routing_t2": "native",
+                 "artifact": "task_refs[]"},
+                {"n": "5b", "node": "Human tasks -> Linear Triage", "probabilistic": False,
+                 "capability": "— (Linear GraphQL issueCreate)", "routing_t2": "native",
+                 "artifact": "issue_refs[]"},
+                {"n": "6", "node": "Append ledger + report", "probabilistic": False,
+                 "capability": "— (jsonl append)", "routing_t2": "native",
+                 "artifact": "run_report{created[], skipped, deferred[]}"},
+            ],
+            "safety": [
+                "Propose-only: writes land in triage states (kanban triage / "
+                "Linear Triage) — the miner never promotes, assigns, or "
+                "unblocks (DR-PROV-A4 spirit).",
+                "Idempotent: jsonl ledger + kanban idempotency_key make "
+                "re-runs and crash-retries safe.",
+                "Caps: max 5 creations per destination per run; excess is "
+                "deferred and reported, never bulk-created.",
+                "No secrets or raw transcripts in task bodies — titles, "
+                "one-line context, and source page references only.",
+            ],
+            "open_questions": [
+                "NC-MINER-1: confidence threshold (0.6 initial) — tune after "
+                "the first week of runs.",
+                "NC-MINER-2: graduate to the deterministic extractor "
+                "(systemd timer, per-page LLM contract) once extraction "
+                "patterns settle — see PRD v2 section.",
+            ],
+            "defaults": {
+                "name": "gBrain task miner",
+                "objective": (
+                    "Surface every actionable commitment buried in the brain "
+                    "— meetings, feedback, calendar, agent outcomes — as a "
+                    "triaged task in the right tracker for the right executor."
+                ),
+                "prompt": _task_miner_prompt(),
+                # Matches the gbrain ingest cadence (6-hourly timers): mine
+                # shortly after fresh content lands, not more often.
+                "schedule": "every 6h",
+                "deliver": "local",
+                "model": "",      # box default = local on T2; extraction is structured
+                "provider": "",
+                "skills": [],
+                "enabled_toolsets": ["kanban"],
+            },
+            "tags": ["instance", "gbrain", "task-miner", "kanban", "linear", "T2"],
             "provenance": _PROVENANCE,
         },
     ]
