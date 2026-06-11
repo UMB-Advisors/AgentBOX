@@ -240,8 +240,35 @@ export const api = {
     if (refresh) qs.set("refresh", "1");
     return fetchJSON<NewsResponse>(`/api/digest/news?${qs.toString()}`);
   },
-  /** Kanban board (digest Tasks module). */
+  /** Kanban board (digest Tasks module + Org Chart Tasks list view). */
   getKanbanBoard: () => fetchJSON<KanbanBoard>("/api/plugins/kanban/board"),
+  /** Create a native kanban task. May carry a dispatcher-presence warning. */
+  createKanbanTask: (body: KanbanCreateTaskBody) =>
+    fetchJSON<{ task: KanbanTask | null; warning?: string }>(
+      "/api/plugins/kanban/tasks",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  /** Patch one kanban task (status / assignee / priority / title / body). */
+  updateKanbanTask: (id: string, body: KanbanUpdateTaskBody) =>
+    fetchJSON<{ task: KanbanTask | null }>(
+      `/api/plugins/kanban/tasks/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  /** Apply the same patch to many kanban tasks (per-id outcomes). */
+  bulkUpdateKanbanTasks: (body: KanbanBulkUpdateBody) =>
+    fetchJSON<KanbanBulkUpdateResponse>("/api/plugins/kanban/tasks/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   /** Org Chart Tasks: which task provider to show (native kanban vs Linear). */
   getTasksPrefs: () => fetchJSON<TasksPrefs>("/api/tasks/prefs"),
   setTasksPrefs: (body: { provider?: TaskProviderId; linear_team_id?: string }) =>
@@ -1736,18 +1763,99 @@ export interface DigestPrefs {
   custom_sources: CustomNewsSource[];
 }
 
-/** Kanban board shape (digest Tasks module). Loose — only a few fields read. */
+/** Derived age metrics attached to each board task (seconds, or null when
+ *  the underlying timestamp is unset). See ``kanban_db.task_age``. */
+export interface KanbanTaskAge {
+  created_age_seconds: number | null;
+  started_age_seconds: number | null;
+  time_to_complete_seconds: number | null;
+}
+
+/** Native kanban task (``GET /api/plugins/kanban/board`` + task endpoints).
+ *
+ *  Priority semantics — VERIFIED against ``hermes_cli/kanban_db.py``: plain
+ *  integer where HIGHER = MORE URGENT. The canonical "priority" sort is
+ *  ``priority DESC, created_at ASC`` (``VALID_SORT_ORDERS``) and the
+ *  dispatcher claims work ``ORDER BY priority DESC``; default is ``0``.
+ *  Note this is the OPPOSITE direction of Linear's scale (``LinearIssue``
+ *  above, where 1 = urgent).
+ *
+ *  Typed fields cover what our views read; the plugin attaches more
+ *  (diagnostics, progress, workflow fields…) kept reachable through the
+ *  index signature for forward-compat. */
 export interface KanbanTask {
   id: string;
-  title?: string;
-  status?: string;
-  assignee?: string;
+  title: string;
+  status: string;
+  priority: number;
+  assignee: string | null;
+  tenant: string | null;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  body?: string | null;
+  age?: KanbanTaskAge;
+  /** ~200-char preview of the latest run summary (board payload only). */
+  latest_summary?: string | null;
+  comment_count?: number;
+  link_counts?: { parents: number; children: number };
+  /** Legacy digest fields (HomePage FYI section). */
   profile?: string;
   owner?: string;
   [k: string]: unknown;
 }
 export interface KanbanBoard {
   columns: Array<{ name: string; tasks: KanbanTask[] }>;
+  tenants: string[];
+  assignees: string[];
+  latest_event_id: number;
+  now: number;
+}
+
+/** ``POST /api/plugins/kanban/tasks`` (plugin ``CreateTaskBody``). */
+export interface KanbanCreateTaskBody {
+  title: string;
+  body?: string;
+  assignee?: string;
+  tenant?: string;
+  /** Higher = more urgent (see {@link KanbanTask}); server default 0. */
+  priority?: number;
+  workspace_kind?: string;
+  workspace_path?: string;
+  parents?: string[];
+  triage?: boolean;
+  idempotency_key?: string;
+  max_runtime_seconds?: number;
+  skills?: string[];
+}
+
+/** ``PATCH /api/plugins/kanban/tasks/:id`` (plugin ``UpdateTaskBody``).
+ *  ``assignee: ""`` unassigns. The API rejects ``status: "running"``
+ *  (dispatcher-owned) and doesn't accept ``"review"`` as a target. */
+export interface KanbanUpdateTaskBody {
+  status?: string;
+  assignee?: string;
+  priority?: number;
+  title?: string;
+  body?: string;
+  result?: string;
+  block_reason?: string;
+  summary?: string;
+}
+
+/** ``POST /api/plugins/kanban/tasks/bulk`` (plugin ``BulkTaskBody``).
+ *  Per-id outcomes — one bad id doesn't abort siblings. */
+export interface KanbanBulkUpdateBody {
+  ids: string[];
+  status?: string;
+  /** ``""`` unassigns. */
+  assignee?: string;
+  priority?: number;
+  archive?: boolean;
+  reclaim_first?: boolean;
+}
+export interface KanbanBulkUpdateResponse {
+  results: Array<{ id: string; ok: boolean; error?: string }>;
 }
 
 /** Org Chart Tasks provider selection (persisted server-side). */
