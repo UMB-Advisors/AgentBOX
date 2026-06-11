@@ -129,3 +129,20 @@ def test_step_without_colon_keeps_text():
     assert p["next_steps"] == [
         {"owners": ["Ana"], "title": "", "text": "just do the thing"}
     ]
+
+
+def test_compact_steps_without_blank_lines_all_parse():
+    # No blank lines between items — one block must still yield every step.
+    body = (
+        "Suggested next steps\n"
+        "[Alice] Task one: do something\n"
+        "[Bob] Task two: do other thing\n"
+        "[Carol, Dan] Task three: spans a\n"
+        "wrapped continuation line.\n"
+    )
+    p = parse_gemini_note("Notes: “X”", body)
+    steps = p["next_steps"]
+    assert [s["owners"] for s in steps] == [["Alice"], ["Bob"], ["Carol", "Dan"]]
+    assert steps[0]["text"] == "do something"
+    assert "[Bob]" not in steps[0]["text"]
+    assert steps[2]["text"] == "spans a wrapped continuation line."

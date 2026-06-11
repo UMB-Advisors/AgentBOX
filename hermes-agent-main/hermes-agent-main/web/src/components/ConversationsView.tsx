@@ -128,8 +128,8 @@ export default function ConversationsView() {
                   </section>
                 )}
 
-                {selected.sections.map((s) => (
-                  <section key={s.heading}>
+                {selected.sections.map((s, i) => (
+                  <section key={i}>
                     <h3 className="mb-1 text-sm font-semibold">{s.heading}</h3>
                     <p className="text-sm text-muted-foreground">{s.text}</p>
                   </section>
@@ -143,7 +143,7 @@ export default function ConversationsView() {
                     <ul className="flex flex-col gap-2">
                       {selected.next_steps.map((step, i) => (
                         <li
-                          key={`${step.title}-${i}`}
+                          key={i}
                           className="rounded-md border border-border p-2"
                         >
                           <div className="mb-1 flex flex-wrap items-center gap-1">

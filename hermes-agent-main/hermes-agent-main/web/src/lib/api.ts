@@ -1807,7 +1807,7 @@ export interface ConversationSection {
 export interface Conversation {
   id: number;
   account: string;
-  received_at: string;
+  received_at: string | null;
   title: string;
   /** Human date string from the subject line, e.g. "Jun 10, 2026". */
   meeting_date: string;

@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 _SUBJECT_RE = re.compile(r"Notes:\s*[“\"](?P<title>.+?)[”\"]\s*(?P<date>.*)$")
 _BODY_TITLE_RE = re.compile(r"Notes from\s*[“\"](?P<title>.+?)[”\"]")
 _STEP_RE = re.compile(r"^\[(?P<owners>[^\]]+)\]\s*(?P<rest>.+)$", re.DOTALL)
+_STEP_START_RE = re.compile(r"^\[[^\]]+\]")
 
 # Blocks whose first line starts with any of these are Google boilerplate, not
 # meeting content. Matched case-insensitively against the block's first line.
@@ -36,6 +37,7 @@ _BOILERPLATE_PREFIXES = (
     "these notes have been sent",
     "open meeting notes",
     "the content was auto-generated",
+    # Both apostrophe variants on purpose: ASCII (') and U+2019 (’).
     "we've updated the",
     "we’ve updated the",
     "what do you think",
@@ -72,8 +74,25 @@ def _unwrap(lines: List[str]) -> str:
     return " ".join(ln.strip() for ln in lines if ln.strip())
 
 
-def _parse_step(block: str) -> Optional[Dict[str, Any]]:
-    m = _STEP_RE.match(block.strip())
+def _split_step_chunks(block: str) -> List[str]:
+    """Split one block into per-step chunks: a new ``[Owner]`` line starts a
+    chunk; non-bracket lines are wrapped continuations of the current one.
+    Gemini usually blank-line-separates steps, but compact lists (no blank
+    lines) must not collapse into a single step."""
+    chunks: List[str] = []
+    for line in block.split("\n"):
+        if _STEP_START_RE.match(line.strip()):
+            chunks.append(line)
+        elif chunks:
+            chunks[-1] += "\n" + line
+    return chunks
+
+
+def _parse_step(chunk: str) -> Optional[Dict[str, Any]]:
+    """Parse ONE step chunk. DOTALL on _STEP_RE is intentional: the chunk is
+    already single-step (see _split_step_chunks), so ``rest`` may span the
+    step's own wrapped continuation lines."""
+    m = _STEP_RE.match(chunk.strip())
     if not m:
         return None
     owners = [o.strip() for o in m.group("owners").split(",") if o.strip()]
@@ -116,15 +135,16 @@ def parse_gemini_note(subject: str, body: str) -> Dict[str, Any]:
         if first_clean.lower() == _NEXT_STEPS_HEADING:
             in_steps = True
             # Items may share the heading's block or follow as own blocks.
-            if rest.strip():
-                step = _parse_step(rest.strip())
+            for chunk in _split_step_chunks(rest):
+                step = _parse_step(chunk)
                 if step:
                     steps.append(step)
             continue
         if in_steps:
-            step = _parse_step(block)
-            if step:
-                steps.append(step)
+            for chunk in _split_step_chunks(block):
+                step = _parse_step(chunk)
+                if step:
+                    steps.append(step)
             # Non-step blocks after the steps list are footer noise: skip.
             continue
         if first_clean.lower() == "summary":
@@ -139,6 +159,8 @@ def parse_gemini_note(subject: str, body: str) -> Dict[str, Any]:
         elif not summary:
             # Headingless leading paragraph — treat as summary fallback.
             summary = _unwrap(block.split("\n"))
+        # else: a standalone heading with no body (or stray single line after
+        # the summary) carries no content — dropped on purpose.
 
     return {
         "title": title,
