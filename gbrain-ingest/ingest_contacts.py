@@ -176,12 +176,21 @@ MESSAGES_PER_ADDRESS = 200
 
 
 def fetch_messages_for_address(email: str, limit: int = MESSAGES_PER_ADDRESS) -> list[dict]:
-    """Mailbox messages where the address appears as sender or participant."""
-    pat = common.sql_quote(f"%{email}%")
+    """Mailbox messages where the address appears as sender or participant.
+
+    The address is matched as an ESCAPE'd ILIKE substring (sql_quote_like
+    contains=True) so a ``%`` / ``_`` in the local-part stays literal — an
+    attacker-controlled email can no longer widen the scan. ``matched_role``
+    tells the caller whether the address appeared as the (spoofable) sender or
+    as a recipient, so re-attribution can refuse to trust the From header
+    alone (see SECURITY note in correspondence_attributions)."""
+    pat = common.sql_quote_like(email, contains=True)
     sql = (
         "SELECT json_agg(t) FROM ("
         "  SELECT m.from_addr, m.to_addr, m.subject, m.snippet,"
-        "         a.email_address AS account_email"
+        "         a.email_address AS account_email,"
+        f"         (m.from_addr ILIKE {pat}) AS is_sender,"
+        f"         (m.to_addr ILIKE {pat})   AS is_recipient"
         "  FROM mailbox.inbox_messages m"
         "  JOIN mailbox.accounts a ON a.id = m.account_id"
         f"  WHERE m.from_addr ILIKE {pat} OR m.to_addr ILIKE {pat}"
@@ -192,15 +201,31 @@ def fetch_messages_for_address(email: str, limit: int = MESSAGES_PER_ADDRESS) ->
     return common.psql_json(sql)
 
 
-def correspondence_attributions(emails: list[str], ladder_kwargs: dict) -> list:
+def _attr_entity(a) -> str | None:
+    """Entity of an Attribution, accepting objects or (entity, confidence) tuples."""
+    if isinstance(a, tuple):
+        return a[0] if a else None
+    return getattr(a, "entity", None)
+
+
+def correspondence_attributions(emails: list[str], ladder_kwargs: dict) -> tuple[list, bool]:
     """Attribute every mailbox message any of the contact's addresses appears
     in. Deterministic rungs only (account provenance / domain): no LLM and no
     CRM lookup — re-attribution targets contacts whose company did NOT
     resolve, and a low-confidence classifier guess must never move a contact
-    between entity boundaries."""
+    between entity boundaries.
+
+    Returns (attributions, had_recipient_evidence). ``had_recipient_evidence``
+    is True iff the contact appeared as an actual RECIPIENT on at least one
+    received message — much harder to forge than a From header, which any
+    sender can spoof. Callers use it to flag sender-only (spoofable) evidence
+    for human review; see SECURITY note in run_reattribute."""
     out = []
+    had_recipient = False
     for email in emails:
         for m in fetch_messages_for_address(email):
+            if m.get("is_recipient"):
+                had_recipient = True
             sender = next(iter(extract_emails(m.get("from_addr"))), None)
             participants = extract_emails(m.get("from_addr")) + extract_emails(m.get("to_addr"))
             out.append(attribute(
@@ -208,14 +233,28 @@ def correspondence_attributions(emails: list[str], ladder_kwargs: dict) -> list:
                 m.get("subject"), m.get("snippet"),
                 crm_lookup=None, llm_classify_fn=None, **ladder_kwargs,
             ))
-    return out
+    return out, had_recipient
 
 
 def run_reattribute(args, emap: dict) -> int:
-    """Move unsorted contact pages whose correspondence pins ONE entity."""
+    """Move unsorted contact pages whose correspondence pins ONE entity.
+
+    SECURITY: re-attribution evidence comes from received mail, whose From
+    header is attacker-spoofable — anyone who can mail one of the monitored
+    inboxes can fabricate a sender-only signal pinning a contact to a chosen
+    entity, which then flavours any cron job bound to that entity. Two guards:
+    (1) moves NEVER execute without an explicit ``--confirm`` (so the daily
+    timer / any unattended run only ever reports a plan), and (2) proposed
+    moves backed only by sender-role mail are flagged ``[sender-only]`` so the
+    human reviewer can distinguish them from the harder-to-forge recipient
+    evidence."""
     company_map = emap["companies"]
     ladder = common.ladder_kwargs(emap)
     moves = load_reattributed()
+
+    execute = bool(getattr(args, "confirm", False)) and not args.dry_run
+    if not execute:
+        common.log("re-attribute: REPORT-ONLY (no moves) — pass --confirm to execute")
 
     contacts = fetch_contacts(args.limit)
     # route_entity consults the ledger: contacts already moved route to their
@@ -232,17 +271,18 @@ def run_reattribute(args, emap: dict) -> int:
         if not emails:
             no_signal += 1
             continue
-        attributions = correspondence_attributions(emails, ladder)
+        attributions, had_recipient = correspondence_attributions(emails, ladder)
         target = infer_reattribution_entity(attributions)
         if target is None or target not in emap["entities"] or target == UNSORTED:
-            if any(a.entity != UNSORTED for a in attributions):
+            if any(_attr_entity(a) not in (None, UNSORTED) for a in attributions):
                 ambiguous += 1
             else:
                 no_signal += 1
             continue
         slug, content = build_page(contact, target)
-        if args.dry_run:
-            print(f"DRY move {UNSORTED} -> {target:10s} {slug}")
+        flag = "" if had_recipient else " [sender-only: spoofable, review]"
+        if not execute:
+            print(f"PROPOSE move {UNSORTED} -> {target:10s} {slug}{flag}")
             moved += 1
             continue
         try:
@@ -262,8 +302,9 @@ def run_reattribute(args, emap: dict) -> int:
             errors += 1
             common.log(f"ERROR {slug}: {exc}")
 
+    verb = "moved" if execute else "proposed"
     common.log(
-        f"re-attribute done: moved={moved} ambiguous={ambiguous} "
+        f"re-attribute done: {verb}={moved} ambiguous={ambiguous} "
         f"no_signal={no_signal} errors={errors}"
     )
     return 1 if errors and not moved else 0
@@ -275,8 +316,14 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="print plan, write nothing")
     ap.add_argument("--entity-map", default=None, help="path to entity_map.yaml")
     ap.add_argument("--re-attribute", action="store_true",
-                    help="move unsorted contact pages whose mailbox "
-                         "correspondence resolves to exactly one entity")
+                    help="report (or with --confirm, move) unsorted contact "
+                         "pages whose mailbox correspondence resolves to "
+                         "exactly one entity")
+    ap.add_argument("--confirm", action="store_true",
+                    help="actually execute --re-attribute moves; without it "
+                         "re-attribution is report-only (moves rely on "
+                         "spoofable From headers, so unattended runs never "
+                         "mutate the brain)")
     args = ap.parse_args()
 
     emap = common.load_entity_map(args.entity_map)

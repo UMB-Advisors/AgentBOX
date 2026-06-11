@@ -8,11 +8,13 @@ Type=oneshot
 EnvironmentFile=%h/.hermes/.env
 WorkingDirectory=%h/gbrain-ingest
 ExecStart=/usr/bin/flock -w 600 /tmp/gbrain-ingest.lock /usr/bin/python3 %h/gbrain-ingest/ingest_contacts.py
-# Re-attribution pass AFTER the regular ingest: moves unsorted contacts whose
-# correspondence pins one entity. Durable + idempotent (move ledger in
-# ~/.hermes/gbrain-ingest/contacts-reattributed.json), so the daily rerun
-# never resurrects moved pages and never re-deletes already-moved ones.
-ExecStart=/usr/bin/flock -w 600 /tmp/gbrain-ingest.lock /usr/bin/python3 %h/gbrain-ingest/ingest_contacts.py --re-attribute
+# SECURITY: the re-attribution move decision is driven by received-mail From
+# headers, which are attacker-spoofable. Re-attribution therefore runs ONLY on
+# demand and reports a plan by default — executing moves now requires an
+# explicit `--re-attribute --confirm`, which a human runs after reviewing the
+# proposed (esp. [sender-only]) moves. The unattended daily ExecStart that
+# previously ran `--re-attribute` is intentionally removed; the regular ingest
+# above still runs (it does not move anything between entities).
 Nice=10
 TimeoutStartSec=60min
 

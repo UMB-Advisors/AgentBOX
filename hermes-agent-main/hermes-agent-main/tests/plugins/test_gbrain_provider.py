@@ -646,6 +646,30 @@ def test_memory_source_without_config_scopes_session(monkeypatch, tmp_path):
     assert client.recall_calls[0]["source"] == "yes"
 
 
+@pytest.mark.parametrize("bad", [
+    "heron; drop", "../personal", "a b", "x" * 65,
+    "name=foo", "'inject'", "%wild",
+])
+def test_malformed_memory_source_is_rejected(monkeypatch, tmp_path, bad):
+    """SECURITY: an untrusted/malformed memory_source (e.g. from a cron job
+    record) must be dropped, not forwarded as a gbrain source_id arg. A bad
+    value falls back to the configured source rather than scoping the session."""
+    client = FakeClient(recall_payload="hit")
+    p = _make_provider(monkeypatch, tmp_path, config={"source": "umb"},
+                       client=client, init_kwargs={"memory_source": bad})
+    p.prefetch("anything relevant?")
+    assert client.recall_calls[0]["source"] == "umb"
+
+
+def test_valid_source_slug_accepts_and_normalizes():
+    assert gbrain_mod._valid_source_slug("heron") == "heron"
+    assert gbrain_mod._valid_source_slug("  YES ") == "yes"
+    assert gbrain_mod._valid_source_slug("krunchy-kids_1") == "krunchy-kids_1"
+    assert gbrain_mod._valid_source_slug("heron; drop") == ""
+    assert gbrain_mod._valid_source_slug(None) == ""
+    assert gbrain_mod._valid_source_slug("") == ""
+
+
 def test_client_recall_passes_source_id_arg(monkeypatch):
     sent = []
 
