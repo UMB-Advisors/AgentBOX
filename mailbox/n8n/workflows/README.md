@@ -69,7 +69,13 @@ After import, on the target appliance:
 
 ### When to refresh the canonical JSON
 
-Whenever a workflow is edited in the n8n UI on Bob, run the export script and commit the diff. CI does not currently re-export and check (would require Bob connectivity); manual discipline is the gate today.
+Whenever a workflow is edited in the n8n UI on a box, run the export script and commit the diff. To *verify* instead of refresh, use the read-only gate:
+
+```bash
+SSH_HOST=UMB@100.127.2.54 ./scripts/n8n-drift-check.sh   # exit 0 = live matches repo
+```
+
+It runs the full-fleet export, prints any diff (including live workflows that have no repo copy at all — the MailBOX-FeedbackDistill failure mode), reverts the tree, and exits non-zero on drift. GitHub CI can't reach the boxes, so run it from a host that can (workstation cron, or `SSH_HOST=local` in the box's own checkout under a systemd timer).
 
 ## MailBOX-Send
 
