@@ -51,6 +51,36 @@ export const classificationNormalizeBodySchema = z.object({
 
 export type ClassificationNormalizeBody = z.infer<typeof classificationNormalizeBodySchema>;
 
+// ── MBOX-482: registration bridge (Hermes mail-account connect → mailbox.accounts) ──
+// POST /api/internal/accounts/register — Hermes pushes a connected/re-authed
+// IMAP or M365 mailbox into the pipeline-side accounts table. Carries the
+// PLAINTEXT transport secret (IMAP app-password / M365 client secret), which the
+// route immediately re-encrypts under MAILBOX_OAUTH_TOKEN_KEY (never persisted
+// plaintext, never echoed). Internal-token-gated (X-Hermes-Internal-Token).
+export const accountRegisterBodySchema = z.object({
+  // Only the two non-Gmail transports flow through the bridge; Gmail uses the
+  // Google connect → oauth_tokens path, not provider_secret_enc.
+  provider: z.enum(['imap', 'microsoft']),
+  email: z.string().trim().email(),
+  display_label: z.string().trim().min(1).max(100).nullish(),
+  // Non-secret connection params (host/port/tenant/client_id/...). Stored as-is
+  // in accounts.provider_config; the route does not interpret them.
+  provider_config: z.record(z.string(), z.unknown()).default({}),
+  // The plaintext transport secret. Re-encrypted server-side; never stored raw.
+  secret: z.string().min(1).max(4096),
+});
+
+export type AccountRegisterBody = z.infer<typeof accountRegisterBodySchema>;
+
+// POST /api/internal/accounts/deregister — Hermes pushes a mail-account
+// disconnect. Keyed by stable email (account ids differ per box). Internal-
+// token-gated. Carries no secret.
+export const accountDeregisterBodySchema = z.object({
+  email: z.string().trim().email(),
+});
+
+export type AccountDeregisterBody = z.infer<typeof accountDeregisterBodySchema>;
+
 // POST /api/internal/llm/api/generate — Ollama-shape /api/generate body
 // forwarded to the local runtime (ollama or llama.cpp, per
 // LOCAL_INFERENCE_RUNTIME). STAQPRO-338 / DR-25.

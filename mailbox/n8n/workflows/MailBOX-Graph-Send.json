@@ -1,0 +1,503 @@
+{
+  "active": true,
+  "connections": {
+    "Webhook (mailbox-graph-send)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Load Draft Graph",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Load Draft Graph": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "If draft loaded",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "If draft loaded": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Already Sent?",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Respond Not Found",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Already Sent?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Mark Sent Graph",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Acquire Send Lock",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Acquire Send Lock": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Lock Acquired?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Lock Acquired?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Get Graph Token",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Respond Already Attempted",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Get Graph Token": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Graph sendMail",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Graph sendMail": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Mark Sent Graph",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Mark Sent Graph": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Respond Success",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": "MBOX-482 (P2) — Microsoft 365 / Graph egress, token-as-data sibling of MailBOX-Send / MailBOX-Imap-Send. The dashboard's send trigger (lib/n8n.ts) routes here via N8N_GRAPH_WEBHOOK_URL when the draft's account is provider='microsoft'. Same { draft_id } contract + send_attempt_at CAS idempotency lock (migration 025) as the Gmail/IMAP paths; writes the provider-neutral drafts.provider_message_id. Auth is token-as-data: Get Graph Token mints an app-only bearer per send from the dashboard minter (app/api/internal/graph/access-token) — NO n8n credential. Graph sendMail composes a reply (Re: subject, body, To: original sender) via POST /users/{account_email}/sendMail (app-only token acts for that mailbox). EXPRESSION CONVENTION (MBOX-344): Graph sendMail + Mark Sent Graph read $('Load Draft Graph').item.json.* — never bare $json — because Acquire Send Lock (RETURNING id) sits between. S-MP RESIDUAL: flat reply (To/Subject/body); true RFC In-Reply-To/References threading headers are a follow-up (kill-criterion: ship flat + flag degraded, same as IMAP). ON IMPORT: re-point the Postgres credential id if it differs; set HERMES_INTERNAL_TOKEN on n8n.",
+  "id": "mailbox-graph-send",
+  "isArchived": false,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "name": "MailBOX-Graph-Send",
+  "nodes": [
+    {
+      "id": "e3c00000-0000-0000-0000-000000000001",
+      "name": "Webhook (mailbox-graph-send)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        208,
+        320
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {},
+        "path": "mailbox-graph-send",
+        "responseMode": "responseNode"
+      },
+      "webhookId": "e3c0aa00-39f4-4154-a33d-712366a7b301"
+    },
+    {
+      "alwaysOutputData": true,
+      "id": "e3c00000-0000-0000-0000-000000000002",
+      "name": "Load Draft Graph",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        432,
+        320
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT\n  d.id            AS draft_id,\n  d.draft_subject AS draft_subject,\n  d.draft_body    AS draft_body,\n  d.status        AS status,\n  d.provider_message_id,\n  d.inbox_message_id,\n  m.message_id,\n  m.thread_id,\n  m.from_addr,\n  m.to_addr,\n  m.subject       AS original_subject,\n  a.email_address AS account_email\nFROM mailbox.drafts d\nJOIN mailbox.inbox_messages m ON d.inbox_message_id = m.id\nJOIN mailbox.accounts a ON d.account_id = a.id\nWHERE d.id = {{ Number($json.body.draft_id) }}\n  AND d.status IN ('approved', 'edited');"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      }
+    },
+    {
+      "id": "e3c00000-0000-0000-0000-000000000003",
+      "name": "If draft loaded",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        640,
+        320
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "draft-id-exists",
+              "leftValue": "={{ $json.draft_id }}",
+              "operator": {
+                "operation": "exists",
+                "singleValue": true,
+                "type": "number"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e3c00000-0000-0000-0000-000000000004",
+      "name": "Already Sent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        848,
+        320
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "provider-message-id-set",
+              "leftValue": "={{ $json.provider_message_id }}",
+              "operator": {
+                "operation": "notEmpty",
+                "singleValue": true,
+                "type": "string"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "alwaysOutputData": true,
+      "id": "e3c00000-0000-0000-0000-000000000005",
+      "name": "Acquire Send Lock",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1056,
+        320
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "-- Migration 025 idempotency lock (provider-neutral). CAS-acquire BEFORE the\n-- Graph send: set send_attempt_at = NOW() iff currently NULL. 0 rows returned =\n-- a prior attempt is in flight or crashed mid-send -> refuse to re-fire.\nUPDATE mailbox.drafts\nSET send_attempt_at = NOW(),\n    updated_at      = NOW()\nWHERE id = {{ Number($('Load Draft Graph').item.json.draft_id) }}\n  AND status IN ('approved', 'edited')\n  AND send_attempt_at IS NULL\nRETURNING id;"
+      },
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      }
+    },
+    {
+      "id": "e3c00000-0000-0000-0000-000000000006",
+      "name": "Lock Acquired?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1216,
+        320
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "lock-row-returned",
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "operation": "exists",
+                "singleValue": true,
+                "type": "number"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e3c00000-0000-0000-0000-000000000007",
+      "name": "Get Graph Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1360,
+        240
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=http://mailbox-dashboard:3001/dashboard/api/internal/graph/access-token?account_email={{ $('Load Draft Graph').item.json.account_email }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Hermes-Internal-Token",
+              "value": "={{ $env.HERMES_INTERNAL_TOKEN }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      }
+    },
+    {
+      "id": "e3c00000-0000-0000-0000-000000000008",
+      "name": "Graph sendMail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1520,
+        240
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.microsoft.com/v1.0/users/{{ $('Load Draft Graph').item.json.account_email }}/sendMail",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Graph Token').item.json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message\": {\n    \"subject\": {{ JSON.stringify(($('Load Draft Graph').item.json.original_subject || '').toLowerCase().startsWith('re:') ? $('Load Draft Graph').item.json.original_subject : 'Re: ' + ($('Load Draft Graph').item.json.original_subject || '')) }},\n    \"body\": { \"contentType\": \"Text\", \"content\": {{ JSON.stringify($('Load Draft Graph').item.json.draft_body || '') }} },\n    \"toRecipients\": [ { \"emailAddress\": { \"address\": {{ JSON.stringify($('Load Draft Graph').item.json.from_addr || '') }} } } ]\n  },\n  \"saveToSentItems\": true\n}",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "e3c00000-0000-0000-0000-000000000009",
+      "name": "Mark Sent Graph",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1680,
+        320
+      ],
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "mailbox"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "drafts"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": true,
+              "display": true,
+              "displayName": "id",
+              "id": "id",
+              "required": true,
+              "type": "number"
+            },
+            {
+              "canBeUsedToMatch": false,
+              "display": true,
+              "displayName": "status",
+              "id": "status",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": false,
+              "display": true,
+              "displayName": "updated_at",
+              "id": "updated_at",
+              "required": false,
+              "type": "dateTime"
+            },
+            {
+              "canBeUsedToMatch": false,
+              "display": true,
+              "displayName": "error_message",
+              "id": "error_message",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": false,
+              "display": true,
+              "displayName": "provider_message_id",
+              "id": "provider_message_id",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": false,
+              "display": true,
+              "displayName": "send_attempt_at",
+              "id": "send_attempt_at",
+              "required": false,
+              "type": "dateTime"
+            }
+          ],
+          "value": {
+            "error_message": null,
+            "id": "={{ $('Load Draft Graph').item.json.draft_id }}",
+            "send_attempt_at": null,
+            "provider_message_id": "={{ 'graph-sent-' + $('Load Draft Graph').item.json.draft_id }}",
+            "status": "sent",
+            "updated_at": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      }
+    },
+    {
+      "id": "e3c00000-0000-0000-0000-00000000000a",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1840,
+        320
+      ],
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, draft_id: $('Load Draft Graph').item.json.draft_id, sent_at: $now.toISO() } }}"
+      }
+    },
+    {
+      "id": "e3c00000-0000-0000-0000-00000000000b",
+      "name": "Respond Not Found",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1088,
+        480
+      ],
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, error: 'Draft not found, or not in approved/edited status', draft_id: $('Webhook (mailbox-graph-send)').item.json.body.draft_id } }}"
+      }
+    },
+    {
+      "id": "e3c00000-0000-0000-0000-00000000000c",
+      "name": "Respond Already Attempted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1344,
+        480
+      ],
+      "parameters": {
+        "options": {
+          "responseCode": 409
+        },
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, error: 'send_attempt_at already set — possible duplicate. Verify in Sent Items, then clear mailbox.drafts.send_attempt_at to retry.', draft_id: $('Load Draft Graph').item.json.draft_id } }}"
+      }
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}

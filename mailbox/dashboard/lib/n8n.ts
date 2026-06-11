@@ -65,22 +65,29 @@ export async function triggerMsgActionWebhook(
   }
 }
 
-// MBOX-357 (P1 T5) — per-provider send webhooks (DR-56 Option A: one n8n
-// workflow per transport). Gmail → MailBOX-Send (N8N_WEBHOOK_URL, unchanged);
-// IMAP → MailBOX-Imap-Send (N8N_IMAP_WEBHOOK_URL). The provider comes from the
-// draft's owning account (getDraftProviderContext). Both webhooks share the
-// same { draft_id } request + JSON-or-empty-body response contract, so the
-// STAQPRO-231 empty-body handling below applies identically to both.
+// MBOX-357 (P1 T5) / MBOX-482 (P2) — per-provider send webhooks (DR-56 Option A:
+// one n8n workflow per transport). Gmail → MailBOX-Send (N8N_WEBHOOK_URL,
+// unchanged); IMAP → MailBOX-Imap-Send (N8N_IMAP_WEBHOOK_URL); Microsoft/Graph →
+// MailBOX-Graph-Send (N8N_GRAPH_WEBHOOK_URL). The provider comes from the draft's
+// owning account (getDraftProviderContext). All three webhooks share the same
+// { draft_id } request + JSON-or-empty-body response contract, so the STAQPRO-231
+// empty-body handling below applies identically to each.
+//
+// Only the non-gmail providers carry their own env var; gmail stays the default
+// fallback so its routing (and imap's) is byte-identical to before MBOX-482 added
+// the microsoft branch.
+const SEND_WEBHOOK_ENV: Partial<Record<MailProviderKind, string>> = {
+  imap: 'N8N_IMAP_WEBHOOK_URL',
+  microsoft: 'N8N_GRAPH_WEBHOOK_URL',
+};
+
 export async function triggerSendWebhook(
   draftId: number,
   provider: MailProviderKind = 'gmail',
 ): Promise<WebhookResult> {
-  const url =
-    provider === 'imap'
-      ? (process.env.N8N_IMAP_WEBHOOK_URL ?? '')
-      : (process.env.N8N_WEBHOOK_URL ?? '');
+  const envName = SEND_WEBHOOK_ENV[provider] ?? 'N8N_WEBHOOK_URL';
+  const url = process.env[envName] ?? '';
   if (!url) {
-    const envName = provider === 'imap' ? 'N8N_IMAP_WEBHOOK_URL' : 'N8N_WEBHOOK_URL';
     return { success: false, error: `${envName} not configured` };
   }
 
