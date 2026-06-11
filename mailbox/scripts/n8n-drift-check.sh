@@ -57,5 +57,5 @@ echo "[drift-check] To push the repo state:  scripts/n8n-import-workflows.sh."
 
 # Restore the tree exactly as we found it (precondition guaranteed clean).
 git -C "${REPO_ROOT}" checkout -q -- "n8n/workflows" 2>/dev/null || true
-git -C "${REPO_ROOT}" clean -fq -- "n8n/workflows"
+git -C "${REPO_ROOT}" clean -fdq -- "n8n/workflows"
 exit 1
