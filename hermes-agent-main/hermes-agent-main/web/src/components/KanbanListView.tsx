@@ -64,10 +64,14 @@ const STATUS_ORDER = [
   "done",
 ];
 
-// Statuses PATCH /tasks/:id accepts as a target. "running" is dispatcher-
-// owned and "review" has no transition verb (the plugin API 400s on both),
-// so neither is offered as an edit target — tasks already in them still
-// render, and their current status is prepended so the select isn't blank.
+// Statuses PATCH /tasks/:id accepts as a target. Neither "running" nor
+// "review" is offered as an edit target, for different reasons: "running"
+// is dispatcher-owned and the plugin API rejects it with a dedicated 400
+// ("use the dispatcher/claim path"), while "review" has no transition
+// implemented at all and falls through to the generic
+// `unknown status: ...` 400 (plugin_api.py update_task's else branch).
+// Tasks already in either still render, and their current status is
+// prepended so the select isn't blank.
 export const SETTABLE_STATUSES = [
   "triage",
   "todo",
