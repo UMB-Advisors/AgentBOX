@@ -907,6 +907,51 @@ function TaskRow({
   );
 }
 
+// Due-date editor (PRD §2.2): same local-draft + commit-on-blur/Enter
+// pattern as EstimateInput below. Typed entry in a date input fires
+// onChange per segment with partial values ("" / incomplete dates), each of
+// which would otherwise become a PATCH the server's _valid_iso_date 400s.
+// Empty commits a clear; anything not a full YYYY-MM-DD snaps back.
+function DueDateInput({
+  value,
+  onCommit,
+}: {
+  value: string | null;
+  onCommit: (value: string | null) => void;
+}) {
+  const [draft, setDraft] = useState(value ?? "");
+  useEffect(() => {
+    setDraft(value ?? "");
+  }, [value]);
+  const commit = () => {
+    if (!draft) {
+      if (value != null) onCommit(null);
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft)) {
+      setDraft(value ?? "");
+      return;
+    }
+    if (draft !== value) onCommit(draft);
+  };
+  return (
+    <Input
+      id="kanban-detail-due"
+      type="date"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      aria-label="Due date"
+    />
+  );
+}
+
 // Estimate points editor (PRD §3.2): local draft committed on blur/Enter so
 // every keystroke isn't a PATCH. Empty clears; non-int or out-of-range
 // (0–100, the server's bounds) snaps back to the stored value.
@@ -1113,14 +1158,9 @@ function DetailPanel({
             <div className="grid gap-2">
               <Label htmlFor="kanban-detail-due">Due date</Label>
               <div className="flex items-center gap-1">
-                <Input
-                  id="kanban-detail-due"
-                  type="date"
-                  value={dueAt ?? ""}
-                  onChange={(e) =>
-                    onPatchMeta(task.id, { due_at: e.target.value || null })
-                  }
-                  aria-label="Due date"
+                <DueDateInput
+                  value={dueAt}
+                  onCommit={(v) => onPatchMeta(task.id, { due_at: v })}
                 />
                 {dueAt && (
                   <Button
