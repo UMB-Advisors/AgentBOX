@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { connectGraph } from '@/lib/mail/connect-graph';
+import { requireOnboardingToken } from '@/lib/middleware/onboarding-auth';
 import { parseJson } from '@/lib/middleware/validate';
 import { graphConnectBodySchema } from '@/lib/schemas/graph-connect';
 
@@ -15,9 +16,13 @@ export const dynamic = 'force-dynamic';
 // Two modes (see graphConnectBodySchema): mode:'test' runs the Graph app-only
 // token + inbox probe only; mode:'save' persists ONLY on a passing probe (bad
 // creds → 422, never stored). Co-located with the sibling imap-connect / advance
-// routes; like them, not Caddy-gated (onboarding precedes basic_auth). The
-// client secret is never echoed back.
+// routes; protected by the shared-secret gate in lib/middleware/onboarding-auth.ts
+// when ONBOARDING_API_TOKEN is set (no-op when unset). The client secret is never
+// echoed back.
 export async function POST(req: NextRequest) {
+  const authError = requireOnboardingToken(req);
+  if (authError) return authError;
+
   const b = await parseJson(req, graphConnectBodySchema);
   if (!b.ok) return b.response;
   const { status, body } = await connectGraph(b.data, { advanceOnboarding: true });
