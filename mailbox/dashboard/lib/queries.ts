@@ -77,13 +77,10 @@ export async function listDrafts(
     const r = row as unknown as DraftWithMessage;
     return { ...r, draft_body: normalizeDraftBody(r.draft_body) };
   });
-  const historyMap = await getThreadHistoryBatch(
+  const histories = await getThreadHistoryBatch(
     drafts.map((d) => ({ threadId: d.message.thread_id, excludeInboxMessageId: d.message.id })),
   );
-  const withHistory = drafts.map((d) => ({
-    ...d,
-    thread_history: historyMap.get(d.message.thread_id ?? '') ?? [],
-  }));
+  const withHistory = drafts.map((d, i) => ({ ...d, thread_history: histories[i] }));
   return withHistory;
 }
 
@@ -334,13 +331,10 @@ export async function getQueueWithUrgency(
     } as DraftWithUrgency;
   });
 
-  const historyMap = await getThreadHistoryBatch(
+  const histories = await getThreadHistoryBatch(
     drafts.map((d) => ({ threadId: d.message.thread_id, excludeInboxMessageId: d.message.id })),
   );
-  const withHistory = drafts.map((d) => ({
-    ...d,
-    thread_history: historyMap.get(d.message.thread_id ?? '') ?? [],
-  }));
+  const withHistory = drafts.map((d, i) => ({ ...d, thread_history: histories[i] }));
   return withHistory;
 }
 

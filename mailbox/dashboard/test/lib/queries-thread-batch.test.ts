@@ -1,14 +1,14 @@
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  closeTestPool,
-  getTestPool,
-  HAS_DB,
-  seedDraft,
-  deleteSeededDraft,
-  type SeededDraft,
-} from '../helpers/db';
+import { afterAll, describe, expect, it } from 'vitest';
 import { getThreadHistory, getThreadHistoryBatch } from '@/lib/queries-thread';
 import type { ThreadMessage } from '@/lib/types';
+import {
+  closeTestPool,
+  deleteSeededDraft,
+  getTestPool,
+  HAS_DB,
+  type SeededDraft,
+  seedDraft,
+} from '../helpers/db';
 
 // MBOX-perf: batch thread-history fetch — regression guard.
 // DB-backed: skips without TEST_POSTGRES_URL (same gate as other route suites).
@@ -35,7 +35,11 @@ dbDescribe('getThreadHistoryBatch — real Postgres', () => {
     ]);
   }
 
-  async function insertInboundRow(threadId: string, fromAddr: string, sentAt: string): Promise<void> {
+  async function insertInboundRow(
+    threadId: string,
+    fromAddr: string,
+    sentAt: string,
+  ): Promise<void> {
     const pool = getTestPool();
     const tag = `hist-in-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     await pool.query(
@@ -82,18 +86,15 @@ dbDescribe('getThreadHistoryBatch — real Postgres', () => {
     const singleA = await getThreadHistory(threadA, draftA.inboxMessageId);
     const singleB = await getThreadHistory(threadB, draftB.inboxMessageId);
 
-    // Batch result
-    const batchMap = await getThreadHistoryBatch([
+    // Batch result — returns array indexed by input order
+    const histories = await getThreadHistoryBatch([
       { threadId: threadA, excludeInboxMessageId: draftA.inboxMessageId },
       { threadId: threadB, excludeInboxMessageId: draftB.inboxMessageId },
     ]);
 
-    const batchA = batchMap.get(threadA) ?? [];
-    const batchB = batchMap.get(threadB) ?? [];
-
-    // Equivalence check
-    expect(batchA).toEqual(singleA);
-    expect(batchB).toEqual(singleB);
+    // Equivalence check: index 0 = threadA, index 1 = threadB
+    expect(histories[0]).toEqual(singleA);
+    expect(histories[1]).toEqual(singleB);
   });
 
   it('2. null/empty threadId items return [] and cause no query errors', async () => {
@@ -101,13 +102,15 @@ dbDescribe('getThreadHistoryBatch — real Postgres', () => {
     seeded.push(draftNull);
     // Do NOT set thread_id — it remains null
 
-    const batchMap = await getThreadHistoryBatch([
+    const histories = await getThreadHistoryBatch([
       { threadId: null, excludeInboxMessageId: draftNull.inboxMessageId },
       { threadId: '', excludeInboxMessageId: 99999 },
     ]);
 
-    // Map should be empty — no valid thread ids
-    expect(batchMap.size).toBe(0);
+    // Both items have no valid thread id — each returns []
+    expect(histories).toHaveLength(2);
+    expect(histories[0]).toEqual([]);
+    expect(histories[1]).toEqual([]);
   });
 
   it('3. excluded message id does not appear in its thread history', async () => {
@@ -120,11 +123,11 @@ dbDescribe('getThreadHistoryBatch — real Postgres', () => {
     // Add an inbound row (not the draft's own inbox row) to the thread
     await insertInboundRow(threadC, 'other@example.com', '2026-01-03T08:00:00Z');
 
-    const batchMap = await getThreadHistoryBatch([
+    const histories = await getThreadHistoryBatch([
       { threadId: threadC, excludeInboxMessageId: draftC.inboxMessageId },
     ]);
 
-    const history = batchMap.get(threadC) ?? [];
+    const history = histories[0];
 
     // The draft's own inbox message must not appear in history
     const excludedPresent = history.some(
@@ -134,5 +137,51 @@ dbDescribe('getThreadHistoryBatch — real Postgres', () => {
 
     // The other inbound row IS present
     expect(history.some((m) => m.direction === 'inbound')).toBe(true);
+  });
+
+  it('4. shared thread: two drafts each exclude only their own inbox message', async () => {
+    // Regression test for the review finding: when two drafts share the same
+    // thread, the batch must not union their exclude ids — each draft's history
+    // must contain the other draft's inbox message, not its own.
+    const threadD = `test-batch-thread-D-${Date.now()}`;
+
+    // Two drafts on the same thread
+    const draftD1 = await seedDraft({ status: 'pending' });
+    const draftD2 = await seedDraft({ status: 'pending' });
+    seeded.push(draftD1, draftD2);
+    await setThreadId(draftD1.inboxMessageId, threadD);
+    await setThreadId(draftD2.inboxMessageId, threadD);
+
+    // A sent_history row so the thread isn't empty on the outbound side
+    await insertOutboundRow(threadD, '2026-01-04T09:00:00Z');
+
+    // Per-item expectations via the single-item function
+    const singleD1 = await getThreadHistory(threadD, draftD1.inboxMessageId);
+    const singleD2 = await getThreadHistory(threadD, draftD2.inboxMessageId);
+
+    const histories = await getThreadHistoryBatch([
+      { threadId: threadD, excludeInboxMessageId: draftD1.inboxMessageId },
+      { threadId: threadD, excludeInboxMessageId: draftD2.inboxMessageId },
+    ]);
+
+    // Each item's result must match getThreadHistory with that item's own exclude id
+    expect(histories[0]).toEqual(singleD1);
+    expect(histories[1]).toEqual(singleD2);
+
+    // Explicitly: draft1's history contains draft2's inbox message (and vice versa)
+    expect(
+      histories[0].some((m) => m.direction === 'inbound' && m.id === draftD2.inboxMessageId),
+    ).toBe(true);
+    expect(
+      histories[1].some((m) => m.direction === 'inbound' && m.id === draftD1.inboxMessageId),
+    ).toBe(true);
+
+    // And neither contains its own inbox message
+    expect(
+      histories[0].some((m) => m.direction === 'inbound' && m.id === draftD1.inboxMessageId),
+    ).toBe(false);
+    expect(
+      histories[1].some((m) => m.direction === 'inbound' && m.id === draftD2.inboxMessageId),
+    ).toBe(false);
   });
 });

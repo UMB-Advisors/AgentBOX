@@ -74,17 +74,21 @@ export interface ThreadHistoryItem {
  * Batch version of getThreadHistory for queue list paths.
  *
  * Issues exactly TWO queries total (one per table) using `thread_id IN (...)`,
- * then groups and assembles per-draft lists in JS — collapsing the N+1 fan-out
- * that listDrafts previously produced (2 queries × N drafts).
+ * then groups all rows by thread_id in JS WITHOUT any exclusion — collapsing
+ * the N+1 fan-out that listDrafts previously produced (2 queries × N drafts).
  *
- * Returns a Map keyed by threadId. Entries with a null threadId are omitted
- * from the map; callers should fall back to [] via `map.get(d.thread_id) ?? []`.
+ * Returns one ThreadMessage[] per input item, in input order. Items with a
+ * null/empty threadId return []. Exclusion is applied per input item: only
+ * inbound messages whose id equals that item's excludeInboxMessageId are
+ * filtered out; outbound messages are never excluded. This preserves correct
+ * behavior when two drafts share the same thread — each draft's history
+ * excludes only its own inbox message, not the other draft's.
  */
 export async function getThreadHistoryBatch(
   items: ThreadHistoryItem[],
-): Promise<Map<string, ThreadMessage[]>> {
+): Promise<ThreadMessage[][]> {
   const ids = [...new Set(items.flatMap((i) => (i.threadId ? [i.threadId] : [])))];
-  if (ids.length === 0) return new Map();
+  if (ids.length === 0) return items.map(() => []);
 
   const db = getKysely();
 
@@ -101,26 +105,12 @@ export async function getThreadHistoryBatch(
       .execute(),
   ]);
 
-  // Build per-item exclude sets: threadId → Set<excludeInboxMessageId>
-  const excludeMap = new Map<string, Set<number>>();
-  for (const item of items) {
-    if (!item.threadId) continue;
-    let s = excludeMap.get(item.threadId);
-    if (!s) {
-      s = new Set();
-      excludeMap.set(item.threadId, s);
-    }
-    s.add(item.excludeInboxMessageId);
-  }
-
-  // Group mapped messages by thread_id
+  // Group full (unfiltered) messages by thread_id
   const grouped = new Map<string, ThreadMessage[]>();
 
   for (const r of inboundRows) {
     const tid = r.thread_id;
     if (!tid) continue;
-    const excluded = excludeMap.get(tid);
-    if (excluded?.has(r.id)) continue;
     if (r.received_at === null) continue;
     const msg: ThreadMessage = {
       direction: 'inbound' as const,
@@ -159,10 +149,16 @@ export async function getThreadHistoryBatch(
     arr.push(msg);
   }
 
-  // Sort each thread's list in place
+  // Sort each thread's full list once
   for (const [tid, msgs] of grouped) {
     grouped.set(tid, sortByAt(msgs));
   }
 
-  return grouped;
+  // Per input item: take the sorted thread list and exclude only this item's
+  // own inbox message (outbound messages are never excluded)
+  return items.map((item) => {
+    if (!item.threadId) return [];
+    const full = grouped.get(item.threadId) ?? [];
+    return full.filter((m) => !(m.direction === 'inbound' && m.id === item.excludeInboxMessageId));
+  });
 }
