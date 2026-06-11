@@ -11,6 +11,8 @@
 
 ---
 
+> ⚠️ **CORRECTION (2026-06-10):** §3's "make `oauth_tokens` the single Google master" decision is **reversed** — it targeted the **deprecated** MailBox Next.js dashboard's store. The live box and the go-forward **Hermes dashboard** use the Hermes host store (`~/.hermes/google_accounts/*.json`); `oauth_tokens` belongs to the app being retired (build-target = hermes, 2026-06-09). The P0 re-point (PR #51) was reverted (PR #60). **A system-wide audit then refined this further: Google data is split *by surface* — ingestion mints from the Hermes files; Calendar/Drive/Contacts/voice read `oauth_tokens` — so there is no single master yet; unifying them (with at-rest encryption, on the go-forward dashboard) is the real open SoT decision.** See the corrected §3 Decision.
+
 ## TL;DR
 
 Code investigation (2026-06-10, against `main`) overturns the PRD's working assumption that all three providers need a synced n8n credential:
@@ -71,14 +73,19 @@ There are **four** stores today (the PRD undercounted at three), and one it name
 
 ### Decision
 
-- **`mailbox.oauth_tokens` (#1) becomes the single Google master.** Re-point the `/api/internal/google/access-token` minter to read the refresh token from `oauth_tokens` and exchange it for a short-lived access token. **Deprecate the plaintext Hermes file store (#3) for this path.**
-  - Fixes MBOX-464 structurally: the store the dashboard *writes on connect* is the store the minter *reads*.
-  - Kills a plaintext-token-on-disk store — a security win (and aligns with `google-single-source-of-truth`).
-  - Backfill/transition: on first deploy, if `oauth_tokens` is empty but a Hermes file exists, one-time import the refresh token into `oauth_tokens` (then stop reading the file). Define in the P0 plan.
+> **CORRECTED DECISION (2026-06-10).** The original bullet below ("`oauth_tokens` becomes the single Google master") was aimed at the **wrong dashboard** and is reversed. There are **two** Google connect implementations: the **deprecated** MailBox Next.js dashboard (`mailbox-dashboard:3001`, writes `oauth_tokens`) and the **go-forward Hermes dashboard** (host `:9119`, writes `~/.hermes/google_accounts/*.json`). The live box (agentbox2) and the go-forward dashboard both use the **Hermes host store**; `oauth_tokens` is empty there and retires with the MailBox Next.js app (build-target = hermes, 2026-06-09). The minter already reads the Hermes store, so **no re-point is needed** — PR #51 attempted one and was reverted (PR #60).
+>
+> - **Audit refinement (2026-06-10): Google data is split BY SURFACE — there is no single master yet, and that split *is* the open SoT problem.** A system-wide audit found: **Gmail ingestion** mints from the **Hermes host store** (`~/.hermes/google_accounts/*.json`, via `MailBOX.json`'s `Get Gmail Token` → `/api/internal/google/access-token`), while **Calendar / Drive / Contacts / Tasks / Gmail voice-backfill** read **`oauth_tokens`** (via `lib/oauth/google.ts`). Multiple overlapping minter/ingest implementations from different sessions coexist in the code (06-06 `MailBOX-SoT-Ingest` reads `oauth_tokens`; 06-09 `MailBOX.json` reads the Hermes files) — which is the live active workflow needs box verification.
+> - **So the decision is NOT "pick the store the minter already uses" — it's a deliberate SoT choice:** unify Google onto ONE store across ingestion AND the calendar/contacts surfaces, ideally on the go-forward Hermes dashboard, with **at-rest encryption** (the Hermes files are plaintext). Until that decision is made, do not re-point any single consumer — that just moves the split around (which is exactly what PR #51 did, reverted via #60).
+> - MBOX-464 ingestion was already resolved on agentbox2 (2026-06-10) by the multi-account workflow + RFC-2822 date-parse + draft-timeout fixes — not by any store re-point.
+
+~~Original (SUPERSEDED):~~
+
+- ~~**`mailbox.oauth_tokens` (#1) becomes the single Google master.** Re-point the `/api/internal/google/access-token` minter to read the refresh token from `oauth_tokens` and exchange it for a short-lived access token. **Deprecate the plaintext Hermes file store (#3) for this path.** (Fixes MBOX-464 structurally; kills a plaintext store; one-time backfill on first deploy.)~~
 - **IMAP/M365 secrets (#2) need no reconciliation.** `provider_secret_enc` is a clean separate column keyed by `account_id`; it does not overlap Google. It feeds the per-account credential **sync** to n8n (#4) for IMAP/SMTP only.
 - **n8n's store (#4) stays sovereign.** The dashboard never re-keys it. For HTTP providers it holds nothing; for IMAP/SMTP it holds the synced per-account creds.
 
-**Net:** one Google master (#1), one mail-transport-secret master (#2), n8n as a downstream consumer that holds credentials only for IMAP/SMTP. The plaintext file store retires.
+**Net (corrected):** one Google master (the **Hermes host store**, #3), one mail-transport-secret master (#2, `provider_secret_enc`), n8n as a downstream consumer that holds credentials only for IMAP/SMTP. `oauth_tokens` (#1) retires with the MailBox Next.js dashboard; the plaintext Hermes store stays canonical pending the at-rest-encryption hardening follow-up.
 
 ---
 
@@ -86,8 +93,8 @@ There are **four** stores today (the PRD undercounted at three), and one it name
 
 Supersedes the v0.1.0 "Phasing" section.
 
-- **P0 — Gmail end-to-end via the single Google master.** *(Closes MBOX-464 + MBOX-466.)*
-  - Re-point `/api/internal/google/access-token` to read `mailbox.oauth_tokens`; one-time backfill from the Hermes file if present; deprecate file-store reads.
+- **P0 — Gmail end-to-end via the single Google master.** *(Closes MBOX-464 + MBOX-466.)* — **SUPERSEDED by the §3 correction.** MBOX-464 ingestion was already resolved on agentbox2 (2026-06-10); the canonical Google master is the **Hermes host store** the minter already reads, so there is **no `oauth_tokens` re-point** to do. Original P0 text kept for the record:
+  - ~~Re-point `/api/internal/google/access-token` to read `mailbox.oauth_tokens`; one-time backfill from the Hermes file if present; deprecate file-store reads.~~
   - Confirm `MailBOX.json`'s token-as-data path runs on agentbox2 (env: `HERMES_INTERNAL_TOKEN` set; endpoint reachable from n8n).
   - **Verify what's actually deployed on agentbox2 first** (§5) — it may run an older `MailBOX.json` using the native gmail node, which changes the box-side fix.
   - No n8n credential-sync mechanism is built in P0. (This is the biggest change from v0.1.0, which front-loaded the sync mechanism here.)
