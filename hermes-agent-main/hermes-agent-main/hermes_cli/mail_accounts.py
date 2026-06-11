@@ -215,6 +215,24 @@ def _find_path_by_id(account_id: str) -> Optional[Path]:
     return None
 
 
+def get_account_email(account_id: str) -> Optional[str]:
+    """Resolve a record id to its mailbox email, or None. MBOX-482: the delete
+    route only carries the record id, but the registration bridge keys the
+    pipeline projection (mailbox.accounts) by stable email — so we read the email
+    off the record BEFORE ``delete_account`` removes it. Never returns the secret."""
+    p = _find_path_by_id(account_id)
+    if p is None:
+        return None
+    try:
+        data = json.loads(p.read_text())
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(data, dict):
+        return None
+    email = data.get("email")
+    return email if isinstance(email, str) and email else None
+
+
 def _summary(record: Dict[str, Any]) -> Dict[str, Any]:
     """The same secret-free, operator-facing shape ``list_accounts`` emits, for a
     single record -- so a mutation can echo the updated row back."""

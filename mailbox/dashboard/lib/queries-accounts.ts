@@ -247,6 +247,158 @@ export async function createMicrosoftAccount(
   return { id: row.id, adopted: false };
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// MBOX-482 — registration bridge (Hermes mail-account connect → mailbox.accounts).
+//
+// The live operator-facing connect UI is HERMES-side (the 0600 file store in
+// hermes_cli/mail_accounts.py), but the n8n pipeline keys everything on
+// mailbox.accounts (+ provider_secret_enc). MBOX-468/470 explicitly deferred this
+// "credential push". These helpers are the pipeline-projection write surface the
+// new internal route (app/api/internal/accounts/register) calls so a Hermes
+// connect/re-auth/disconnect keeps mailbox.accounts in lock-step.
+//
+// SoT: the Hermes file store is the operator master; mailbox.accounts is a
+// projection. The transport secret arrives as PLAINTEXT over the docker network
+// (internal-token-gated) and is re-encrypted HERE under MAILBOX_OAUTH_TOKEN_KEY
+// (lib/oauth/google.ts:encryptToken) — Hermes' file store uses a DIFFERENT key
+// (HERMES_MAIL_SECRET_KEY), and the pipeline (Graph minter / IMAP cred-sync)
+// only ever reads provider_secret_enc, so the secret must land under the mailbox
+// key, not Hermes'. The route never persists the plaintext.
+// ──────────────────────────────────────────────────────────────────────────
+
+export interface RegisterTransportAccountInput {
+  // microsoft | imap. gmail never flows through this bridge (Google connect
+  // writes oauth_tokens, not provider_secret_enc).
+  provider: Exclude<MailProviderKind, 'gmail'>;
+  email: string;
+  display_label: string | null;
+  // Non-secret connection params → accounts.provider_config.
+  provider_config: Record<string, unknown>;
+  // Already-AES-256-GCM-encrypted (under MAILBOX_OAUTH_TOKEN_KEY) by the caller.
+  secret_enc: string;
+}
+
+// Upsert (create / adopt / re-auth) the transport account by stable email.
+// Three cases, mirroring createImapAccount's sentinel-adoption rule but adding
+// the re-auth case the connect path needs (an EXISTING account re-connecting
+// must refresh its provider_config + secret, not duplicate):
+//   1. an account with this email already exists → UPDATE it in place (re-auth).
+//   2. the migration-033 sentinel default is still unclaimed → adopt it.
+//   3. otherwise → INSERT a new non-default account (multi-account).
+// `adopted` is true for case 2 (the fresh-appliance claim) so the caller can log
+// which path ran.
+export async function registerTransportAccount(
+  input: RegisterTransportAccountInput,
+): Promise<{ id: number; adopted: boolean }> {
+  const db = getKysely();
+  const email = input.email.trim().toLowerCase();
+  const cfgJson = JSON.stringify(input.provider_config);
+
+  // Case 1 — re-auth an account that already exists under this email.
+  const existing = await db
+    .selectFrom('accounts')
+    .select(['id'])
+    .where(sql<boolean>`lower(email_address) = ${email}`)
+    .executeTakeFirst();
+  if (existing) {
+    await db
+      .updateTable('accounts')
+      .set({
+        display_label: input.display_label,
+        provider: input.provider,
+        provider_config: sql`${cfgJson}::jsonb`,
+        provider_secret_enc: input.secret_enc,
+      })
+      .where('id', '=', existing.id)
+      .execute();
+    return { id: existing.id, adopted: false };
+  }
+
+  // Cases 2 + 3 — adopt the sentinel default, else insert non-default. Identical
+  // to createImapAccount/createMicrosoftAccount; kept here so the bridge has one
+  // entry point regardless of provider.
+  const def = await db
+    .selectFrom('accounts')
+    .select(['id', 'email_address'])
+    .where('is_default', '=', true)
+    .executeTakeFirst();
+
+  if (def && def.email_address === SENTINEL_DEFAULT_EMAIL) {
+    const row = await db
+      .updateTable('accounts')
+      .set({
+        email_address: email,
+        display_label: input.display_label,
+        provider: input.provider,
+        provider_config: sql`${cfgJson}::jsonb`,
+        provider_secret_enc: input.secret_enc,
+      })
+      .where('id', '=', def.id)
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    return { id: row.id, adopted: true };
+  }
+
+  const row = await db
+    .insertInto('accounts')
+    .values({
+      email_address: email,
+      display_label: input.display_label,
+      is_default: false,
+      provider: input.provider,
+      provider_config: sql`${cfgJson}::jsonb`,
+      provider_secret_enc: input.secret_enc,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  return { id: row.id, adopted: false };
+}
+
+export type DeregisterResult =
+  | { ok: true; action: 'deleted' | 'cleared'; account_id: number }
+  | { ok: false; reason: 'not_found' };
+
+// Disconnect projection: a Hermes mail-account delete must revoke the pipeline's
+// access too (MBOX-482 lifecycle: delete on disconnect). Resolves by stable
+// email, then:
+//   - the default account, OR any account with mail/draft history → clear its
+//     transport secret + provider_config and revert provider to 'gmail'. The row
+//     SURVIVES (the default backs every account_id column DEFAULT; a row with
+//     history has FK-referencing inbox/draft/sent rows), but it is no longer a
+//     live IMAP/M365 transport. Matches deleteAccount's default + has-data guards.
+//   - a non-default account with NO history → hard delete.
+// The n8n credential teardown (IMAP) is the route/script caller's job — this is
+// the DB projection only.
+export async function deregisterTransportAccount(
+  email: string,
+): Promise<DeregisterResult> {
+  const db = getKysely();
+  const normalized = email.trim().toLowerCase();
+  const acct = await db
+    .selectFrom('accounts')
+    .select(['id', 'is_default'])
+    .where(sql<boolean>`lower(email_address) = ${normalized}`)
+    .executeTakeFirst();
+  if (!acct) return { ok: false, reason: 'not_found' };
+
+  if (acct.is_default || (await accountHasData(acct.id))) {
+    // Keep the row (default invariant / FK integrity), strip the transport.
+    await db
+      .updateTable('accounts')
+      .set({
+        provider: 'gmail',
+        provider_config: sql`'{}'::jsonb`,
+        provider_secret_enc: null,
+      })
+      .where('id', '=', acct.id)
+      .execute();
+    return { ok: true, action: 'cleared', account_id: acct.id };
+  }
+
+  await db.deleteFrom('accounts').where('id', '=', acct.id).execute();
+  return { ok: true, action: 'deleted', account_id: acct.id };
+}
+
 export async function getDraftProviderContext(
   draftId: number,
 ): Promise<DraftProviderContext | null> {

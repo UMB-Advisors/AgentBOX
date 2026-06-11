@@ -1898,7 +1898,32 @@ async def connect_microsoft_account(request: Request, body: GraphConnectBody):
     _require_token(request)
     from hermes_cli import mail_accounts
 
-    status, result = await mail_accounts.connect_graph(body.model_dump())
+    d = body.model_dump()
+    status, result = await mail_accounts.connect_graph(d)
+    # MBOX-482 registration bridge: on a successful CONNECT (not a test-only
+    # probe), project the mailbox into the pipeline's mailbox.accounts so n8n
+    # ingestion/send can use it. Best-effort + non-fatal — the Hermes file store
+    # is the master and already persisted; a bridge failure logs + is retryable.
+    if status == 200 and (d.get("mode") or "test") == "connect":
+        from hermes_cli import dashboard_bridge
+
+        email = str(d["email"]).strip().lower()
+        mailbox = str(d.get("mailbox") or d["email"]).strip().lower()
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: dashboard_bridge.register_account(
+                provider="microsoft",
+                email=email,
+                display_label=d.get("display_label"),
+                provider_config={
+                    "tenant_id": str(d["tenant_id"]),
+                    "client_id": str(d["client_id"]),
+                    "mailbox": mailbox,
+                    "auth": "client_credentials",
+                },
+                secret_plaintext=str(d["client_secret"]),
+            ),
+        )
     return JSONResponse(result, status_code=status)
 
 
@@ -1911,7 +1936,31 @@ async def connect_imap_account(request: Request, body: ImapConnectBody):
     _require_token(request)
     from hermes_cli import mail_accounts
 
-    status, result = await mail_accounts.connect_imap(body.model_dump())
+    d = body.model_dump()
+    status, result = await mail_accounts.connect_imap(d)
+    # MBOX-482 registration bridge — same best-effort projection as the M365 path.
+    if status == 200 and (d.get("mode") or "test") == "connect":
+        from hermes_cli import dashboard_bridge
+
+        email = str(d["email"]).strip().lower()
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: dashboard_bridge.register_account(
+                provider="imap",
+                email=email,
+                display_label=d.get("display_label"),
+                provider_config={
+                    "imap_host": str(d["imap_host"]),
+                    "imap_port": int(d["imap_port"]),
+                    "smtp_host": str(d["smtp_host"]),
+                    "smtp_port": int(d["smtp_port"]),
+                    "username": str(d["username"]),
+                    "mailbox": email,
+                    "tls": True,
+                },
+                secret_plaintext=str(d["app_password"]),
+            ),
+        )
     return JSONResponse(result, status_code=status)
 
 
@@ -1946,9 +1995,23 @@ async def delete_mail_account(request: Request, account_id: str):
         )
 
     loop = asyncio.get_running_loop()
+    # MBOX-482: resolve the email BEFORE delete (the record — and its email — is
+    # gone after). The bridge keys the pipeline projection by stable email.
+    email = await loop.run_in_executor(
+        None, mail_accounts.get_account_email, account_id
+    )
     removed = await loop.run_in_executor(
         None, mail_accounts.delete_account, account_id
     )
+    # MBOX-482 registration bridge: on a real removal, revoke the pipeline
+    # projection (mailbox.accounts) too. Best-effort + non-fatal — the file store
+    # (the master) is already gone; the dashboard deregister is idempotent.
+    if removed and email:
+        from hermes_cli import dashboard_bridge
+
+        await loop.run_in_executor(
+            None, lambda: dashboard_bridge.deregister_account(email=email)
+        )
     return JSONResponse({"removed": removed})
 
 
