@@ -42,7 +42,7 @@ dbDescribe('POST /api/drafts/[id]/action-items — real Postgres', () => {
     try {
       const { POST } = await import('@/app/api/drafts/[id]/action-items/route');
       const res = await POST(fakeRequest({ body: { action_items: [VALID_ITEM] } }), {
-        params: { id: String(seed.draftId) },
+        params: Promise.resolve({ id: String(seed.draftId) }),
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
@@ -67,10 +67,10 @@ dbDescribe('POST /api/drafts/[id]/action-items — real Postgres', () => {
       const { POST } = await import('@/app/api/drafts/[id]/action-items/route');
       // Seed one item, then clear.
       await POST(fakeRequest({ body: { action_items: [VALID_ITEM] } }), {
-        params: { id: String(seed.draftId) },
+        params: Promise.resolve({ id: String(seed.draftId) }),
       });
       const res = await POST(fakeRequest({ body: { action_items: [] } }), {
-        params: { id: String(seed.draftId) },
+        params: Promise.resolve({ id: String(seed.draftId) }),
       });
       expect(res.status).toBe(200);
       const stored = await readActionItems(seed.draftId);
@@ -83,7 +83,7 @@ dbDescribe('POST /api/drafts/[id]/action-items — real Postgres', () => {
   it('returns 404 for a nonexistent draft', async () => {
     const { POST } = await import('@/app/api/drafts/[id]/action-items/route');
     const res = await POST(fakeRequest({ body: { action_items: [] } }), {
-      params: { id: '999999999' },
+      params: Promise.resolve({ id: '999999999' }),
     });
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: string };
@@ -93,7 +93,7 @@ dbDescribe('POST /api/drafts/[id]/action-items — real Postgres', () => {
   it('returns 400 for a non-numeric id', async () => {
     const { POST } = await import('@/app/api/drafts/[id]/action-items/route');
     const res = await POST(fakeRequest({ body: { action_items: [] } }), {
-      params: { id: 'abc' },
+      params: Promise.resolve({ id: 'abc' }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
@@ -108,7 +108,7 @@ dbDescribe('POST /api/drafts/[id]/action-items — real Postgres', () => {
         fakeRequest({
           body: { action_items: [{ ...VALID_ITEM, type: 'todo' }] },
         }),
-        { params: { id: String(seed.draftId) } },
+        { params: Promise.resolve({ id: String(seed.draftId) }) },
       );
       expect(res.status).toBe(400);
       const stored = await readActionItems(seed.draftId);
@@ -124,7 +124,7 @@ dbDescribe('POST /api/drafts/[id]/action-items — real Postgres', () => {
       const { POST } = await import('@/app/api/drafts/[id]/action-items/route');
       const res = await POST(
         fakeRequest({ body: { action_items: [{ ...VALID_ITEM, confidence: 1.5 }] } }),
-        { params: { id: String(seed.draftId) } },
+        { params: Promise.resolve({ id: String(seed.draftId) }) },
       );
       expect(res.status).toBe(400);
     } finally {
@@ -138,7 +138,7 @@ dbDescribe('POST /api/drafts/[id]/action-items — real Postgres', () => {
       const { POST } = await import('@/app/api/drafts/[id]/action-items/route');
       const res = await POST(
         fakeRequest({ body: { action_items: [{ ...VALID_ITEM, due_at: 'next-friday' }] } }),
-        { params: { id: String(seed.draftId) } },
+        { params: Promise.resolve({ id: String(seed.draftId) }) },
       );
       expect(res.status).toBe(400);
     } finally {

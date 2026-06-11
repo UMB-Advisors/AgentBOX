@@ -52,7 +52,7 @@ dbDescribe('prompt-rules route handlers — real Postgres', () => {
 
     // Content edit — bumps version.
     const edited = await idRoute.PATCH(fakeRequest({ body: { rule: 'quote a firm price' } }), {
-      params: { id: String(rule.id) },
+      params: Promise.resolve({ id: String(rule.id) }),
     });
     expect(edited.status).toBe(200);
     const editedBody = (await edited.json()) as { rule: { version: number; rule: string } };
@@ -61,7 +61,7 @@ dbDescribe('prompt-rules route handlers — real Postgres', () => {
 
     // Enabled toggle — does NOT bump version.
     const toggled = await idRoute.PATCH(fakeRequest({ body: { enabled: false } }), {
-      params: { id: String(rule.id) },
+      params: Promise.resolve({ id: String(rule.id) }),
     });
     const toggledBody = (await toggled.json()) as { rule: { version: number; enabled: boolean } };
     expect(toggledBody.rule.version).toBe(2);
@@ -73,22 +73,28 @@ dbDescribe('prompt-rules route handlers — real Postgres', () => {
     expect(enabled.some((r) => r.id === rule.id)).toBe(false);
 
     // Delete — 200, then a second delete is 404.
-    const del = await idRoute.DELETE(fakeRequest({}), { params: { id: String(rule.id) } });
+    const del = await idRoute.DELETE(fakeRequest({}), {
+      params: Promise.resolve({ id: String(rule.id) }),
+    });
     expect(del.status).toBe(200);
-    const del2 = await idRoute.DELETE(fakeRequest({}), { params: { id: String(rule.id) } });
+    const del2 = await idRoute.DELETE(fakeRequest({}), {
+      params: Promise.resolve({ id: String(rule.id) }),
+    });
     expect(del2.status).toBe(404);
   });
 
   it('PATCH with an empty body → 400 (no fields to update)', async () => {
     const idRoute = await import('@/app/api/prompt-rules/[id]/route');
-    const res = await idRoute.PATCH(fakeRequest({ body: {} }), { params: { id: '999999' } });
+    const res = await idRoute.PATCH(fakeRequest({ body: {} }), {
+      params: Promise.resolve({ id: '999999' }),
+    });
     expect(res.status).toBe(400);
   });
 
   it('PATCH a missing id → 404', async () => {
     const idRoute = await import('@/app/api/prompt-rules/[id]/route');
     const res = await idRoute.PATCH(fakeRequest({ body: { enabled: true } }), {
-      params: { id: '999999' },
+      params: Promise.resolve({ id: '999999' }),
     });
     expect(res.status).toBe(404);
   });
@@ -123,7 +129,7 @@ dbDescribe('prompt-rules route handlers — real Postgres', () => {
 
       // Cross-account write (default account editing acct2's rule) → 404.
       const crossPatch = await idRoute.PATCH(fakeRequest({ body: { enabled: false } }), {
-        params: { id: String(rule.id) },
+        params: Promise.resolve({ id: String(rule.id) }),
       });
       expect(crossPatch.status).toBe(404);
     } finally {

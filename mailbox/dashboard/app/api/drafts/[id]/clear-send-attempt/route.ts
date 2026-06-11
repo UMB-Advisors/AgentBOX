@@ -31,7 +31,8 @@ export const dynamic = 'force-dynamic';
 // 409s:
 //   - draft not in 'approved' state (already moved on, lock-clear is moot)
 //   - send_attempt_at is already NULL (no lock to clear)
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, idParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

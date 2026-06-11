@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic';
 // MBOX-369 — delete (trash) a queue row. Hides it locally (deleted_at), discards
 // any active linked draft (status → rejected, audit reason 'message_deleted'),
 // and fans out to Gmail (messages.trash — recoverable, NOT permanent delete).
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, idParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

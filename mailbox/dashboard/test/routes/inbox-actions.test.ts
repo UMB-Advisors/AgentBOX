@@ -59,7 +59,9 @@ dbDescribe('inbox-message action routes — real Postgres', () => {
       const seed = await seedDraft({ status: 'pending' });
       try {
         const { POST } = await import('@/app/api/inbox-messages/[id]/archive/route');
-        const res = await POST(fakeRequest(), { params: { id: String(seed.inboxMessageId) } });
+        const res = await POST(fakeRequest(), {
+          params: Promise.resolve({ id: String(seed.inboxMessageId) }),
+        });
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.success).toBe(true);
@@ -78,13 +80,13 @@ dbDescribe('inbox-message action routes — real Postgres', () => {
 
     it('returns 404 for a nonexistent message id', async () => {
       const { POST } = await import('@/app/api/inbox-messages/[id]/archive/route');
-      const res = await POST(fakeRequest(), { params: { id: '999999999' } });
+      const res = await POST(fakeRequest(), { params: Promise.resolve({ id: '999999999' }) });
       expect(res.status).toBe(404);
     });
 
     it('returns 400 for a non-numeric id', async () => {
       const { POST } = await import('@/app/api/inbox-messages/[id]/archive/route');
-      const res = await POST(fakeRequest(), { params: { id: 'abc' } });
+      const res = await POST(fakeRequest(), { params: Promise.resolve({ id: 'abc' }) });
       expect(res.status).toBe(400);
     });
 
@@ -97,7 +99,9 @@ dbDescribe('inbox-message action routes — real Postgres', () => {
       const seed = await seedDraft({ status: 'pending' });
       try {
         const { POST } = await import('@/app/api/inbox-messages/[id]/archive/route');
-        const res = await POST(fakeRequest(), { params: { id: String(seed.inboxMessageId) } });
+        const res = await POST(fakeRequest(), {
+          params: Promise.resolve({ id: String(seed.inboxMessageId) }),
+        });
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.success).toBe(true);
@@ -119,7 +123,9 @@ dbDescribe('inbox-message action routes — real Postgres', () => {
       const seed = await seedDraft({ status: 'pending' });
       try {
         const { POST } = await import('@/app/api/inbox-messages/[id]/mark-read/route');
-        const res = await POST(fakeRequest(), { params: { id: String(seed.inboxMessageId) } });
+        const res = await POST(fakeRequest(), {
+          params: Promise.resolve({ id: String(seed.inboxMessageId) }),
+        });
         expect(res.status).toBe(200);
 
         const inbox = await getInboxRow(seed.inboxMessageId);
@@ -139,7 +145,9 @@ dbDescribe('inbox-message action routes — real Postgres', () => {
       const seed = await seedDraft({ status: 'pending' });
       try {
         const { POST } = await import('@/app/api/inbox-messages/[id]/delete/route');
-        const res = await POST(fakeRequest(), { params: { id: String(seed.inboxMessageId) } });
+        const res = await POST(fakeRequest(), {
+          params: Promise.resolve({ id: String(seed.inboxMessageId) }),
+        });
         expect(res.status).toBe(200);
 
         const inbox = await getInboxRow(seed.inboxMessageId);
@@ -167,7 +175,7 @@ dbDescribe('inbox-message action routes — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/inbox-messages/[id]/snooze/route');
         const res = await POST(fakeRequest({ body: { until } }), {
-          params: { id: String(seed.inboxMessageId) },
+          params: Promise.resolve({ id: String(seed.inboxMessageId) }),
         });
         expect(res.status).toBe(200);
         const inbox = await getInboxRow(seed.inboxMessageId);
@@ -186,7 +194,7 @@ dbDescribe('inbox-message action routes — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/inbox-messages/[id]/snooze/route');
         const res = await POST(fakeRequest({ body: { until: past } }), {
-          params: { id: String(seed.inboxMessageId) },
+          params: Promise.resolve({ id: String(seed.inboxMessageId) }),
         });
         expect(res.status).toBe(400);
       } finally {
@@ -199,7 +207,7 @@ dbDescribe('inbox-message action routes — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/inbox-messages/[id]/snooze/route');
         const res = await POST(fakeRequest({ body: {} }), {
-          params: { id: String(seed.inboxMessageId) },
+          params: Promise.resolve({ id: String(seed.inboxMessageId) }),
         });
         expect(res.status).toBe(400);
       } finally {
