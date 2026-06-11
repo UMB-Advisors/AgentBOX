@@ -240,7 +240,15 @@ for id in $(docker exec mailbox-postgres-1 psql -U "${POSTGRES_USER:-mailbox}" -
     || docker exec mailbox-n8n-1 n8n publish:workflow --id="$id" >/dev/null 2>&1 || true
 done
 docker compose restart n8n >/dev/null 2>&1; sleep 10
-docker compose --profile n8n-verify run --rm mailbox-n8n-verify || log "  WARN: n8n-verify non-zero — check workflow activation"
+# Hard gate (was advisory): an inactive core workflow dark-classifies the
+# inbox from day one (STAQPRO-181 class). Retry once after a second restart
+# before failing — activation occasionally needs the extra bounce.
+if ! docker compose --profile n8n-verify run --rm mailbox-n8n-verify; then
+  log "  n8n-verify failed — restarting n8n once and retrying"
+  docker compose restart n8n >/dev/null 2>&1; sleep 10
+  docker compose --profile n8n-verify run --rm mailbox-n8n-verify \
+    || die "STAGE 6: core MailBOX workflows not active after import (see n8n-verify output above)"
+fi
 log "  NOTE: live Gmail triage needs Gmail OAuth (MANUAL browser consent, per inbox) — not bench-automatable."
 
 # ── STAGE 7: Hermes (v0.15.1 pin) + gbrain memory ─────────────────────────
