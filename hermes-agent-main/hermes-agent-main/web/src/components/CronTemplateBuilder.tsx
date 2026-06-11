@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, X } from "lucide-react";
 import { Button } from "@nous-research/ui/ui/components/button";
+import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { Toast } from "@nous-research/ui/ui/components/toast";
@@ -10,6 +11,7 @@ import type {
   CronTemplateMessage,
   CronTemplateProposal,
   AgentTemplateSummary,
+  ModelOptionProvider,
 } from "@/lib/api";
 import type { Department } from "@/lib/crm";
 import { cn, themedBody } from "@/lib/utils";
@@ -159,6 +161,10 @@ export function CronTemplateBuilder({
   // template's structure (passed to the assist endpoint as template_id).
   const [patterns, setPatterns] = useState<AgentTemplateSummary[]>([]);
   const [activeTemplateId, setActiveTemplateId] = useState(defaultTemplateId);
+  // Model override for the assistant. "" = box default (configured main model).
+  // A stronger model drafts better prompts; provider is resolved from the picker.
+  const [model, setModel] = useState("");
+  const [modelProviders, setModelProviders] = useState<ModelOptionProvider[]>([]);
   const threadRef = useRef<HTMLDivElement>(null);
 
   const modalRef = useModalBehavior({ open: true, onClose });
@@ -172,7 +178,17 @@ export function CronTemplateBuilder({
       .catch(() => setPatterns([]));
   }, []);
 
+  // Model options for the assistant override (same source as the chat picker).
+  useEffect(() => {
+    api
+      .getModelOptions()
+      .then((r) => setModelProviders(r.providers ?? []))
+      .catch(() => setModelProviders([]));
+  }, []);
+
   const activePattern = patterns.find((p) => p.id === activeTemplateId) ?? null;
+  const providerForModel = (m: string) =>
+    modelProviders.find((p) => (p.models ?? []).includes(m))?.slug ?? null;
 
   // Keep the transcript scrolled to the latest turn.
   useEffect(() => {
@@ -192,7 +208,13 @@ export function CronTemplateBuilder({
       setInput("");
       setSending(true);
       try {
-        const res = await api.assistCronTemplate(next, activeTemplateId || null);
+        const chosen = model.trim() || null;
+        const res = await api.assistCronTemplate(
+          next,
+          activeTemplateId || null,
+          chosen,
+          chosen ? providerForModel(chosen) : null,
+        );
         setMessages([...next, { role: "assistant", content: res.reply }]);
         if (res.proposal) setProposal(res.proposal);
       } catch (e) {
@@ -203,7 +225,7 @@ export function CronTemplateBuilder({
         setSending(false);
       }
     },
-    [messages, sending, showToast, activeTemplateId],
+    [messages, sending, showToast, activeTemplateId, model, modelProviders],
   );
 
   const handleUse = useCallback(() => {
@@ -250,6 +272,31 @@ export function CronTemplateBuilder({
           >
             Build a job from a template
           </h2>
+          <div className="ml-auto mr-8 flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wider text-muted-foreground">
+              Model
+            </span>
+            <div className="w-48">
+              <Select
+                aria-label="Assistant model"
+                value={model}
+                onValueChange={(v) => setModel(v)}
+              >
+                <SelectOption value="">Box default</SelectOption>
+                {model &&
+                  !modelProviders.some((p) => (p.models ?? []).includes(model)) && (
+                    <SelectOption value={model}>{model} (current)</SelectOption>
+                  )}
+                {modelProviders.flatMap((p) =>
+                  (p.models ?? []).map((m) => (
+                    <SelectOption key={`${p.slug}:${m}`} value={m}>
+                      {modelProviders.length > 1 ? `${p.name} · ${m}` : m}
+                    </SelectOption>
+                  )),
+                )}
+              </Select>
+            </div>
+          </div>
         </header>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 sm:grid-cols-[260px_1fr]">
