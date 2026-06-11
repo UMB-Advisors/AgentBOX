@@ -1087,7 +1087,6 @@ def _run_graph_export() -> None:
                 "gbrain config not found (no $GBRAIN_HOME/.gbrain/config.json under "
                 "~/.hermesbox or ~) — set GBRAIN_HOME for the dashboard service"
             )
-        sub_env = {**os.environ, "GBRAIN_HOME": gbrain_home}
         out_path.parent.mkdir(parents=True, exist_ok=True)
         proc = subprocess.run(
             [bun, "run", str(adapter), "--out", str(out_path)],
@@ -1096,7 +1095,6 @@ def _run_graph_export() -> None:
             capture_output=True,
             text=True,
             timeout=600,
-            env=sub_env,
         )
         # On success the adapter prints a one-line summary ("pages=N … → path")
         # to stderr; on failure bun prints a multi-line stack/code-frame. Keep the
