@@ -735,14 +735,44 @@ def _gbrain_env_value(name: str, default: Optional[str] = None) -> Optional[str]
     return val or default
 
 
+def _parse_env_file(path: Path) -> Dict[str, str]:
+    """Parse a sh-style ``KEY=VALUE`` env file (as sourced via ``set -a``).
+
+    Handles optional ``export `` prefixes, surrounding quotes, comments and
+    blank lines. Returns {} on any error — never raises.
+    """
+    out: Dict[str, str] = {}
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].lstrip()
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip()
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+                val = val[1:-1]
+            if key:
+                out[key] = val
+    except Exception:
+        return {}
+    return out
+
+
 def _gbrain_subprocess_env() -> Dict[str, str]:
     """Environment for gbrain CLI / bun adapter subprocesses (argv-only).
 
     Single resolution point for ALL gbrain shell-outs: pass GBRAIN_HOME and
-    GBRAIN_DATABASE_URL through explicitly (process env, else hermes .env)
-    so the CLI opens the SAME brain as ``gbrain serve``. Loopback-appliance
-    default: ``~/.hermesbox`` when its ``.gbrain/`` layout exists (the
-    ``~/.local/bin/gbrain`` wrapper sets the same).
+    GBRAIN_DATABASE_URL through explicitly so the CLI opens the SAME brain
+    as ``gbrain serve``. Resolution order per key: process env, then hermes
+    .env, then (DATABASE_URL only) ``$GBRAIN_HOME/.gbrain/postgres.env`` —
+    the file the ``~/.local/bin/gbrain`` wrapper sources, and on the
+    appliance the ONLY place the postgres connection string lives (the
+    box's config.json is ``{"engine": "postgres"}`` with no database_url).
+    Loopback-appliance default home: ``~/.hermesbox`` when its ``.gbrain/``
+    layout exists (the wrapper sets the same).
     """
     env = dict(os.environ)
     for key in ("GBRAIN_HOME", "GBRAIN_DATABASE_URL"):
@@ -753,6 +783,15 @@ def _gbrain_subprocess_env() -> Dict[str, str]:
         hermesbox = Path.home() / ".hermesbox"
         if (hermesbox / ".gbrain").is_dir():
             env["GBRAIN_HOME"] = str(hermesbox)
+    # Final fallback for the connection string: the wrapper-sourced env file
+    # under the resolved brain home (postgres engine keeps it there, 0600).
+    if not env.get("GBRAIN_DATABASE_URL") and env.get("GBRAIN_HOME"):
+        pg_env = _parse_env_file(
+            Path(env["GBRAIN_HOME"]) / ".gbrain" / "postgres.env"
+        )
+        val = pg_env.get("GBRAIN_DATABASE_URL")
+        if val:
+            env["GBRAIN_DATABASE_URL"] = val
     return env
 
 

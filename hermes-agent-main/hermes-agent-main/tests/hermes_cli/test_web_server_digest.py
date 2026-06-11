@@ -109,6 +109,53 @@ class TestGbrainSubprocessEnv:
         env = web_server._gbrain_subprocess_env()
         assert env["GBRAIN_HOME"] == "/explicit"
 
+    # postgres.env fallback — the appliance keeps the connection string ONLY
+    # in $GBRAIN_HOME/.gbrain/postgres.env (sourced by the gbrain wrapper);
+    # config.json is {"engine": "postgres"} with no database_url.
+
+    def _write_pg_env(self, tmp_path, line):
+        gbrain_dir = tmp_path / ".hermesbox" / ".gbrain"
+        gbrain_dir.mkdir(parents=True)
+        (gbrain_dir / "postgres.env").write_text(line + "\n")
+
+    def test_db_url_falls_back_to_postgres_env_file(self, monkeypatch, tmp_path):
+        self._write_pg_env(tmp_path, "GBRAIN_DATABASE_URL=postgres://u:p@127.0.0.1:5432/gbrain")
+        monkeypatch.setattr(web_server.Path, "home", classmethod(lambda cls: tmp_path))
+        env = web_server._gbrain_subprocess_env()
+        assert env["GBRAIN_HOME"] == str(tmp_path / ".hermesbox")
+        assert env["GBRAIN_DATABASE_URL"] == "postgres://u:p@127.0.0.1:5432/gbrain"
+
+    def test_postgres_env_handles_export_and_quotes(self, monkeypatch, tmp_path):
+        self._write_pg_env(
+            tmp_path,
+            '# conn string\nexport GBRAIN_DATABASE_URL="postgres://u:p@h/db"',
+        )
+        monkeypatch.setattr(web_server.Path, "home", classmethod(lambda cls: tmp_path))
+        env = web_server._gbrain_subprocess_env()
+        assert env["GBRAIN_DATABASE_URL"] == "postgres://u:p@h/db"
+
+    def test_explicit_db_url_beats_postgres_env_file(self, monkeypatch, tmp_path):
+        self._write_pg_env(tmp_path, "GBRAIN_DATABASE_URL=postgres://file/db")
+        monkeypatch.setattr(web_server.Path, "home", classmethod(lambda cls: tmp_path))
+        monkeypatch.setattr(
+            web_server, "load_env",
+            lambda: {"GBRAIN_DATABASE_URL": "postgres://hermes-env/db"},
+        )
+        env = web_server._gbrain_subprocess_env()
+        assert env["GBRAIN_DATABASE_URL"] == "postgres://hermes-env/db"
+
+    def test_missing_postgres_env_file_is_safe(self, monkeypatch, tmp_path):
+        (tmp_path / ".hermesbox" / ".gbrain").mkdir(parents=True)
+        monkeypatch.setattr(web_server.Path, "home", classmethod(lambda cls: tmp_path))
+        env = web_server._gbrain_subprocess_env()
+        assert "GBRAIN_DATABASE_URL" not in env
+
+    def test_malformed_postgres_env_file_is_safe(self, monkeypatch, tmp_path):
+        self._write_pg_env(tmp_path, "not a kv line\n=novalue\nGBRAIN_DATABASE_URL")
+        monkeypatch.setattr(web_server.Path, "home", classmethod(lambda cls: tmp_path))
+        env = web_server._gbrain_subprocess_env()
+        assert "GBRAIN_DATABASE_URL" not in env
+
 
 # ---------------------------------------------------------------------------
 # _GbrainDaemonClient — fallback MCP-over-HTTP client (transport mocked)
