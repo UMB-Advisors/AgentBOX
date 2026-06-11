@@ -35,6 +35,11 @@ filter at all. The earlier "world-visible writes" frontmatter was a
 verified no-op and was removed rather than left as a false promise (and
 as a latent exposure if a future gbrain starts honoring it).
 
+Redaction: distilled session-end / pre-compress summaries are scrubbed of
+credential-shaped strings (API keys, bearer tokens, JWTs, OTP codes,
+credentialed URLs) before capture — anything written is semantically
+queryable by every registered gbrain HTTP/MCP client.
+
 Secrets (.env): GBRAIN_API_TOKEN (static) or GBRAIN_CLIENT_ID +
 GBRAIN_CLIENT_SECRET (OAuth client_credentials, ~1h TTL, auto-refreshed).
 Per-context overrides: ``cron`` contexts prefer GBRAIN_CRON_CLIENT_ID/
@@ -88,6 +93,65 @@ READ_ONLY_MESSAGE = (
 # Strip any fence markup a backend page might contain — providers must
 # return RAW text; the MemoryManager adds the <memory-context> fences.
 _FENCE_RE = re.compile(r"</?memory-context>", re.IGNORECASE)
+
+# --- secret redaction for captured summaries -------------------------------
+# Captured pages land in a shared brain that ANY registered HTTP/MCP caller
+# can semantically query (the gbrain `query` op has no world/private
+# filter). Conversations can quote OTPs, reset links, API keys and bearer
+# tokens — scrub credential-shaped strings before a distilled summary is
+# written. Over-redaction is acceptable; a leaked secret is not.
+# (Mirrors gbrain-ingest/common.py redact_secrets — separate deployables.)
+_REDACTED = "[REDACTED]"
+_SECRET_FULL_RES = [
+    re.compile(r"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}\b"),    # stripe
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),                          # openai-style
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),                     # github
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),                   # github fine-grained
+    re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b"),                   # slack
+    re.compile(r"\bshp(?:at|ca|pa|ss)_[A-Za-z0-9]{16,}\b"),            # shopify
+    re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b"),                         # google api key
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),                               # aws access key id
+    re.compile(                                                        # JWT
+        r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\b"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"),             # bearer creds
+    # 40+ char high-entropy blobs (must mix letters and digits inside the run)
+    re.compile(r"\b(?=[A-Za-z0-9+/_=-]*\d)(?=[A-Za-z0-9+/_=-]*[A-Za-z])"
+               r"[A-Za-z0-9+/_=-]{40,}\b"),
+]
+_SECRET_LABELED_RES = [
+    # key: value / key=value assignments — keep the label, drop the value
+    (re.compile(r"(?i)\b((?:api[_-]?key|access[_-]?token|auth[_-]?token|"
+                r"refresh[_-]?token|client[_-]?secret|secret|token|"
+                r"password|passwd|pwd)\s*[:=]\s*)(\S{6,})"),
+     r"\1" + _REDACTED),
+    # OTP / verification codes near their trigger words
+    (re.compile(r"(?i)\b((?:verification|security|one[-\s]?time|2fa|login|"
+                r"auth|confirmation)\s+code(?:\s+is)?\s*[:\-]?\s*)(\d{4,8})\b"),
+     r"\1" + _REDACTED),
+]
+_URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
+_URL_CRED_QS_RE = re.compile(
+    r"(?i)[?&#][^\s]*?(token|otp|key|sig|signature|secret|code|reset|verify|"
+    r"auth|tkn)")
+
+
+def _redact_url_match(m: "re.Match[str]") -> str:
+    url = m.group(0)
+    if _URL_CRED_QS_RE.search(url):
+        return url.split("?", 1)[0].split("#", 1)[0] + "?" + _REDACTED
+    return url
+
+
+def _redact_secrets(text: str) -> str:
+    """Scrub credential-shaped strings from text bound for a capture."""
+    if not text:
+        return ""
+    out = _URL_RE.sub(_redact_url_match, text)
+    for pat in _SECRET_FULL_RES:
+        out = pat.sub(_REDACTED, out)
+    for pat, repl in _SECRET_LABELED_RES:
+        out = pat.sub(repl, out)
+    return out
 
 RECALL_SCHEMA = {
     "name": "gbrain_recall",
@@ -324,7 +388,7 @@ def _distill_messages(messages: List[Dict[str, Any]],
         content = msg.get("content")
         if role not in ("user", "assistant") or not isinstance(content, str):
             continue
-        clean = sanitize_context(content).strip()
+        clean = _redact_secrets(sanitize_context(content)).strip()
         if clean:
             parts.append(f"{role}: {clean}")
     return _truncate_word_safe("\n".join(parts), limit)

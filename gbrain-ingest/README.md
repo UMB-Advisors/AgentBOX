@@ -23,6 +23,18 @@ which upserts via put_page), LLM calls hit the local ollama.
 | `ingest_drive.py` | recent Google Docs per connected account -> distilled pages |
 | `systemd/` | user units: email 15min, contacts daily, drive daily, dream nightly |
 | `tests/test_attribution.py` | ladder unit tests (`uv run --with pytest --with pyyaml -- pytest tests/`) |
+| `tests/test_redact.py` | secret-redaction unit tests |
+
+## Secret redaction
+
+Anything captured is semantically queryable by every registered gbrain
+HTTP/MCP client (the `query` op has no visibility filter), and mailboxes
+routinely contain OTPs, password-reset links, API keys and bearer tokens.
+`common.redact_secrets()` scrubs credential-shaped strings (provider key
+prefixes, JWTs, `Bearer ...`, `password:`/`token=` assignments, OTP codes,
+credentialed URLs, 40+ char high-entropy blobs) from email subject/snippet/
+body, exported Drive text, and CRM notes BEFORE any LLM call or
+`gbrain capture`. Over-redaction is acceptable; a leaked secret is not.
 
 ## Attribution ladder (write-time, first match wins)
 

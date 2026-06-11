@@ -16,6 +16,7 @@ Phase 2 additions:
      <= 0.41.x ignores page-frontmatter visibility — it was a no-op and a
      latent exposure; the client kwarg remains advisory/explicit-only)
   9. Per-context credential env-name selection (cron/dashboard prefixes)
+ 10. Secret redaction on distilled session-end / pre-compress captures
 """
 
 import json
@@ -772,3 +773,45 @@ def test_creds_context_static_token_override(monkeypatch):
              "GBRAIN_CRON_API_TOKEN": "cron-token"},
     )
     assert p._client._static_token == "cron-token"
+
+
+# ---------------------------------------------------------------------------
+# 10. Secret redaction on distilled captures
+# ---------------------------------------------------------------------------
+
+def test_distilled_captures_redact_secrets(monkeypatch, tmp_path):
+    """Session-end / pre-compress summaries are queryable by every
+    registered gbrain HTTP/MCP client — credential-shaped strings from the
+    conversation must never reach a capture."""
+    client = FakeClient()
+    p = _make_provider(monkeypatch, tmp_path, agent_context="primary",
+                       config={"readOnly": False}, client=client)
+    p.on_session_end([
+        {"role": "user", "content":
+            "rotate the store key " + ("shpat_" + "0123456789abcdef" * 2)
+            + " and call with Bearer abcdef1234567890abcdef"},
+        {"role": "assistant", "content":
+            "done — your verification code is 482913; reset link "
+            "https://x.example/reset?token=abc123def456"},
+    ])
+    p.on_pre_compress([
+        {"role": "user", "content": "password: hunter2x for the staging box"},
+    ])
+    assert len(client.capture_calls) == 2
+    session_text = client.capture_calls[0]["text"]
+    assert "shpat_" not in session_text
+    assert "abcdef1234567890abcdef" not in session_text
+    assert "482913" not in session_text
+    assert "token=abc123def456" not in session_text
+    assert "[REDACTED]" in session_text
+    precompress_text = client.capture_calls[1]["text"]
+    assert "hunter2x" not in precompress_text
+    assert "password:" in precompress_text
+
+
+def test_redact_secrets_keeps_plain_prose():
+    from plugins.memory.gbrain import _redact_secrets
+
+    text = "we decided to ship Phase 1 on Tuesday after the GMP review"
+    assert _redact_secrets(text) == text
+    assert _redact_secrets("") == ""

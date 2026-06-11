@@ -67,7 +67,8 @@ def build_page(contact: dict, entity: str) -> tuple[str, str]:
     emails = jsonb_values(contact.get("emails"))
     phones = jsonb_values(contact.get("phones"))
     socials = jsonb_values(contact.get("socials"))
-    notes = (contact.get("notes") or "").strip()
+    # CRM notes are free text — scrub credential-shaped strings before capture.
+    notes = common.redact_secrets((contact.get("notes") or "").strip())
 
     slug = f"contacts/{contact['id']}-{common.slugify(name)}"
 

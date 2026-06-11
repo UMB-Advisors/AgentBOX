@@ -176,6 +176,9 @@ def main() -> int:
             text = export_doc_text(token, fid)
             if text is None:
                 continue
+            # Scrub credential-shaped strings before distillation/capture —
+            # pages are queryable by any registered HTTP/MCP gbrain caller.
+            text = common.redact_secrets(text)
             frontmatter = {
                 "title": name[:140],
                 "type": "drive-doc",

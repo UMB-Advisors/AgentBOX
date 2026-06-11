@@ -182,6 +182,13 @@ def main() -> int:
         msgs = fetch_thread_messages(t["thread_id"], t["account_id"])
         if not msgs:
             continue
+        # Scrub credential-shaped strings (OTPs, reset links, API keys,
+        # bearer tokens) BEFORE anything is summarized or captured — pages
+        # are queryable by any registered HTTP/MCP gbrain caller.
+        for m in msgs:
+            for k in ("subject", "snippet", "body"):
+                if m.get(k):
+                    m[k] = common.redact_secrets(m[k])
         latest = msgs[-1]
         sender = next(iter(extract_emails(latest.get("from_addr"))), None)
         participants = []

@@ -91,6 +91,70 @@ def sql_quote(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+# ---------------------------------------------------------------- redaction
+
+REDACTED = "[REDACTED]"
+
+# Pages built here land in a shared brain that ANY registered HTTP/MCP
+# caller can semantically query (gbrain's `query` op has no world/private
+# filter), and mailboxes routinely carry OTPs, password-reset links, API
+# keys and bearer tokens. Scrub credential-shaped strings BEFORE text is
+# summarized or captured. Over-redaction is acceptable; a leaked secret
+# is not.
+_SECRET_FULL_RES = [
+    re.compile(r"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}\b"),    # stripe
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),                          # openai-style
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),                     # github
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),                   # github fine-grained
+    re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b"),                   # slack
+    re.compile(r"\bshp(?:at|ca|pa|ss)_[A-Za-z0-9]{16,}\b"),            # shopify
+    re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b"),                         # google api key
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),                               # aws access key id
+    re.compile(                                                        # JWT
+        r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\b"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"),             # bearer creds
+    # 40+ char high-entropy blobs (must mix letters and digits inside the run)
+    re.compile(r"\b(?=[A-Za-z0-9+/_=-]*\d)(?=[A-Za-z0-9+/_=-]*[A-Za-z])"
+               r"[A-Za-z0-9+/_=-]{40,}\b"),
+]
+_SECRET_LABELED_RES = [
+    # key: value / key=value assignments — keep the label, drop the value
+    (re.compile(r"(?i)\b((?:api[_-]?key|access[_-]?token|auth[_-]?token|"
+                r"refresh[_-]?token|client[_-]?secret|secret|token|"
+                r"password|passwd|pwd)\s*[:=]\s*)(\S{6,})"),
+     r"\1" + REDACTED),
+    # OTP / verification codes near their trigger words
+    (re.compile(r"(?i)\b((?:verification|security|one[-\s]?time|2fa|login|"
+                r"auth|confirmation)\s+code(?:\s+is)?\s*[:\-]?\s*)(\d{4,8})\b"),
+     r"\1" + REDACTED),
+]
+_URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
+_URL_CRED_QS_RE = re.compile(
+    r"(?i)[?&#][^\s]*?(token|otp|key|sig|signature|secret|code|reset|verify|"
+    r"auth|tkn)")
+
+
+def _redact_url(m: "re.Match[str]") -> str:
+    url = m.group(0)
+    if _URL_CRED_QS_RE.search(url):
+        return url.split("?", 1)[0].split("#", 1)[0] + "?" + REDACTED
+    return url
+
+
+def redact_secrets(text: Optional[str]) -> str:
+    """Scrub credential-shaped strings (API keys, tokens, JWTs, OTP codes,
+    reset/credentialed links) from free text. Idempotent; returns "" for
+    falsy input."""
+    if not text:
+        return ""
+    out = _URL_RE.sub(_redact_url, text)
+    for pat in _SECRET_FULL_RES:
+        out = pat.sub(REDACTED, out)
+    for pat, repl in _SECRET_LABELED_RES:
+        out = pat.sub(repl, out)
+    return out
+
+
 # ------------------------------------------------------------------- gbrain
 
 def gbrain_capture(source: str, slug: str, content: str, page_type: str = "note") -> str:
