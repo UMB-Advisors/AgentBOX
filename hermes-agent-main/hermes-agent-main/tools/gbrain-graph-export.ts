@@ -387,6 +387,11 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  console.error("gbrain-graph-export: fatal:", e);
+  // Print a clean, single-block error: name + message first (so the surfaced
+  // summary is the real exception, not a stray code-frame line), then the stack.
+  const err = e as { name?: string; message?: string; stack?: string };
+  const head = [err?.name, err?.message].filter(Boolean).join(": ") || String(e);
+  console.error(`gbrain-graph-export: fatal: ${head}`);
+  if (err?.stack) console.error(err.stack);
   process.exit(1);
 });

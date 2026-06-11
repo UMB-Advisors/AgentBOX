@@ -862,14 +862,22 @@ def _run_graph_export() -> None:
             timeout=600,
             env=sub_env,
         )
-        # The adapter prints its result summary ("pages=N … → path") to stderr.
+        # On success the adapter prints a one-line summary ("pages=N … → path")
+        # to stderr; on failure bun prints a multi-line stack/code-frame. Keep the
+        # clean summary line for success, but surface a fuller stderr tail on
+        # failure — the previous one-line pick grabbed a stray code-frame line
+        # ("168 | return;") instead of the real exception.
         tail = [ln for ln in (proc.stderr or "").strip().splitlines() if ln.strip()]
         summary = next(
-            (ln for ln in reversed(tail) if "gbrain-graph-export:" in ln),
-            (tail[-1] if tail else None),
+            (ln for ln in reversed(tail)
+             if "gbrain-graph-export:" in ln and "fatal:" not in ln),
+            None,
         )
         if proc.returncode != 0:
-            raise RuntimeError(summary or f"adapter exited {proc.returncode}")
+            detail = "\n".join(tail[-25:]).strip()
+            if len(detail) > 1800:
+                detail = "…" + detail[-1800:]
+            raise RuntimeError(detail or f"adapter exited {proc.returncode} (no stderr)")
         if not out_path.is_file():
             raise RuntimeError("adapter finished but wrote no knowledge-graph.json")
         ok = True
