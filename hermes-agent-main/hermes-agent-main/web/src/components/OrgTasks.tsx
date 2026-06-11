@@ -353,7 +353,13 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
         return;
       }
       const id = `v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-      const views = [...meta.views, { id, name, filters: filter }];
+      // Normalize text at save time (sameFilter compares trimmed, and
+      // applyFilter trims before matching) so the stored view never carries
+      // semantically-dead whitespace the server would faithfully persist.
+      const views = [
+        ...meta.views,
+        { id, name, filters: { ...filter, text: filter.text.trim() } },
+      ];
       void putViews(views, `View "${name}" saved ✓`).then((updated) => {
         if (updated) setActiveViewId(id);
       });
@@ -363,8 +369,11 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
 
   const updateView = useCallback(
     (id: string) => {
+      // Same save-time text normalization as saveView above.
       const views = (meta?.views ?? []).map((v) =>
-        v.id === id ? { ...v, filters: filter } : v,
+        v.id === id
+          ? { ...v, filters: { ...filter, text: filter.text.trim() } }
+          : v,
       );
       void putViews(views, "View updated ✓");
     },
