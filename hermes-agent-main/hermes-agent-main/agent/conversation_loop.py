@@ -949,7 +949,13 @@ def run_conversation(
             if idx == current_turn_user_idx and msg.get("role") == "user":
                 _injections = []
                 if _ext_prefetch_cache:
-                    _fenced = build_memory_context_block(_ext_prefetch_cache)
+                    # Non-primary contexts (cron) get the untrusted fence note
+                    # and a threat scan over recalled content — see
+                    # build_memory_context_block.
+                    _fenced = build_memory_context_block(
+                        _ext_prefetch_cache,
+                        agent_context=agent._memory_manager.agent_context,
+                    )
                     if _fenced:
                         _injections.append(_fenced)
                 if _plugin_user_context:

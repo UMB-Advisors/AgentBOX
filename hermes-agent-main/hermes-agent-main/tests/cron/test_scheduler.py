@@ -1021,6 +1021,28 @@ class TestRunJobSessionPersistence:
         kwargs = mock_agent_cls.call_args.kwargs
         assert kwargs["enabled_toolsets"] == ["web", "terminal", "file"]
 
+    def test_run_job_uses_readonly_memory_context_not_skip_memory(self, tmp_path):
+        """Cron agents get read-only memory recall: memory_context='cron' is
+        threaded to providers (which self-gate writes), and the old blanket
+        skip_memory=True is gone so provider recall stays available."""
+        job = {
+            "id": "memctx-job",
+            "name": "test",
+            "prompt": "hello",
+        }
+        fake_db, patches = self._make_run_job_patches(tmp_path)
+        with patches[0], patches[1], patches[2], patches[3], patches[4], \
+             patch("run_agent.AIAgent") as mock_agent_cls:
+            mock_agent = MagicMock()
+            mock_agent.run_conversation.return_value = {"final_response": "ok"}
+            mock_agent_cls.return_value = mock_agent
+            run_job(job)
+
+        kwargs = mock_agent_cls.call_args.kwargs
+        assert kwargs["memory_context"] == "cron"
+        assert kwargs["platform"] == "cron"
+        assert "skip_memory" not in kwargs
+
     def test_run_job_disabled_toolsets_layer_user_config_on_baseline(self, tmp_path):
         """agent.disabled_toolsets must be honoured in cron — issue #25752.
 

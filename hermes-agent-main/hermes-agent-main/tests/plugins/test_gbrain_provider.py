@@ -242,6 +242,32 @@ def test_write_gate_cron_blocks_capture(monkeypatch, tmp_path):
     assert client.capture_calls == []
 
 
+def test_write_gate_cron_platform_blocks_even_primary_context(monkeypatch, tmp_path):
+    """platform='cron' alone forces read-only, regardless of agent_context —
+    the live cron scheduler path (agent_context='cron' + platform='cron')
+    must stay write-blocked even with readOnly:false in config."""
+    client = FakeClient()
+    monkeypatch.setenv("GBRAIN_SERVE_URL", "http://127.0.0.1:3131")
+    monkeypatch.setattr(gbrain_mod, "_read_provider_config",
+                        lambda: {"readOnly": False})
+    p = GbrainMemoryProvider()
+    p.initialize("session-1", hermes_home=str(tmp_path), platform="cron",
+                 agent_context="primary")
+    p._client = client
+    assert not p._writes_enabled
+    result = json.loads(p.handle_tool_call("gbrain_capture", {"text": "note"}))
+    assert "read-only" in result["result"]
+    assert client.capture_calls == []
+    # the full cron combination (context + platform) is gated too
+    p2 = GbrainMemoryProvider()
+    p2.initialize("session-2", hermes_home=str(tmp_path), platform="cron",
+                  agent_context="cron")
+    p2._client = client
+    assert not p2._writes_enabled
+    p2.on_session_end([{"role": "user", "content": "hi"}])
+    assert client.capture_calls == []
+
+
 def test_write_gate_subagent_and_default_readonly(monkeypatch, tmp_path):
     client = FakeClient()
     # subagent context: blocked regardless of config
