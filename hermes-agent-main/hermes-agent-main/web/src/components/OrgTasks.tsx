@@ -307,13 +307,20 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
 
   const saveView = useCallback(
     (name: string) => {
+      // PUT /api/tasks/meta replaces the WHOLE views array, so never build
+      // it from a null meta (load failed / still in flight) -- that would
+      // clobber existing saved views with just this one.
+      if (!meta) {
+        showToast("Views not loaded yet — try again in a moment", "error");
+        return;
+      }
       const id = `v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-      const views = [...(meta?.views ?? []), { id, name, filters: filter }];
+      const views = [...meta.views, { id, name, filters: filter }];
       void putViews(views, `View "${name}" saved ✓`).then((updated) => {
         if (updated) setActiveViewId(id);
       });
     },
-    [filter, meta, putViews],
+    [filter, meta, putViews, showToast],
   );
 
   const updateView = useCallback(
