@@ -8,6 +8,11 @@ Type=oneshot
 EnvironmentFile=%h/.hermes/.env
 WorkingDirectory=%h/gbrain-ingest
 ExecStart=/usr/bin/flock -w 600 /tmp/gbrain-ingest.lock /usr/bin/python3 %h/gbrain-ingest/ingest_contacts.py
+# Re-attribution pass AFTER the regular ingest: moves unsorted contacts whose
+# correspondence pins one entity. Durable + idempotent (move ledger in
+# ~/.hermes/gbrain-ingest/contacts-reattributed.json), so the daily rerun
+# never resurrects moved pages and never re-deletes already-moved ones.
+ExecStart=/usr/bin/flock -w 600 /tmp/gbrain-ingest.lock /usr/bin/python3 %h/gbrain-ingest/ingest_contacts.py --re-attribute
 Nice=10
 TimeoutStartSec=60min
 

@@ -191,6 +191,7 @@ def init_agent(
     load_soul_identity: bool = False,
     skip_memory: bool = False,
     memory_context: str = "primary",
+    memory_source: str = None,
     session_db=None,
     parent_session_id: str = None,
     iteration_budget: "IterationBudget" = None,
@@ -252,6 +253,10 @@ def init_agent(
         memory_context (str): Memory scoping context passed to memory providers as
             agent_context ("primary", "cron", "subagent"). Non-primary contexts keep the
             builtin MEMORY.md/USER.md store off; providers self-gate writes (read-only recall).
+        memory_source (str): Optional per-session entity/source binding passed to memory
+            providers as memory_source. Providers that scope recall by source (gbrain)
+            use it to override their configured source for this session only (e.g. a
+            cron job's memory_entity field). None/empty = provider config applies.
     """
     _install_safe_stdio()
 
@@ -1112,6 +1117,10 @@ def init_agent(
                         "hermes_home": str(get_hermes_home()),
                         "agent_context": memory_context,
                     }
+                    # Per-session entity binding (Phase 5): thread an explicit
+                    # source override to providers that scope recall by source.
+                    if memory_source and str(memory_source).strip():
+                        _init_kwargs["memory_source"] = str(memory_source).strip()
                     # Thread session title for memory provider scoping
                     # (e.g. honcho uses this to derive chat-scoped session keys)
                     if agent._session_db:

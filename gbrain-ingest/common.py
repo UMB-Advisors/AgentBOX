@@ -174,6 +174,35 @@ def gbrain_capture(source: str, slug: str, content: str, page_type: str = "note"
     return out.stdout.strip() or slug
 
 
+_DELETE_MISSING_RE = re.compile(
+    r"not[ _-]?found|no such page|does not exist|already deleted", re.IGNORECASE
+)
+
+
+def gbrain_delete(source: str, slug: str, missing_ok: bool = False) -> None:
+    """Soft-delete a page in a specific source via the local wrapper CLI.
+
+    ``gbrain delete`` has no --source flag; CLI source resolution honors the
+    GBRAIN_SOURCE env var (explicit flag > env > dotfile > path-match >
+    brain default), so the env var is the supported way to scope the
+    delete. Soft-deletes are recoverable for 72h via restore_page.
+
+    missing_ok=True treats a "page not found"-shaped failure as success —
+    the desired post-state (page absent) already holds. Used by retried
+    move operations whose earlier delete may have already landed.
+    """
+    argv = [GBRAIN_BIN, "delete", slug]
+    env = {**os.environ, "GBRAIN_SOURCE": source}
+    out = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=120)
+    if out.returncode != 0:
+        if missing_ok and _DELETE_MISSING_RE.search(out.stderr or ""):
+            log(f"gbrain delete: {source}/{slug} already absent (ok)")
+            return
+        raise RuntimeError(
+            f"gbrain delete failed for {source}/{slug}: {out.stderr.strip()[:500]}"
+        )
+
+
 def render_page(frontmatter: dict, body: str) -> str:
     """Render YAML frontmatter + markdown body for gbrain capture --stdin."""
     fm = yaml.safe_dump(frontmatter, default_flow_style=False, sort_keys=False,
@@ -265,4 +294,25 @@ def write_watermark(name: str, value: str) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     tmp = STATE_DIR / (name + ".tmp")
     tmp.write_text(value + "\n", encoding="utf-8")
+    tmp.replace(STATE_DIR / name)
+
+
+def read_state_json(name: str) -> Any:
+    """Read a JSON state file from STATE_DIR. Returns None if absent or
+    corrupt (corrupt state degrades to 'no state', never crashes ingest)."""
+    p = STATE_DIR / name
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except ValueError:
+        log(f"WARNING: corrupt state file {p}; ignoring")
+        return None
+
+
+def write_state_json(name: str, value: Any) -> None:
+    """Atomically persist a JSON-serializable value to STATE_DIR/<name>."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = STATE_DIR / (name + ".tmp")
+    tmp.write_text(json.dumps(value, sort_keys=True) + "\n", encoding="utf-8")
     tmp.replace(STATE_DIR / name)

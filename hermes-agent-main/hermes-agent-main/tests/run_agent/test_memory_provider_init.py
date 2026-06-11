@@ -183,6 +183,53 @@ def test_memory_context_defaults_to_primary():
     assert agent._memory_enabled is True
 
 
+def test_memory_source_threads_to_provider_initialize():
+    """Phase 5: AIAgent(memory_source=...) reaches the provider as the
+    memory_source init kwarg (per-session entity binding)."""
+    provider = RecordingMemoryProvider()
+    cfg = {"memory": {"provider": "recording"}, "agent": {}}
+
+    with _memory_init_patches(cfg, provider):
+        from run_agent import AIAgent
+
+        agent = AIAgent(
+            api_key="test-key-1234567890",
+            base_url="https://openrouter.ai/api/v1",
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=False,
+            memory_context="cron",
+            memory_source="heron",
+            session_id="sess-entity",
+            platform="cron",
+        )
+
+    assert agent._memory_manager is not None
+    assert provider.init_kwargs["agent_context"] == "cron"
+    assert provider.init_kwargs["memory_source"] == "heron"
+
+
+def test_memory_source_absent_not_injected():
+    """Phase 5 regression: callers that don't pass memory_source must not
+    surprise providers with a new init kwarg."""
+    provider = RecordingMemoryProvider()
+    cfg = {"memory": {"provider": "recording"}, "agent": {}}
+
+    with _memory_init_patches(cfg, provider):
+        from run_agent import AIAgent
+
+        AIAgent(
+            api_key="test-key-1234567890",
+            base_url="https://openrouter.ai/api/v1",
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=False,
+            session_id="sess-no-entity",
+        )
+
+    assert "memory_source" not in provider.init_kwargs
+
+
 def test_skip_memory_true_still_disables_provider_and_builtin():
     """Regression: skip_memory=True short-circuits both memory blocks even
     when memory_context is non-default."""

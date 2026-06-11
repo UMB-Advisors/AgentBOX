@@ -72,7 +72,7 @@ class FakeClient:
 
 
 def _make_provider(monkeypatch, tmp_path, *, agent_context="primary",
-                   config=None, client=None):
+                   config=None, client=None, init_kwargs=None):
     monkeypatch.setenv("GBRAIN_SERVE_URL", "http://127.0.0.1:3131")
     monkeypatch.setattr(gbrain_mod, "_read_provider_config",
                         lambda: dict(config or {}))
@@ -80,6 +80,7 @@ def _make_provider(monkeypatch, tmp_path, *, agent_context="primary",
     kwargs = {"hermes_home": str(tmp_path), "platform": "cli"}
     if agent_context is not None:
         kwargs["agent_context"] = agent_context
+    kwargs.update(init_kwargs or {})
     p.initialize("session-1", **kwargs)
     p._client = client if client is not None else FakeClient()
     return p
@@ -610,6 +611,39 @@ def test_source_unset_means_combined_no_filter(monkeypatch, tmp_path):
     p.handle_tool_call("gbrain_capture", {"text": "note"})
     assert client.recall_calls[0]["source"] is None
     assert client.capture_calls[0]["source"] is None
+
+
+def test_memory_source_kwarg_overrides_config_source(monkeypatch, tmp_path):
+    """Phase 5: an explicit memory_source at initialize() wins over the
+    config memory.gbrain.source for that session (recall AND captures)."""
+    client = FakeClient(recall_payload="hit")
+    p = _make_provider(
+        monkeypatch, tmp_path,
+        config={"readOnly": False, "source": "umb"},
+        client=client, init_kwargs={"memory_source": "heron"},
+    )
+    assert p.prefetch("anything relevant?") == "hit"
+    p.handle_tool_call("gbrain_capture", {"text": "note"})
+    assert client.recall_calls[0]["source"] == "heron"
+    assert client.capture_calls[0]["source"] == "heron"
+
+
+def test_memory_source_blank_keeps_config_source(monkeypatch, tmp_path):
+    """Phase 5: blank/absent memory_source preserves the configured source."""
+    client = FakeClient(recall_payload="hit")
+    p = _make_provider(monkeypatch, tmp_path, config={"source": "umb"},
+                       client=client, init_kwargs={"memory_source": "  "})
+    p.prefetch("anything relevant?")
+    assert client.recall_calls[0]["source"] == "umb"
+
+
+def test_memory_source_without_config_scopes_session(monkeypatch, tmp_path):
+    """Phase 5: memory_source scopes a session even with no configured source."""
+    client = FakeClient(recall_payload="hit")
+    p = _make_provider(monkeypatch, tmp_path, config={}, client=client,
+                       init_kwargs={"memory_source": "yes"})
+    p.prefetch("anything relevant?")
+    assert client.recall_calls[0]["source"] == "yes"
 
 
 def test_client_recall_passes_source_id_arg(monkeypatch):

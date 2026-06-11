@@ -27,6 +27,12 @@ it as the query op's per-call ``source_id`` and captures are routed to it
 token's registered source — register the client with ``--source`` to
 match). Unset means no per-call filter (combined view).
 
+Per-session entity binding (Phase 5): ``initialize()`` accepts an optional
+``memory_source`` kwarg that overrides ``memory.gbrain.source`` for that
+session only (cron jobs thread it from the per-job ``memory_entity`` field
+via ``AIAgent(memory_source=...)``). Absent/empty kwarg keeps the config
+value — existing callers are unaffected.
+
 Visibility: provider writes carry NO visibility frontmatter. gbrain
 (<= 0.41.x) ignores page-frontmatter visibility entirely — facts later
 extracted from a page default to 'private' no matter what the page says,
@@ -519,6 +525,12 @@ class GbrainMemoryProvider(MemoryProvider):
                 self._recall_limit = DEFAULT_RECALL_LIMIT
             self._entity_tag = str(section.get("entityTag") or "").strip()
             self._source = str(section.get("source") or "").strip()
+            # Per-session entity binding (Phase 5): an explicit
+            # memory_source kwarg overrides config memory.gbrain.source
+            # for this session only (e.g. a cron job's memory_entity).
+            kwarg_source = str(kwargs.get("memory_source") or "").strip()
+            if kwarg_source:
+                self._source = kwarg_source
 
             # Write gate (D5): primary context only, and readOnly must be
             # explicitly false. cron/subagent/flush are read-only always.
