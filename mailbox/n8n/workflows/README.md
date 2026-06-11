@@ -16,6 +16,7 @@ The `*.json` files in this directory are the version-controlled exports of the n
 | `MailBOX-Imap-Send.json` | `mailbox-imap-send` | Webhook `/webhook/mailbox-imap-send` | **MBOX-357 (P1 T5).** Per-provider egress for IMAP accounts. Dashboard routes here (via `N8N_IMAP_WEBHOOK_URL`) when the draft's account is IMAP — leaves `MailBOX-Send` (the live Gmail path) untouched. Same `{ draft_id }` + `send_attempt_at` CAS lock; sends via SMTP `Send Email`, writes `drafts.provider_message_id`. **Not yet imported/activated on the fleet.** |
 | `MailBOX-Digest.json` | `MlbxDigestSb0001` | Schedule (daily @ `DIGEST_SEND_HOUR_LOCAL`) | MBOX-132. Daily operator digest. GET `/api/internal/digest` (render + send-decision), gate on `should_send`, Gmail send (appliance OAuth), then POST `/api/internal/digest/record` to claim the day in `mailbox.digest_sends`. **Not yet imported/activated on the fleet — import + activate per the procedure below.** |
 | `MailBOX-MsgAction.json` | `MailBOXMsgAction00000001` | Webhook `/webhook/mailbox-msg-action` | MBOX-369. Triggered by the dashboard on a per-row queue action (archive/delete/mark-read). One HTTP Request node hits the Gmail REST API: `messages.modify` removeLabelIds `[INBOX]` (archive) / `[UNREAD]` (mark_read), or `messages.trash` (delete — recoverable). Snooze is appliance-local and does NOT call this. Gmail-only (IMAP accounts have no equivalent yet). **Not yet imported/activated on the fleet — import + activate per the procedure below.** |
+| `MailBOX-FeedbackDistill.json` | `MlbxFbckDistill1` | Schedule (15 min) | Deterministic rejection-learning distiller (2026-06-11, pure SQL — no LLM). Copies operator `draft_feedback.free_text` verbatim into `mailbox.prompt_rules` (avoid-scoped, deduped on `feedback#<id>`, max 15 rules/account) and prunes the oldest beyond the cap. Live on agentbox2 since 2026-06-11; this export was recovered from the deploying session — re-export against the box to confirm a no-op diff. |
 | `MailBOX-ErrorHandler.json` | `MlbxErrHandler01` | Error trigger | Global error workflow — every other MailBOX workflow points at it via `settings.errorWorkflow`. On any execution error: formats one HTML alert (workflow, failed node, error message, execution link) and emails it via the appliance Gmail OAuth credential. Per-source-workflow throttle (default 60 min, `ERROR_ALERT_THROTTLE_MIN`) so a broken 5-min poller alerts hourly, not per tick. Recipient: `ERROR_ALERT_RECIPIENT` → fallback `MAILBOX_OPERATOR_EMAIL`. Closes the silent-failure mode behind STAQPRO-287's ghost stubs. |
 
 > **ErrorHandler caveats:** must be `active=true` like everything else; never set an `errorWorkflow` on the ErrorHandler itself; re-link its Gmail OAuth2 credential per appliance like the other Gmail nodes. If no recipient env is set it computes-but-skips the send (visible in its execution log).
@@ -68,7 +69,13 @@ After import, on the target appliance:
 
 ### When to refresh the canonical JSON
 
-Whenever a workflow is edited in the n8n UI on Bob, run the export script and commit the diff. CI does not currently re-export and check (would require Bob connectivity); manual discipline is the gate today.
+Whenever a workflow is edited in the n8n UI on a box, run the export script and commit the diff. To *verify* instead of refresh, use the read-only gate:
+
+```bash
+SSH_HOST=UMB@100.127.2.54 ./scripts/n8n-drift-check.sh   # exit 0 = live matches repo
+```
+
+It runs the full-fleet export, prints any diff (including live workflows that have no repo copy at all — the MailBOX-FeedbackDistill failure mode), reverts the tree, and exits non-zero on drift. GitHub CI can't reach the boxes, so run it from a host that can (workstation cron, or `SSH_HOST=local` in the box's own checkout under a systemd timer).
 
 ## MailBOX-Send
 
