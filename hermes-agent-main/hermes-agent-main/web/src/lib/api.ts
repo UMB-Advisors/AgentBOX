@@ -290,6 +290,26 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  /** Kanban Linear-UX sidecar meta: due dates, labels, cycles, saved views
+   * (PRD docs/kanban-linear-ux.v0.1.0.md §2.2 — ~/.hermes/kanban-meta.json,
+   * NOT the plugin DB; the plugin Board never renders these fields). */
+  getKanbanMeta: () => fetchJSON<KanbanMeta>("/api/tasks/meta"),
+  /** Full-array replace of any provided key; also carries the lazy
+   * sidecar GC (`prune_missing` + `live_task_ids`). Returns the doc. */
+  putKanbanMeta: (body: KanbanMetaPut) =>
+    fetchJSON<KanbanMeta>("/api/tasks/meta", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  /** Merge one task's sidecar entry; `null` clears a field. Returns the
+   * resulting entry (`{}` once everything is cleared). */
+  patchKanbanTaskMeta: (id: string, body: KanbanTaskMetaPatch) =>
+    fetchJSON<KanbanTaskMeta>(`/api/tasks/meta/tasks/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   /** Linear teams for the Org Chart Tasks team picker. */
   getLinearTeams: () => fetchJSON<LinearTeamsResponse>("/api/tasks/linear/teams"),
   /** Read-only Linear board, grouped by workflow-state type. */
@@ -1899,6 +1919,85 @@ export interface LinearTeamsResponse {
   connected: boolean;
   teams: LinearTeam[];
   reason?: string;
+}
+
+/** Client-side filter model for the native Tasks list (PRD §2.1). Saved
+ *  views persist exactly this shape in the sidecar meta store, so the
+ *  backend validates against the same key set. */
+export interface KanbanFilterState {
+  /** Status names; empty = all (same empty-means-all rule per list). */
+  statuses: string[];
+  assignees: string[];
+  tenants: string[];
+  /** Label ids (filterable from Phase 3). */
+  labels: string[];
+  /** Cycle id (filterable from Phase 3). */
+  cycleId: string | null;
+  /** Case-insensitive substring over title + id. */
+  text: string;
+  overdueOnly: boolean;
+}
+
+/** One task's sidecar entry (``kanban-meta.json`` ``tasks`` values).
+ *  Absent field = unset — the store never persists nulls. */
+export interface KanbanTaskMeta {
+  /** ISO date (YYYY-MM-DD), no time component, local-tz semantics. */
+  due_at?: string;
+  labels?: string[];
+  /** Points, int 0–100. */
+  estimate?: number;
+  cycle_id?: string;
+}
+
+export interface KanbanLabel {
+  id: string;
+  name: string;
+  /** #rrggbb. */
+  color: string;
+}
+
+export interface KanbanCycle {
+  id: string;
+  name: string;
+  /** ISO dates; start <= end (server-enforced). */
+  start: string;
+  end: string;
+}
+
+export interface KanbanSavedView {
+  id: string;
+  name: string;
+  filters: KanbanFilterState;
+}
+
+/** ``GET /api/tasks/meta`` — the whole sidecar doc, defaults merged. */
+export interface KanbanMeta {
+  version: number;
+  tasks: Record<string, KanbanTaskMeta>;
+  labels: KanbanLabel[];
+  cycles: KanbanCycle[];
+  views: KanbanSavedView[];
+}
+
+/** ``PATCH /api/tasks/meta/tasks/:id`` — ``null`` clears a field; the
+ *  entry disappears once every field is cleared. */
+export interface KanbanTaskMetaPatch {
+  due_at?: string | null;
+  labels?: string[] | null;
+  estimate?: number | null;
+  cycle_id?: string | null;
+}
+
+/** ``PUT /api/tasks/meta``: each provided array fully replaces the stored
+ *  one. ``prune_missing`` + ``live_task_ids`` is the lazy GC (PRD §2.2):
+ *  the server drops task entries whose id isn't in the live list the
+ *  client just fetched from the board. */
+export interface KanbanMetaPut {
+  labels?: KanbanLabel[];
+  cycles?: KanbanCycle[];
+  views?: KanbanSavedView[];
+  prune_missing?: boolean;
+  live_task_ids?: string[];
 }
 
 export interface LinearIssue {
