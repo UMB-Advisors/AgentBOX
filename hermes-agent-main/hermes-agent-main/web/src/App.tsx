@@ -187,7 +187,7 @@ function buildPrimaryNav(manifests: PluginManifest[]): NavItem[] {
   // sub-views — grouped at the bottom, just above Settings. The /kanban hasTab
   // gate now lives inside OrgChartPage (it shows the Tasks sub-tab only when
   // the plugin is present).
-  items.push({ path: "/org", label: "Org Chart", icon: Building2 });
+  items.push({ path: "/org", label: "Operations", icon: Building2 });
   items.push({ path: "/settings", label: "Settings", icon: Settings });
   return items;
 }

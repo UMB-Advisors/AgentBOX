@@ -62,7 +62,7 @@ export default function OrgChartPage() {
   const active: SubTabId = tabs.some((t) => t.id === requested) ? (requested as SubTabId) : "team";
 
   // Own the page title (runs after the child's own setTitle on every commit).
-  useEffect(() => setTitle("Org Chart"), [setTitle, active]);
+  useEffect(() => setTitle("Operations"), [setTitle, active]);
 
   const activeTab = tabs.find((t) => t.id === active) ?? tabs[0];
 
@@ -70,7 +70,7 @@ export default function OrgChartPage() {
     <div className="flex flex-col gap-4">
       <nav
         className="flex items-center gap-1 border-b border-border"
-        aria-label="Org Chart sections"
+        aria-label="Operations sections"
       >
         {tabs.map((t) => {
           const Icon = t.icon;
