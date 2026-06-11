@@ -100,7 +100,7 @@ services:
     restart: unless-stopped
     depends_on: []
   n8n:
-    image: n8nio/n8n:2.14.2
+    image: n8nio/n8n:2.25.7
     environment:
       DB_TYPE: postgresdb
       DB_POSTGRESDB_HOST: postgres
