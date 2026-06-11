@@ -6,11 +6,16 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
+  Flame,
+  Github,
   ListChecks,
   Mail,
+  MessageCircle,
   Newspaper,
   RefreshCw,
   SquareKanban,
+  Star,
+  Twitter,
 } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -31,7 +36,10 @@ import type {
   BriefEvent,
   CronOutput,
   DigestBrief,
+  DigestGithubResponse,
   DigestPrefs,
+  DigestRedditResponse,
+  DigestTwitterResponse,
   DraftRow,
   InboxRanking,
   InboxRankGroup,
@@ -98,6 +106,10 @@ export default function HomePage() {
   const newsOn = prefs
     ? prefs.modules.news !== false && prefs.news_sources.length > 0
     : false;
+  // Opt-in social/code modules (default off; Settings → Daily Digest).
+  const redditOn = prefs ? prefs.modules.reddit === true : false;
+  const twitterOn = prefs ? prefs.modules.twitter === true : false;
+  const githubOn = prefs ? prefs.modules.github === true : false;
 
   // Load prefs on mount; fall back to brief-only if the endpoint is missing.
   useEffect(() => {
@@ -113,9 +125,15 @@ export default function HomePage() {
             tasks: true,
             calendar: true,
             news: false,
+            reddit: false,
+            twitter: false,
+            github: false,
           },
           news_sources: [],
           custom_sources: [],
+          reddit_subreddits: [],
+          twitter_handles: [],
+          twitter_instance: "",
         }),
       );
   }, []);
@@ -326,6 +344,11 @@ export default function HomePage() {
       {/* Job Outcomes — recent completed agent-job runs, expandable */}
       <JobOutcomes />
 
+      {/* Opt-in social/code modules — GitHub trending, Reddit, Twitter/X */}
+      {githubOn && <GithubTrending />}
+      {redditOn && <RedditHot />}
+      {twitterOn && <TwitterFeed />}
+
       {/* Google News — infinite top-stories feed */}
       {newsOn && (
         <GoogleNews
@@ -339,7 +362,13 @@ export default function HomePage() {
         />
       )}
 
-      {prefs && !briefOn && !actionsOn && !newsOn && (
+      {prefs &&
+        !briefOn &&
+        !actionsOn &&
+        !newsOn &&
+        !redditOn &&
+        !twitterOn &&
+        !githubOn && (
         <Card>
           <CardContent className="py-10 text-center text-sm text-text-secondary">
             No digest modules enabled. Turn some on in Settings → Daily Digest.
@@ -1028,6 +1057,296 @@ function JobOutcomes() {
       </CardContent>
     </Card>
   );
+}
+
+/* ── Social/code digest modules — GitHub trending · Reddit · Twitter/X ──── */
+
+/** Load-once + manual-refresh state shared by the three social/code modules.
+ *  All setState happens after the awaited fetch (no sync setState in the
+ *  mount effect); the refresh callback flips `loading` for the button spinner. */
+function useSocialModule<T>(fetcher: (refresh?: boolean) => Promise<T>, errMsg: string) {
+  const [data, setData] = useState<T | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(
+    async (refresh = false) => {
+      try {
+        const d = await fetcher(refresh);
+        setData(d);
+        setError(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : errMsg);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetcher, errMsg],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const refresh = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    void load(true);
+  }, [load]);
+
+  return { data, error, loading, refresh };
+}
+
+/** Shared card chrome for the three social/code modules: icon + title +
+ *  description header with a refresh button, and the load/error/empty states.
+ *  Children render only once data is loaded and non-empty. */
+function SocialModuleCard({
+  icon,
+  title,
+  description,
+  loading,
+  loaded,
+  error,
+  empty,
+  emptyText,
+  onRefresh,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+  empty: boolean;
+  emptyText: string;
+  onRefresh: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          {icon}
+          <CardTitle>{title}</CardTitle>
+          <Button
+            type="button"
+            ghost
+            size="icon"
+            className="ml-auto text-text-secondary hover:text-foreground"
+            onClick={onRefresh}
+            disabled={loading}
+            aria-label={`Refresh ${title}`}
+          >
+            {loading ? <Spinner /> : <RefreshCw className="h-4 w-4" />}
+          </Button>
+        </div>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        {error ? (
+          <p className="text-sm text-destructive">{error}</p>
+        ) : !loaded ? (
+          <Loading />
+        ) : empty ? (
+          <Empty>{emptyText}</Empty>
+        ) : (
+          children
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** GitHub trending — hottest repos created in the last 7 days. */
+function GithubTrending() {
+  const { data, error, loading, refresh } = useSocialModule<DigestGithubResponse>(
+    api.getDigestGithub,
+    "Failed to load GitHub trending.",
+  );
+
+  const repos = data?.items ?? [];
+  return (
+    <SocialModuleCard
+      icon={<Github className="h-4 w-4 text-text-secondary" />}
+      title="GitHub Trending"
+      description="The hottest repos created in the last 7 days."
+      loading={loading}
+      loaded={data != null}
+      error={error ?? data?.error ?? null}
+      empty={repos.length === 0}
+      emptyText="Nothing trending right now."
+      onRefresh={refresh}
+    >
+      {repos.slice(0, 10).map((r, i) => (
+        <a
+          key={r.name}
+          href={r.link || undefined}
+          target="_blank"
+          rel="noreferrer"
+          className="group flex items-start gap-3 rounded border border-border bg-card px-3 py-2"
+        >
+          <span className="mt-0.5 w-5 shrink-0 text-right text-xs text-muted-foreground">
+            {i + 1}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium group-hover:text-brand">
+              {r.name}
+            </p>
+            {r.description && (
+              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                {r.description}
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {r.language && <Badge tone="outline">{r.language}</Badge>}
+            <Badge tone="secondary">
+              <Star className="mr-1 h-3 w-3" />
+              {formatCount(r.stars)}
+            </Badge>
+          </div>
+        </a>
+      ))}
+    </SocialModuleCard>
+  );
+}
+
+/** Reddit — hot posts from the operator's subreddits. */
+function RedditHot() {
+  const { data, error, loading, refresh } = useSocialModule<DigestRedditResponse>(
+    api.getDigestReddit,
+    "Failed to load Reddit.",
+  );
+
+  const posts = data?.items ?? [];
+  const noSubs = data != null && data.subreddits.length === 0;
+  return (
+    <SocialModuleCard
+      icon={<Flame className="h-4 w-4 text-text-secondary" />}
+      title="Reddit"
+      description={
+        data && data.subreddits.length > 0
+          ? `Hot in ${data.subreddits.map((s) => `r/${s}`).join(", ")}.`
+          : "Hot posts from your chosen subreddits."
+      }
+      loading={loading}
+      loaded={data != null}
+      error={error ?? data?.error ?? null}
+      empty={posts.length === 0}
+      emptyText={
+        noSubs
+          ? "No subreddits configured. Add some in Settings → Daily Digest."
+          : "Nothing hot right now."
+      }
+      onRefresh={refresh}
+    >
+      {posts.slice(0, 10).map((p) => (
+        <a
+          key={p.link}
+          href={p.link || undefined}
+          target="_blank"
+          rel="noreferrer"
+          className="group flex items-start gap-3 rounded border border-border bg-card px-3 py-2"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="line-clamp-2 text-sm font-medium group-hover:text-brand">
+              {p.title}
+            </p>
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span>r/{p.subreddit}</span>
+              {/* Counts come from the JSON listing; the RSS fallback has none. */}
+              {p.score > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  <Flame className="h-3 w-3" />
+                  {formatCount(p.score)}
+                </span>
+              )}
+              {p.comments > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  <MessageCircle className="h-3 w-3" />
+                  {formatCount(p.comments)}
+                </span>
+              )}
+            </div>
+          </div>
+          {p.image && (
+            <img
+              src={p.image}
+              alt=""
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              className="h-12 w-16 shrink-0 rounded object-cover"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+          )}
+        </a>
+      ))}
+    </SocialModuleCard>
+  );
+}
+
+/** Twitter/X — latest posts for the operator's handles, read via Nitter RSS. */
+function TwitterFeed() {
+  const { data, error, loading, refresh } = useSocialModule<DigestTwitterResponse>(
+    api.getDigestTwitter,
+    "Failed to load tweets.",
+  );
+
+  const tweets = data?.items ?? [];
+  const noHandles = data != null && data.handles.length === 0;
+  return (
+    <SocialModuleCard
+      icon={<Twitter className="h-4 w-4 text-text-secondary" />}
+      title="Twitter / X"
+      description={
+        data && data.handles.length > 0
+          ? `Latest from ${data.handles.map((h) => `@${h}`).join(", ")}.`
+          : "Latest posts from handles you follow."
+      }
+      loading={loading}
+      loaded={data != null}
+      error={error ?? data?.error ?? null}
+      empty={tweets.length === 0}
+      emptyText={
+        noHandles
+          ? "No handles configured. Add some in Settings → Daily Digest."
+          : "No recent posts."
+      }
+      onRefresh={refresh}
+    >
+      {tweets.slice(0, 12).map((t, i) => (
+        <a
+          key={`${t.link}-${i}`}
+          href={t.link || undefined}
+          target="_blank"
+          rel="noreferrer"
+          className="group flex items-start gap-3 rounded border border-border bg-card px-3 py-2"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="line-clamp-3 text-sm group-hover:text-brand">{t.title}</p>
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="font-medium">@{t.handle}</span>
+              {t.published && (
+                <>
+                  <ChevronRight className="h-3 w-3 opacity-50" />
+                  <span>{isoTimeAgo(t.published)}</span>
+                </>
+              )}
+            </div>
+          </div>
+        </a>
+      ))}
+    </SocialModuleCard>
+  );
+}
+
+/** 12345 → "12.3k" — compact counts for scores/stars. */
+function formatCount(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
+  return String(n);
 }
 
 function formatDue(due: string): string {

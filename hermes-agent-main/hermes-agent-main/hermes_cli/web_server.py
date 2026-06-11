@@ -1355,13 +1355,52 @@ _DEFAULT_DIGEST_PREFS: Dict[str, Any] = {
         "tasks": True,
         "calendar": True,
         "news": True,
+        # Social/code modules are opt-in — the operator toggles them on in
+        # Settings → Daily Digest.
+        "reddit": False,
+        "twitter": False,
+        "github": False,
     },
     "news_sources": _DEFAULT_NEWS_IDS,
     # Operator-added feeds: [{"id","label","url"}]. URLs are SSRF-validated on
     # write (see _validate_feed_url) and stored server-side; the client only
     # ever sends/receives ids + labels for the picker.
     "custom_sources": [],
+    # Reddit module: subreddit names (no "r/" prefix), validated on write.
+    "reddit_subreddits": ["technology", "programming"],
+    # Twitter/X module: handles (no "@") read as RSS via a Nitter instance —
+    # the official API has no free read tier. Instance is operator-overridable
+    # (public instances rot); SSRF-validated like custom feeds.
+    "twitter_handles": [],
+    "twitter_instance": "https://nitter.net",
 }
+
+import re as _social_re  # noqa: E402 — module-level `import re` lives further down
+
+_SUBREDDIT_RE = _social_re.compile(r"^[A-Za-z0-9_]{2,21}$")
+_TWITTER_HANDLE_RE = _social_re.compile(r"^[A-Za-z0-9_]{1,15}$")
+
+
+def _clean_subreddits(values: List[Any]) -> List[str]:
+    """Normalize a subreddit list: strip "r/" prefixes, drop invalid, dedupe."""
+    out: List[str] = []
+    for v in values:
+        s = str(v or "").strip()
+        if s.lower().startswith("r/"):
+            s = s[2:]
+        if _SUBREDDIT_RE.match(s) and s.lower() not in {o.lower() for o in out}:
+            out.append(s)
+    return out[:20]
+
+
+def _clean_twitter_handles(values: List[Any]) -> List[str]:
+    """Normalize a handle list: strip "@" prefixes, drop invalid, dedupe."""
+    out: List[str] = []
+    for v in values:
+        s = str(v or "").strip().lstrip("@")
+        if _TWITTER_HANDLE_RE.match(s) and s.lower() not in {o.lower() for o in out}:
+            out.append(s)
+    return out[:20]
 
 
 def _validate_feed_url(url: str) -> str:
@@ -1458,6 +1497,15 @@ def _read_digest_prefs() -> Dict[str, Any]:
                         c["id"] for c in prefs["custom_sources"]
                     }
                     prefs["news_sources"] = [s for s in srcs if s in valid]
+                subs = data.get("reddit_subreddits")
+                if isinstance(subs, list):
+                    prefs["reddit_subreddits"] = _clean_subreddits(subs)
+                handles = data.get("twitter_handles")
+                if isinstance(handles, list):
+                    prefs["twitter_handles"] = _clean_twitter_handles(handles)
+                inst = data.get("twitter_instance")
+                if isinstance(inst, str) and inst.strip():
+                    prefs["twitter_instance"] = inst.strip()
     except Exception:
         _log.warning("failed to read digest prefs; using defaults", exc_info=True)
     return prefs
@@ -1999,6 +2047,277 @@ def _enrich_images(items: List[Dict[str, Any]]) -> None:
                 it["image"] = img
 
 
+# ── Daily Digest: Reddit / Twitter / GitHub-trending modules ─────────────
+#
+# Three more opt-in digest displays (MBOX — operator request, 2026-06-11):
+#   • Reddit  — hot posts from operator-chosen subreddits (public JSON API,
+#               no key). Hosts are fixed (reddit.com); only validated
+#               subreddit names interpolate into the path → no SSRF.
+#   • Twitter — per-handle RSS via a Nitter instance (the official X API has
+#               no free read tier). The instance URL is operator-set and
+#               SSRF-validated like custom feeds; failures surface in the
+#               card rather than 500ing.
+#   • GitHub  — "hottest new repos": the public search API, repos created in
+#               the last 7 days ordered by stars (no key; 10-min cache keeps
+#               us far under the unauthenticated rate limit).
+# All three follow the news-module shape: TTL-cached, never raise, stale
+# cache served on fetch failure.
+
+_REDDIT_CACHE: Dict[str, Dict[str, Any]] = {}  # subs key -> {ts, items, error}
+_TWITTER_CACHE: Dict[str, Dict[str, Any]] = {}  # instance|handles -> {...}
+_GITHUB_CACHE: Dict[str, Dict[str, Any]] = {}  # "trending" -> {...}
+_SOCIAL_TTL_SECONDS = 600.0
+
+
+def _parse_reddit_rss(xml_text: str) -> List[Dict[str, Any]]:
+    """Reddit's Atom feed → reddit-item dicts (no score/comment counts)."""
+    import xml.etree.ElementTree as ET
+    from datetime import datetime
+
+    atom = "{http://www.w3.org/2005/Atom}"
+    out: List[Dict[str, Any]] = []
+    for e in ET.fromstring(xml_text).findall(f"{atom}entry"):
+        link = ""
+        for ln in e.findall(f"{atom}link"):
+            if ln.get("href"):
+                link = ln.get("href")
+                break
+        created = 0.0
+        updated = e.findtext(f"{atom}updated") or ""
+        try:
+            created = datetime.fromisoformat(updated.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            pass
+        cat = e.find(f"{atom}category")
+        author = e.findtext(f"{atom}author/{atom}name") or ""
+        if author.startswith("/u/"):
+            author = author[3:]
+        out.append({
+            "title": (e.findtext(f"{atom}title") or "").strip(),
+            "link": link,
+            "url": link,
+            "subreddit": (cat.get("term") if cat is not None else "") or "",
+            "author": author,
+            "score": 0,
+            "comments": 0,
+            "created_utc": created,
+            "image": "",
+        })
+    return out
+
+
+def _fetch_reddit(subreddits: List[str], force: bool = False) -> Dict[str, Any]:
+    """Hot posts across *subreddits* (multireddit request), cached. Never raises.
+
+    Tries the JSON listing first (richer: scores, comment counts, thumbnails),
+    falling back to the Atom feed — reddit 403s the JSON API from datacenter
+    IPs but serves ``hot.rss`` fine.
+    """
+    subs = _clean_subreddits(list(subreddits))
+    if not subs:
+        return {"items": [], "error": None}
+    key = "+".join(s.lower() for s in sorted(subs))
+    mono = time.monotonic()
+    cached = _REDDIT_CACHE.get(key)
+    if not force and cached and (mono - cached["ts"]) < _SOCIAL_TTL_SECONDS:
+        return {"items": cached["items"], "error": cached["error"]}
+    items: List[Dict[str, Any]] = cached["items"] if cached else []
+    error: Optional[str] = None
+    multi = "+".join(subs)
+    headers = {"User-Agent": "AgentBOX-Digest/1.0"}
+    try:
+        import requests
+
+        resp = requests.get(
+            f"https://www.reddit.com/r/{multi}/hot.json",
+            params={"limit": 30, "raw_json": 1},
+            timeout=8,
+            headers=headers,
+        )
+        if resp.ok:
+            parsed: List[Dict[str, Any]] = []
+            for child in (resp.json().get("data") or {}).get("children") or []:
+                d = child.get("data") or {}
+                if d.get("stickied"):
+                    continue
+                thumb = d.get("thumbnail") or ""
+                if not thumb.startswith("http"):
+                    thumb = ""
+                parsed.append({
+                    "title": d.get("title") or "",
+                    "link": "https://www.reddit.com" + (d.get("permalink") or ""),
+                    "url": d.get("url") or "",
+                    "subreddit": d.get("subreddit") or "",
+                    "author": d.get("author") or "",
+                    "score": int(d.get("score") or 0),
+                    "comments": int(d.get("num_comments") or 0),
+                    "created_utc": float(d.get("created_utc") or 0.0),
+                    "image": thumb,
+                })
+            items = parsed
+        else:
+            rss = requests.get(
+                f"https://www.reddit.com/r/{multi}/hot.rss",
+                params={"limit": 30},
+                timeout=8,
+                headers=headers,
+            )
+            if rss.ok:
+                items = _parse_reddit_rss(rss.text)
+            else:
+                error = f"Reddit answered HTTP {resp.status_code}"
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("reddit fetch failed", exc_info=True)
+        error = f"Couldn't reach Reddit: {exc.__class__.__name__}"
+    _REDDIT_CACHE[key] = {"ts": mono, "items": items, "error": error}
+    # A stale cache beats an error banner — only surface errors with no items.
+    return {"items": items, "error": error if not items else None}
+
+
+def _fetch_twitter(
+    instance: str, handles: List[str], force: bool = False
+) -> Dict[str, Any]:
+    """Latest posts for *handles* via the Nitter *instance*'s per-user RSS."""
+    handles = _clean_twitter_handles(list(handles))
+    if not handles:
+        return {"items": [], "error": None}
+    try:
+        instance = _validate_feed_url(instance).rstrip("/")
+    except ValueError as exc:
+        return {"items": [], "error": f"Bad Nitter instance URL: {exc}"}
+    key = instance + "|" + ",".join(h.lower() for h in sorted(handles))
+    mono = time.monotonic()
+    cached = _TWITTER_CACHE.get(key)
+    if not force and cached and (mono - cached["ts"]) < _SOCIAL_TTL_SECONDS:
+        return {"items": cached["items"], "error": cached["error"]}
+    items: List[Dict[str, Any]] = cached["items"] if cached else []
+    error: Optional[str] = None
+    fetched: List[Dict[str, Any]] = []
+    failures = 0
+    try:
+        import requests
+
+        for handle in handles:
+            try:
+                resp = requests.get(
+                    f"{instance}/{handle}/rss",
+                    timeout=8,
+                    headers={"User-Agent": "AgentBOX-Digest/1.0"},
+                )
+                if not resp.ok:
+                    failures += 1
+                    continue
+                for it in _parse_feed(resp.text, f"@{handle}", f"tw-{handle}"):
+                    it["handle"] = handle
+                    fetched.append(it)
+            except Exception:  # noqa: BLE001
+                _log.warning("twitter fetch failed for @%s", handle, exc_info=True)
+                failures += 1
+    except Exception as exc:  # noqa: BLE001
+        error = f"Couldn't reach {instance}: {exc.__class__.__name__}"
+    if fetched:
+        fetched.sort(key=lambda x: x.get("published_ts", 0.0), reverse=True)
+        items = [
+            {k: v for k, v in it.items() if k != "published_ts"}
+            for it in fetched[:40]
+        ]
+    elif failures and not error:
+        error = (
+            f"Couldn't fetch tweets from {instance} — public Nitter instances "
+            "come and go; set a different instance in Settings → Daily Digest."
+        )
+    _TWITTER_CACHE[key] = {"ts": mono, "items": items, "error": error}
+    return {"items": items, "error": error if not items else None}
+
+
+def _fetch_github_trending(force: bool = False) -> Dict[str, Any]:
+    """Hottest repos created in the last 7 days (GitHub search API), cached."""
+    mono = time.monotonic()
+    cached = _GITHUB_CACHE.get("trending")
+    if not force and cached and (mono - cached["ts"]) < _SOCIAL_TTL_SECONDS:
+        return {"items": cached["items"], "error": cached["error"]}
+    items: List[Dict[str, Any]] = cached["items"] if cached else []
+    error: Optional[str] = None
+    try:
+        import requests
+        from datetime import datetime, timedelta, timezone
+
+        since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+        resp = requests.get(
+            "https://api.github.com/search/repositories",
+            params={
+                "q": f"created:>{since}",
+                "sort": "stars",
+                "order": "desc",
+                "per_page": 30,
+            },
+            timeout=8,
+            headers={
+                "User-Agent": "AgentBOX-Digest/1.0",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        if resp.ok:
+            items = [
+                {
+                    "name": r.get("full_name") or r.get("name") or "",
+                    "link": r.get("html_url") or "",
+                    "description": (r.get("description") or "")[:280],
+                    "stars": int(r.get("stargazers_count") or 0),
+                    "language": r.get("language") or "",
+                    "created_at": r.get("created_at") or "",
+                    "avatar": (r.get("owner") or {}).get("avatar_url") or "",
+                }
+                for r in resp.json().get("items") or []
+            ]
+        else:
+            error = f"GitHub answered HTTP {resp.status_code}"
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("github trending fetch failed", exc_info=True)
+        error = f"Couldn't reach GitHub: {exc.__class__.__name__}"
+    _GITHUB_CACHE["trending"] = {"ts": mono, "items": items, "error": error}
+    return {"items": items, "error": error if not items else None}
+
+
+@app.get("/api/digest/reddit")
+async def get_digest_reddit(refresh: bool = False):
+    """Hot posts from the prefs' subreddits (the digest Reddit module)."""
+    prefs = _read_digest_prefs()
+    subs = prefs.get("reddit_subreddits") or []
+    loop = asyncio.get_running_loop()
+    res = await loop.run_in_executor(
+        None, lambda: _fetch_reddit(subs, force=bool(refresh))
+    )
+    res["subreddits"] = subs
+    return res
+
+
+@app.get("/api/digest/twitter")
+async def get_digest_twitter(refresh: bool = False):
+    """Latest tweets for the prefs' handles (the digest Twitter/X module)."""
+    prefs = _read_digest_prefs()
+    handles = prefs.get("twitter_handles") or []
+    instance = prefs.get("twitter_instance") or "https://nitter.net"
+    loop = asyncio.get_running_loop()
+    res = await loop.run_in_executor(
+        None, lambda: _fetch_twitter(instance, handles, force=bool(refresh))
+    )
+    res["handles"] = handles
+    res["instance"] = instance
+    return res
+
+
+@app.get("/api/digest/github")
+async def get_digest_github(refresh: bool = False):
+    """Hottest GitHub repos created this week (the digest GitHub module)."""
+    loop = asyncio.get_running_loop()
+    res = await loop.run_in_executor(
+        None, lambda: _fetch_github_trending(force=bool(refresh))
+    )
+    res["days"] = 7
+    return res
+
+
 @app.get("/api/digest/news/sources")
 async def get_news_sources():
     """Selectable news feeds: built-in whitelist + operator custom feeds."""
@@ -2060,6 +2379,9 @@ class DigestPrefsBody(BaseModel):
     modules: Optional[Dict[str, bool]] = None
     news_sources: Optional[List[str]] = None
     custom_sources: Optional[List[Dict[str, str]]] = None
+    reddit_subreddits: Optional[List[str]] = None
+    twitter_handles: Optional[List[str]] = None
+    twitter_instance: Optional[str] = None
 
 
 @app.put("/api/digest/prefs")
@@ -2092,6 +2414,21 @@ async def put_digest_prefs(body: DigestPrefsBody):
         prefs["news_sources"] = [s for s in body.news_sources if s in valid_ids]
     else:
         prefs["news_sources"] = [s for s in prefs["news_sources"] if s in valid_ids]
+    if body.reddit_subreddits is not None:
+        prefs["reddit_subreddits"] = _clean_subreddits(body.reddit_subreddits)
+    if body.twitter_handles is not None:
+        prefs["twitter_handles"] = _clean_twitter_handles(body.twitter_handles)
+    if body.twitter_instance is not None:
+        inst = body.twitter_instance.strip()
+        if inst:
+            try:
+                prefs["twitter_instance"] = _validate_feed_url(inst).rstrip("/")
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid Nitter instance URL: {exc}"
+                )
+        else:
+            prefs["twitter_instance"] = _DEFAULT_DIGEST_PREFS["twitter_instance"]
     _write_digest_prefs(prefs)
     return prefs
 
