@@ -1,7 +1,7 @@
 import { type RawBuilder, type SqlBool, sql } from 'kysely';
 import { jsonBuildObject } from 'kysely/helpers/postgres';
 import { getKysely, normalizeDraftBody } from '@/lib/db';
-import { getThreadHistory } from '@/lib/queries-thread';
+import { getThreadHistory, getThreadHistoryBatch } from '@/lib/queries-thread';
 import {
   type ClassificationCategory,
   type DraftStatus,
@@ -77,12 +77,13 @@ export async function listDrafts(
     const r = row as unknown as DraftWithMessage;
     return { ...r, draft_body: normalizeDraftBody(r.draft_body) };
   });
-  const withHistory = await Promise.all(
-    drafts.map(async (d) => ({
-      ...d,
-      thread_history: await getThreadHistory(d.message.thread_id, d.message.id),
-    })),
+  const historyMap = await getThreadHistoryBatch(
+    drafts.map((d) => ({ threadId: d.message.thread_id, excludeInboxMessageId: d.message.id })),
   );
+  const withHistory = drafts.map((d) => ({
+    ...d,
+    thread_history: historyMap.get(d.message.thread_id ?? '') ?? [],
+  }));
   return withHistory;
 }
 
@@ -333,12 +334,13 @@ export async function getQueueWithUrgency(
     } as DraftWithUrgency;
   });
 
-  const withHistory = await Promise.all(
-    drafts.map(async (d) => ({
-      ...d,
-      thread_history: await getThreadHistory(d.message.thread_id, d.message.id),
-    })),
+  const historyMap = await getThreadHistoryBatch(
+    drafts.map((d) => ({ threadId: d.message.thread_id, excludeInboxMessageId: d.message.id })),
   );
+  const withHistory = drafts.map((d) => ({
+    ...d,
+    thread_history: historyMap.get(d.message.thread_id ?? '') ?? [],
+  }));
   return withHistory;
 }
 
