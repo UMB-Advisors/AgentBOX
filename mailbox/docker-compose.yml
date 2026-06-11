@@ -158,6 +158,14 @@ services:
       # unset). The call stays on the docker network — no host-gateway, no Caddy
       # route. Reference the secret from the env; never hardcode a value.
       HERMES_INTERNAL_TOKEN: ${HERMES_INTERNAL_TOKEN}
+      # MailBOX-ErrorHandler (PR #88) — alert recipient + per-workflow throttle,
+      # read via $env in the error workflow's Code node. Recipient resolution:
+      # ERROR_ALERT_RECIPIENT → MAILBOX_OPERATOR_EMAIL → computes-but-skips send.
+      # Without these forwards the .env values never reach the n8n container
+      # (this environment: block is an explicit allowlist).
+      ERROR_ALERT_RECIPIENT: ${ERROR_ALERT_RECIPIENT:-}
+      ERROR_ALERT_THROTTLE_MIN: ${ERROR_ALERT_THROTTLE_MIN:-60}
+      MAILBOX_OPERATOR_EMAIL: ${MAILBOX_OPERATOR_EMAIL:-}
     volumes:
     - n8n_data:/home/node/.n8n
     healthcheck:
