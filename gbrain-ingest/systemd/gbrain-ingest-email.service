@@ -1,0 +1,18 @@
+# systemd USER unit (install: ~/.config/systemd/user/, systemctl --user)
+# Incremental email-thread ingestion into gbrain entity sources.
+# flock serializes all gbrain-ingest jobs + dream: max one LLM consumer
+# at a time on the shared 8GB box.
+[Unit]
+Description=gbrain ingest: inbox_messages -> per-thread entity pages
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.hermes/.env
+WorkingDirectory=%h/gbrain-ingest
+ExecStart=/usr/bin/flock -w 600 /tmp/gbrain-ingest.lock /usr/bin/python3 %h/gbrain-ingest/ingest_email.py
+Nice=10
+TimeoutStartSec=30min
+
+[Install]
+WantedBy=default.target
