@@ -56,12 +56,23 @@ class GbrainRefusedError(GbrainClientError):
     """The server refused the operation (unknown / local-only op)."""
 
 
-def _build_capture_markdown(text: str, tags: Optional[List[str]] = None) -> str:
-    """Full markdown page (YAML frontmatter + body) for put_page/capture."""
+def _build_capture_markdown(text: str, tags: Optional[List[str]] = None,
+                            *, visibility: Optional[str] = None) -> str:
+    """Full markdown page (YAML frontmatter + body) for put_page/capture.
+
+    ``visibility`` lands in the frontmatter as-is, but is ADVISORY ONLY:
+    gbrain (<= 0.41.x) never reads frontmatter visibility — pages have no
+    visibility column, and facts later extracted from a page default to
+    'private' regardless of the frontmatter (only the ``extract_facts``
+    op's own param can set 'world'). Do not rely on it for any
+    access-control effect.
+    """
     lines = ["---"]
     if tags:
         rendered = ", ".join(json.dumps(str(t)) for t in tags)
         lines.append(f"tags: [{rendered}]")
+    if visibility:
+        lines.append(f"visibility: {str(visibility).strip()}")
     lines.append(f"created: {date.today().isoformat()}")
     lines.append("---")
     lines.append("")
@@ -343,34 +354,64 @@ class GbrainClient:
     # ------------------------------------------------------------------
 
     def recall(self, query: str, *, limit: int = 5,
+               source: Optional[str] = None,
                timeout: Optional[float] = None,
                cli_fallback: Optional[bool] = None) -> Any:
         """Semantic recall via the server-exposed ``query`` op.
+
+        ``source`` scopes the search to one gbrain source (entity slug);
+        the server honors a per-call ``source_id`` over the token's
+        default scope. Unset means no per-call filter (the token's own
+        scope applies).
 
         ``cli_fallback=False`` disables the subprocess fallback for this
         call — hot-path callers (prefetch) must never spawn the CLI;
         explicit tool calls keep the client-level default.
         """
         allow_cli = self._cli_fallback if cli_fallback is None else cli_fallback
+        args: Dict[str, Any] = {"query": query, "limit": int(limit)}
+        if source:
+            args["source_id"] = str(source)
         try:
-            return self.call_tool(
-                "query", {"query": query, "limit": int(limit)}, timeout=timeout
-            )
+            return self.call_tool("query", args, timeout=timeout)
         except GbrainRefusedError:
             if not allow_cli:
                 raise
             logger.debug("gbrain server refused 'query' — CLI fallback")
-            return self._run_cli(["query", query, "--json"])
+            cli_args = ["query", query, "--json"]
+            if source:
+                cli_args += ["--source", str(source)]
+            return self._run_cli(cli_args)
 
     def capture(self, text: str, *, tags: Optional[List[str]] = None,
                 slug: Optional[str] = None,
+                source: Optional[str] = None,
+                visibility: Optional[str] = None,
                 timeout: Optional[float] = None) -> str:
         """Write a page. Remote path uses ``put_page`` (there is no server
         'capture' op — the gbrain thin client itself routes capture through
         put_page); falls back to ``gbrain capture --stdin`` when refused.
+
+        ``visibility`` is written into the page frontmatter verbatim but
+        is ADVISORY ONLY — gbrain (<= 0.41.x) ignores page-frontmatter
+        visibility entirely (facts extracted later default to 'private';
+        the ``query`` op has no world/private filter at all). It exists
+        for forward compatibility, not access control.
+
+        ``source`` (entity slug): the daemon's ``put_page`` has NO per-call
+        source parameter — remote writes always land in the OAuth token's
+        registered source scope (``gbrain auth register-client --source``).
+        It is honored on the CLI fallback path (``--source``) and recorded
+        as a ``source:<slug>`` tag for remote writes so attribution
+        survives even on a token with a broader scope.
         """
         slug = slug or default_capture_slug(text)
-        content = _build_capture_markdown(text, tags)
+        if source:
+            source_tag = f"source:{source}"
+            tags = list(tags or [])
+            if source_tag not in tags:
+                tags.append(source_tag)
+        content = _build_capture_markdown(text, tags, visibility=visibility)
         try:
             self.call_tool(
                 "put_page", {"slug": slug, "content": content}, timeout=timeout
@@ -380,10 +421,10 @@ class GbrainClient:
             if not self._cli_fallback:
                 raise
             logger.debug("gbrain server refused 'put_page' — CLI capture fallback")
-            self._run_cli(
-                ["capture", "--stdin", "--slug", slug, "--quiet"],
-                input_text=content,
-            )
+            cli_args = ["capture", "--stdin", "--slug", slug, "--quiet"]
+            if source:
+                cli_args += ["--source", str(source)]
+            self._run_cli(cli_args, input_text=content)
             return slug
 
     def forget(self, fact_id: int, *, reason: Optional[str] = None,

@@ -19,9 +19,33 @@ Config (config.yaml):
         contextChars: 1200               # ~300 tokens; ~4000 for cloud models
         recallLimit: 5
         entityTag: ""
+        source: ""                       # entity source slug; "" = combined
+
+Source scoping: when ``memory.gbrain.source`` is set, recall/prefetch pass
+it as the query op's per-call ``source_id`` and captures are routed to it
+(CLI fallback ``--source``; remote put_page writes land in the OAuth
+token's registered source — register the client with ``--source`` to
+match). Unset means no per-call filter (combined view).
+
+Visibility: provider writes carry NO visibility frontmatter. gbrain
+(<= 0.41.x) ignores page-frontmatter visibility entirely — facts later
+extracted from a page default to 'private' no matter what the page says,
+and the ``query`` op this provider recalls through has no world/private
+filter at all. The earlier "world-visible writes" frontmatter was a
+verified no-op and was removed rather than left as a false promise (and
+as a latent exposure if a future gbrain starts honoring it).
+
+Redaction: distilled session-end / pre-compress summaries are scrubbed of
+credential-shaped strings (API keys, bearer tokens, JWTs, OTP codes,
+credentialed URLs) before capture — anything written is semantically
+queryable by every registered gbrain HTTP/MCP client.
 
 Secrets (.env): GBRAIN_API_TOKEN (static) or GBRAIN_CLIENT_ID +
 GBRAIN_CLIENT_SECRET (OAuth client_credentials, ~1h TTL, auto-refreshed).
+Per-context overrides: ``cron`` contexts prefer GBRAIN_CRON_CLIENT_ID/
+SECRET (or GBRAIN_CRON_API_TOKEN) and ``dashboard`` contexts prefer
+GBRAIN_DASHBOARD_* when present; anything else — or an incomplete
+override set — falls back to the canonical names above.
 """
 
 from __future__ import annotations
@@ -51,6 +75,15 @@ DEFAULT_RECALL_LIMIT = 5
 PREFETCH_TIMEOUT = 3.0          # recall must never block a turn longer
 PREFETCH_CACHE_TTL = 600.0      # seconds a queued prefetch result stays fresh
 SESSION_SUMMARY_CHARS = 500
+MIN_SNIPPET_CHARS = 80          # per-result floor when splitting the budget
+
+# Per-context credential env prefixes (PRD D7): selected by agent_context
+# (or platform) at initialize time. Pure env-NAME selection — an absent or
+# incomplete override set falls back to the canonical GBRAIN_* names.
+CONTEXT_ENV_PREFIXES = {
+    "cron": "GBRAIN_CRON",
+    "dashboard": "GBRAIN_DASHBOARD",
+}
 
 READ_ONLY_MESSAGE = (
     "memory is read-only in this context — nothing was written. "
@@ -60,6 +93,65 @@ READ_ONLY_MESSAGE = (
 # Strip any fence markup a backend page might contain — providers must
 # return RAW text; the MemoryManager adds the <memory-context> fences.
 _FENCE_RE = re.compile(r"</?memory-context>", re.IGNORECASE)
+
+# --- secret redaction for captured summaries -------------------------------
+# Captured pages land in a shared brain that ANY registered HTTP/MCP caller
+# can semantically query (the gbrain `query` op has no world/private
+# filter). Conversations can quote OTPs, reset links, API keys and bearer
+# tokens — scrub credential-shaped strings before a distilled summary is
+# written. Over-redaction is acceptable; a leaked secret is not.
+# (Mirrors gbrain-ingest/common.py redact_secrets — separate deployables.)
+_REDACTED = "[REDACTED]"
+_SECRET_FULL_RES = [
+    re.compile(r"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}\b"),    # stripe
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),                          # openai-style
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),                     # github
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),                   # github fine-grained
+    re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b"),                   # slack
+    re.compile(r"\bshp(?:at|ca|pa|ss)_[A-Za-z0-9]{16,}\b"),            # shopify
+    re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b"),                         # google api key
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),                               # aws access key id
+    re.compile(                                                        # JWT
+        r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\b"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"),             # bearer creds
+    # 40+ char high-entropy blobs (must mix letters and digits inside the run)
+    re.compile(r"\b(?=[A-Za-z0-9+/_=-]*\d)(?=[A-Za-z0-9+/_=-]*[A-Za-z])"
+               r"[A-Za-z0-9+/_=-]{40,}\b"),
+]
+_SECRET_LABELED_RES = [
+    # key: value / key=value assignments — keep the label, drop the value
+    (re.compile(r"(?i)\b((?:api[_-]?key|access[_-]?token|auth[_-]?token|"
+                r"refresh[_-]?token|client[_-]?secret|secret|token|"
+                r"password|passwd|pwd)\s*[:=]\s*)(\S{6,})"),
+     r"\1" + _REDACTED),
+    # OTP / verification codes near their trigger words
+    (re.compile(r"(?i)\b((?:verification|security|one[-\s]?time|2fa|login|"
+                r"auth|confirmation)\s+code(?:\s+is)?\s*[:\-]?\s*)(\d{4,8})\b"),
+     r"\1" + _REDACTED),
+]
+_URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
+_URL_CRED_QS_RE = re.compile(
+    r"(?i)[?&#][^\s]*?(token|otp|key|sig|signature|secret|code|reset|verify|"
+    r"auth|tkn)")
+
+
+def _redact_url_match(m: "re.Match[str]") -> str:
+    url = m.group(0)
+    if _URL_CRED_QS_RE.search(url):
+        return url.split("?", 1)[0].split("#", 1)[0] + "?" + _REDACTED
+    return url
+
+
+def _redact_secrets(text: str) -> str:
+    """Scrub credential-shaped strings from text bound for a capture."""
+    if not text:
+        return ""
+    out = _URL_RE.sub(_redact_url_match, text)
+    for pat in _SECRET_FULL_RES:
+        out = pat.sub(_REDACTED, out)
+    for pat, repl in _SECRET_LABELED_RES:
+        out = pat.sub(repl, out)
+    return out
 
 RECALL_SCHEMA = {
     "name": "gbrain_recall",
@@ -158,6 +250,38 @@ def _resolve_base_url(section: Optional[Dict[str, Any]] = None) -> str:
     return str(section.get("baseUrl") or "").strip()
 
 
+def _select_credentials(agent_context: str = "",
+                        platform: str = "") -> Dict[str, Optional[str]]:
+    """Pick gbrain credential env NAMES for this execution context.
+
+    ``cron`` → GBRAIN_CRON_*, ``dashboard`` → GBRAIN_DASHBOARD_* (matched
+    against agent_context first, then platform). An override is only used
+    when complete (CLIENT_ID + CLIENT_SECRET, or API_TOKEN); otherwise the
+    canonical GBRAIN_CLIENT_ID / GBRAIN_CLIENT_SECRET / GBRAIN_API_TOKEN
+    apply. Pure name selection — no other behavior change.
+    """
+    prefix = None
+    for key in (agent_context, platform):
+        prefix = CONTEXT_ENV_PREFIXES.get(str(key or "").strip().lower())
+        if prefix:
+            break
+    if prefix:
+        client_id = os.environ.get(f"{prefix}_CLIENT_ID") or None
+        client_secret = os.environ.get(f"{prefix}_CLIENT_SECRET") or None
+        static_token = os.environ.get(f"{prefix}_API_TOKEN") or None
+        if (client_id and client_secret) or static_token:
+            return {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "static_token": static_token,
+            }
+    return {
+        "client_id": os.environ.get("GBRAIN_CLIENT_ID") or None,
+        "client_secret": os.environ.get("GBRAIN_CLIENT_SECRET") or None,
+        "static_token": os.environ.get("GBRAIN_API_TOKEN") or None,
+    }
+
+
 def _as_bool(value: Any, default: bool) -> bool:
     if value is None:
         return default
@@ -178,8 +302,31 @@ def _truncate_word_safe(text: str, limit: int) -> str:
     return cut.rstrip() + ellipsis
 
 
-def _format_recall_results(payload: Any) -> str:
-    """Flatten a gbrain query/recall payload into plain joined text."""
+# Per-item content keys, in preference order. ``chunk_text`` is what the
+# gbrain ``query`` op actually returns per hit (SearchResult.chunk_text) —
+# without it a hit degraded to its bare slug.
+_CONTENT_KEYS = ("text", "content", "chunk_text", "snippet", "summary",
+                 "body", "fact")
+
+
+def _item_ref(item: Dict[str, Any]) -> str:
+    """Page reference for a recall hit: ``source/slug`` when both known."""
+    slug = str(item.get("slug") or item.get("title") or "").strip()
+    source = str(item.get("source_id") or item.get("source") or "").strip()
+    if slug and source:
+        return f"{source}/{slug}"
+    return slug
+
+
+def _format_recall_results(payload: Any, *, snippet_budget: int = 0) -> str:
+    """Flatten a gbrain query/recall payload into plain joined text.
+
+    Each hit renders as ``[source/slug] content`` — content snippets with
+    their page refs, never bare paths (unless the daemon returned no
+    content at all). With ``snippet_budget`` > 0 the budget is split
+    across hits so every result contributes a word-safe snippet instead
+    of the first hit swallowing the whole window.
+    """
     if payload is None:
         return ""
     if isinstance(payload, str):
@@ -200,22 +347,30 @@ def _format_recall_results(payload: Any) -> str:
     else:
         return str(payload).strip()
 
+    per_item = 0
+    if snippet_budget > 0 and items:
+        per_item = max(MIN_SNIPPET_CHARS, snippet_budget // len(items))
+
     parts: List[str] = []
     for item in items:
         if isinstance(item, str):
             chunk = item
         elif isinstance(item, dict):
-            chunk = ""
-            for key in ("text", "content", "snippet", "summary", "body", "fact"):
+            content = ""
+            for key in _CONTENT_KEYS:
                 value = item.get(key)
                 if isinstance(value, str) and value.strip():
-                    chunk = value
+                    content = value.strip()
                     break
-            title = item.get("slug") or item.get("title") or ""
-            if title and chunk:
-                chunk = f"[{title}] {chunk}"
-            elif title and not chunk:
-                chunk = str(title)
+            ref = _item_ref(item)
+            if per_item and content:
+                content = _truncate_word_safe(content, per_item)
+            if ref and content:
+                chunk = f"[{ref}] {content}"
+            elif content:
+                chunk = content
+            else:
+                chunk = ref
         else:
             chunk = str(item)
         chunk = chunk.strip()
@@ -233,7 +388,7 @@ def _distill_messages(messages: List[Dict[str, Any]],
         content = msg.get("content")
         if role not in ("user", "assistant") or not isinstance(content, str):
             continue
-        clean = sanitize_context(content).strip()
+        clean = _redact_secrets(sanitize_context(content)).strip()
         if clean:
             parts.append(f"{role}: {clean}")
     return _truncate_word_safe("\n".join(parts), limit)
@@ -255,6 +410,7 @@ class GbrainMemoryProvider(MemoryProvider):
         self._context_chars = DEFAULT_CONTEXT_CHARS
         self._recall_limit = DEFAULT_RECALL_LIMIT
         self._entity_tag = ""
+        self._source = ""
         self._initialized = False
 
         # queue_prefetch warmup cache: session_id -> (result, monotonic_ts)
@@ -324,6 +480,13 @@ class GbrainMemoryProvider(MemoryProvider):
                 "description": "Optional tag added to captured pages",
                 "default": "",
             },
+            {
+                "key": "source",
+                "description": "gbrain source slug (entity) to scope recall "
+                               "and route captures to; empty = combined "
+                               "(no per-call source filter)",
+                "default": "",
+            },
         ]
 
     # save_config: non-secret fields are persisted by the setup wizard into
@@ -355,6 +518,7 @@ class GbrainMemoryProvider(MemoryProvider):
             except (TypeError, ValueError):
                 self._recall_limit = DEFAULT_RECALL_LIMIT
             self._entity_tag = str(section.get("entityTag") or "").strip()
+            self._source = str(section.get("source") or "").strip()
 
             # Write gate (D5): primary context only, and readOnly must be
             # explicitly false. cron/subagent/flush are read-only always.
@@ -365,8 +529,13 @@ class GbrainMemoryProvider(MemoryProvider):
 
             base_url = _resolve_base_url(section)
             if base_url:
-                self._client = GbrainClient.from_env(
-                    base_url, timeout=PREFETCH_TIMEOUT
+                # Per-context credential selection (env names only): cron
+                # contexts prefer GBRAIN_CRON_*, dashboard GBRAIN_DASHBOARD_*,
+                # everything else (or an incomplete override) the canonical
+                # GBRAIN_* names — same semantics as GbrainClient.from_env.
+                creds = _select_credentials(self._agent_context, platform)
+                self._client = GbrainClient(
+                    base_url, timeout=PREFETCH_TIMEOUT, **creds
                 )
             self._initialized = True
             logger.debug(
@@ -405,10 +574,12 @@ class GbrainMemoryProvider(MemoryProvider):
         hot path, where spawning the bun CLI is never acceptable.
         """
         payload = self._client.recall(
-            query, limit=self._recall_limit, timeout=PREFETCH_TIMEOUT,
-            cli_fallback=False,
+            query, limit=self._recall_limit, source=self._source or None,
+            timeout=PREFETCH_TIMEOUT, cli_fallback=False,
         )
-        text = _format_recall_results(payload)
+        text = _format_recall_results(
+            payload, snippet_budget=self._context_chars
+        )
         text = _FENCE_RE.sub("", text).strip()
         return _truncate_word_safe(text, self._context_chars)
 
@@ -509,7 +680,8 @@ class GbrainMemoryProvider(MemoryProvider):
                 summary, prefix="hermes/sessions"
             )
             self._client.capture(
-                summary, tags=self._capture_tags(), slug=slug, timeout=10.0
+                summary, tags=self._capture_tags(), slug=slug,
+                source=self._source or None, timeout=10.0,
             )
         except Exception as e:
             logger.debug("gbrain session-end capture failed: %s", e)
@@ -524,6 +696,7 @@ class GbrainMemoryProvider(MemoryProvider):
                 self._client.capture(
                     summary,
                     tags=self._capture_tags(["hermes-pre-compress"]),
+                    source=self._source or None,
                     timeout=10.0,
                 )
         except Exception as e:
@@ -545,7 +718,10 @@ class GbrainMemoryProvider(MemoryProvider):
                 if not query:
                     return tool_error("Missing required parameter: query")
                 limit = min(int(args.get("limit") or self._recall_limit), 20)
-                payload = self._client.recall(query, limit=limit, timeout=10.0)
+                payload = self._client.recall(
+                    query, limit=limit, source=self._source or None,
+                    timeout=10.0,
+                )
                 text = _FENCE_RE.sub("", _format_recall_results(payload)).strip()
                 if not text:
                     return json.dumps({"result": "No relevant memories found."})
@@ -559,6 +735,7 @@ class GbrainMemoryProvider(MemoryProvider):
                     return tool_error("Missing required parameter: text")
                 slug = self._client.capture(
                     text, tags=self._capture_tags(args.get("tags")),
+                    source=self._source or None,
                     timeout=10.0,
                 )
                 return json.dumps({"result": "Captured to gbrain.", "slug": slug})

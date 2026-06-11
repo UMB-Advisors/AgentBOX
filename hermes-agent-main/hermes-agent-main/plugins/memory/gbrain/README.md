@@ -67,8 +67,8 @@ word-boundary safe and the result is always ≤ the budget.
 
 | Provider action | gbrain op | Notes |
 |---|---|---|
-| `prefetch` / `gbrain_recall` | `query` (server-exposed, read scope) | semantic search; remote callers only see `visibility='world'` facts |
-| `gbrain_capture` / session summaries | `put_page` (write scope) | there is no server `capture` op; tags ride in YAML frontmatter; CLI fallback `gbrain capture --stdin` if the server refuses |
+| `prefetch` / `gbrain_recall` | `query` (server-exposed, read scope) | semantic search over the token's source scope; NOTE: `query` has no world/private filter (only the facts `recall` op filters remote callers to `visibility='world'`) |
+| `gbrain_capture` / session summaries | `put_page` (write scope) | there is no server `capture` op; tags ride in YAML frontmatter; CLI fallback `gbrain capture --stdin` if the server refuses. No `visibility` frontmatter is written — gbrain (≤0.41.x) ignores page-frontmatter visibility and facts extracted from pages default to `private` |
 | `gbrain_forget` | `forget_fact` (write scope) | numeric fact id; CLI fallback `gbrain forget <id>` |
 
 All three primary ops are server-exposed (`server_ok`), so the CLI
