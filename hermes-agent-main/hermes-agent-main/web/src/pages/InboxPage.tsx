@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Archive,
   Check,
@@ -159,6 +160,25 @@ export default function InboxPage() {
 
   // Selection
   const [selectedDraftId, setSelectedDraftId] = useState<number | null>(null);
+
+  // Deep-link: /inbox?draft=<id> (e.g. Home → Top of Mind) opens that draft's
+  // review panel on load. The draft lands in the default "Needs action" tab
+  // (pending/edited), so the selection survives the post-load reconcile. Consume
+  // the param so a later refresh/back doesn't re-select it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const raw = searchParams.get("draft");
+    if (!raw) return;
+    const id = Number(raw);
+    if (Number.isInteger(id)) setSelectedDraftId(id);
+    setSearchParams(
+      (prev) => {
+        prev.delete("draft");
+        return prev;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams]);
 
   const statusCsv = useMemo(
     () => STATUS_TABS.find((t) => t.key === tab)?.csv ?? "pending,edited",

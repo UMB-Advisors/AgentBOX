@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   CalendarClock,
@@ -28,7 +28,6 @@ import { useAccountView } from "@/contexts/useAccountView";
 import { api } from "@/lib/api";
 import type {
   ActionItem,
-  BriefEmail,
   BriefEvent,
   CronOutput,
   DigestBrief,
@@ -44,9 +43,11 @@ import { usePageHeader } from "@/contexts/usePageHeader";
  * Home — the AgentBOX daily-digest landing.
  *
  *   • Top: the **Daily Brief** — three real-data sections styled like Google's
- *     emailed brief: **Top of Mind** (unread Gmail), **On Your Calendar**
+ *     emailed brief: **Top of Mind** (inbox messages with a pending/edited
+ *     draft — the actionable queue, NOT live unread Gmail), **On Your Calendar**
  *     (today's Google Calendar), and **FYI** (active local Kanban cards).
- *     Gmail + Calendar come from `/api/digest/brief`; FYI from the Kanban board.
+ *     Top of Mind comes from `/dashboard/api/drafts`; Calendar from
+ *     `/api/digest/brief`; FYI from the Kanban board.
  *   • Middle: the operator-chosen **Action Items** module (LLM-extracted from
  *     the inbox) — kept because the brief doesn't surface it.
  *   • Bottom: **Google News** — an infinite, thumbnailed top-stories feed.
@@ -134,6 +135,18 @@ export default function HomePage() {
       );
   }, []);
 
+  // Inbox drafts (pending/edited) power BOTH the brief's "Top of Mind" section
+  // and the Action Items card — load them whenever either module is shown.
+  const loadDrafts = useCallback(() => {
+    setDraftsError(null);
+    api
+      .inboxListDrafts("pending,edited", 200)
+      .then((r) => setDrafts(r.drafts))
+      .catch((e: unknown) =>
+        setDraftsError(e instanceof Error ? e.message : "Failed to load inbox."),
+      );
+  }, []);
+
   // The brief needs both Gmail/Calendar and the Kanban board (FYI section).
   useEffect(() => {
     if (!prefs || !briefOn) return;
@@ -144,7 +157,8 @@ export default function HomePage() {
   const refreshBrief = useCallback(() => {
     void loadBrief();
     loadBoard();
-  }, [loadBrief, loadBoard]);
+    loadDrafts();
+  }, [loadBrief, loadBoard, loadDrafts]);
 
   const loadMoreNews = useCallback(async () => {
     const p = prefs;
@@ -203,17 +217,11 @@ export default function HomePage() {
     return () => obs.disconnect();
   }, [loadMoreNews]);
 
-  // Action items: pending/edited drafts, flattened.
+  // Drafts feed Top of Mind (brief) and Action Items — load if either is on.
   useEffect(() => {
-    if (!prefs || !actionsOn) return;
-    setDraftsError(null);
-    api
-      .inboxListDrafts("pending,edited", 200)
-      .then((r) => setDrafts(r.drafts))
-      .catch((e: unknown) =>
-        setDraftsError(e instanceof Error ? e.message : "Failed to load inbox."),
-      );
-  }, [prefs, actionsOn]);
+    if (!prefs || (!actionsOn && !briefOn)) return;
+    loadDrafts();
+  }, [prefs, actionsOn, briefOn, loadDrafts]);
 
   const actionItems = useMemo(
     () =>
@@ -240,10 +248,12 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
-      {/* Daily Brief — Top of Mind (Gmail) · On Your Calendar · FYI (Kanban) */}
+      {/* Daily Brief — Top of Mind (inbox drafts) · On Your Calendar · FYI */}
       {briefOn && (
         <DailyBrief
           brief={brief}
+          drafts={drafts}
+          draftsError={draftsError}
           fyiTasks={fyiTasks}
           boardLoaded={board != null || boardError != null}
           loading={briefLoading}
@@ -337,6 +347,8 @@ interface FyiTask {
 
 function DailyBrief({
   brief,
+  drafts,
+  draftsError,
   fyiTasks,
   boardLoaded,
   loading,
@@ -345,6 +357,8 @@ function DailyBrief({
   view,
 }: {
   brief: DigestBrief | null;
+  drafts: DraftRow[] | null;
+  draftsError: string | null;
   fyiTasks: FyiTask[];
   boardLoaded: boolean;
   loading: boolean;
@@ -354,8 +368,6 @@ function DailyBrief({
 }) {
   const weekday = new Date().toLocaleDateString(undefined, { weekday: "long" });
   const connected = brief?.connected ?? false;
-  const emails = brief?.gmail.messages ?? [];
-  const gmailError = brief?.gmail.error ?? null;
   const events = brief?.calendar.events ?? [];
   const calError = brief?.calendar.error ?? null;
   const firstLoad = loading && brief == null;
@@ -406,26 +418,30 @@ function DailyBrief({
           </div>
         ) : (
           <>
-            {/* Top of Mind + On Your Calendar both need a connected Google.
-                The Combined / per-account view comes from the global header
-                selector (shared across every account-aware tab). */}
+            {/* Only "On Your Calendar" needs a connected Google now — Top of
+                Mind reads the local inbox queue. The Combined / per-account view
+                comes from the global header selector. */}
             {!connected && <ConnectGoogle />}
 
-            {connected && (
-              <BriefSection icon={<Mail className="h-4 w-4" />} title="Top of Mind">
-                {gmailError ? (
-                  <SectionNote tone="warn">{gmailError}</SectionNote>
-                ) : emails.length === 0 ? (
-                  <SectionNote>Inbox zero — nothing unread right now.</SectionNote>
-                ) : (
-                  <ul className="flex flex-col divide-y divide-border">
-                    {emails.map((m) => (
-                      <EmailRow key={m.id} email={m} showAccount={showAccountTag} />
-                    ))}
-                  </ul>
-                )}
-              </BriefSection>
-            )}
+            {/* Top of Mind = the actionable inbox queue (messages with a
+                pending/edited draft), NOT live unread Gmail — the ingested
+                messages are already read in Gmail. Each row deep-links into the
+                inbox review panel. */}
+            <BriefSection icon={<Mail className="h-4 w-4" />} title="Top of Mind">
+              {draftsError ? (
+                <SectionNote tone="warn">{draftsError}</SectionNote>
+              ) : drafts == null ? (
+                <Loading />
+              ) : drafts.length === 0 ? (
+                <SectionNote>Nothing needs your attention right now.</SectionNote>
+              ) : (
+                <ul className="flex flex-col divide-y divide-border">
+                  {drafts.map((d) => (
+                    <DraftBriefRow key={d.id} draft={d} />
+                  ))}
+                </ul>
+              )}
+            </BriefSection>
 
             {connected && (
               <BriefSection
@@ -494,44 +510,6 @@ function BriefSection({
   );
 }
 
-function EmailRow({
-  email,
-  showAccount,
-}: {
-  email: BriefEmail;
-  showAccount: boolean;
-}) {
-  return (
-    <li className="flex gap-3 py-2.5">
-      <span
-        aria-hidden
-        className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand/70"
-      />
-      <a
-        href={email.link || undefined}
-        target="_blank"
-        rel="noreferrer"
-        className="group min-w-0 flex-1"
-      >
-        <div className="flex items-center gap-2">
-          <p className="flex-1 truncate text-sm font-medium leading-snug text-foreground group-hover:text-brand">
-            {email.subject}
-          </p>
-          {showAccount && <AccountTag account={email.account} />}
-          {email.from && (
-            <span className="shrink-0 text-xs text-text-secondary">{email.from}</span>
-          )}
-        </div>
-        {email.snippet && (
-          <p className="mt-0.5 line-clamp-1 text-sm text-muted-foreground">
-            {email.snippet}
-          </p>
-        )}
-      </a>
-    </li>
-  );
-}
-
 function EventRow({
   event,
   showAccount,
@@ -558,6 +536,46 @@ function EventRow({
   );
 }
 
+/** A pending/edited inbox draft surfaced in the brief's Top of Mind. Clicking
+ *  deep-links into the inbox review panel for that draft (`/inbox?draft=<id>`). */
+function DraftBriefRow({ draft }: { draft: DraftRow }) {
+  const subject = draft.subject || draft.draft_subject || "(no subject)";
+  const edited = draft.status === "edited";
+  return (
+    <li className="py-2.5">
+      <Link
+        to={`/inbox?draft=${draft.id}`}
+        className="group flex items-start gap-3"
+      >
+        <span
+          aria-hidden
+          className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand/70"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="flex-1 truncate text-sm font-medium leading-snug text-foreground group-hover:text-brand">
+              {subject}
+            </p>
+            <Badge tone={edited ? "outline" : "secondary"}>
+              {edited ? "edited" : "draft ready"}
+            </Badge>
+          </div>
+          {draft.from_addr && (
+            <p className="mt-0.5 truncate text-xs text-text-secondary">
+              {draft.from_addr}
+            </p>
+          )}
+        </div>
+        {draft.received_at && (
+          <span className="shrink-0 text-xs text-text-secondary">
+            {isoTimeAgo(draft.received_at)}
+          </span>
+        )}
+      </Link>
+    </li>
+  );
+}
+
 /** "Connect Google" prompt — shown when the box has no Google token yet.
  *  Mirrors the calendar-not-connected pattern; the brief lights up the moment
  *  the operator runs the google-workspace login. */
@@ -566,10 +584,10 @@ function ConnectGoogle() {
   return (
     <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-4">
       <p className="text-sm font-medium text-foreground">
-        Connect Google to see your mail and calendar
+        Connect Google to see your calendar
       </p>
       <p className="text-sm text-text-secondary">
-        Top of Mind and On Your Calendar read your Gmail and Google Calendar.
+        On Your Calendar reads your Google Calendar.
       </p>
       <Button size="sm" onClick={() => navigate("/settings/google")}>
         Connect Google accounts
