@@ -1,0 +1,111 @@
+{
+  "_comment": "Ready-to-splice n8n DataTable nodes for processed-message dedup. Node type n8n-nodes-base.dataTable, typeVersion 1.1 (verified on live 2.14.2). Replace PASTE_DATA_TABLE_ID_HERE with the real table id from the n8n UI, OR switch each dataTableId resourceLocator to mode 'name' with value 'processed_messages'. Parameter shapes were introspected from the live node binary (common/fields.js resourceLocator, common/selectMany.js filter fixedCollection, common/addRow.js resourceMapper, actions/table/create.operation.js).",
+
+  "__create_table__": {
+    "_comment": "OPTIONAL one-shot node to CREATE the table from inside the live server (Manual Trigger -> this node -> Test workflow once, then delete the temp workflow). Do NOT run via 'n8n execute' (CLI does not init the data-table module).",
+    "parameters": {
+      "resource": "table",
+      "operation": "create",
+      "tableName": "processed_messages",
+      "columns": {
+        "column": [
+          { "name": "account_id", "type": "number" },
+          { "name": "provider_message_id", "type": "string" },
+          { "name": "ingested_at", "type": "string" }
+        ]
+      },
+      "options": { "createIfNotExists": true }
+    },
+    "name": "Create processed_messages",
+    "type": "n8n-nodes-base.dataTable",
+    "typeVersion": 1.1,
+    "position": [220, 0]
+  },
+
+  "dedup_gate": {
+    "_comment": "READ GATE. Splice: Load Inbox Row.main[0] -> this -> Build Prompt. rowNotExists emits the item ONLY when no matching row exists; if already processed it emits nothing and the LLM/draft path is skipped. Values sourced from inbox_messages (Load Inbox Row).",
+    "parameters": {
+      "resource": "row",
+      "operation": "rowNotExists",
+      "dataTableId": {
+        "__rt": "resourceLocator",
+        "mode": "id",
+        "value": "PASTE_DATA_TABLE_ID_HERE"
+      },
+      "matchType": "allConditions",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "account_id",
+            "condition": "eq",
+            "keyValue": "={{ $json.account_id }}"
+          },
+          {
+            "keyName": "provider_message_id",
+            "condition": "eq",
+            "keyValue": "={{ $json.message_id }}"
+          }
+        ]
+      }
+    },
+    "name": "Dedup Gate",
+    "type": "n8n-nodes-base.dataTable",
+    "typeVersion": 1.1,
+    "position": [0, 0]
+  },
+
+  "mark_processed": {
+    "_comment": "WRITE. Splice: Insert Draft Stub.main[0] -> this -> Pack Draft Id. upsert keyed on account_id + provider_message_id (idempotent). account_id/message_id MUST come from Load Inbox Row (inbox_messages), NOT the draft stub (stub defaults account_id to placeholder 1).",
+    "parameters": {
+      "resource": "row",
+      "operation": "upsert",
+      "dataTableId": {
+        "__rt": "resourceLocator",
+        "mode": "id",
+        "value": "PASTE_DATA_TABLE_ID_HERE"
+      },
+      "matchType": "allConditions",
+      "filters": {
+        "conditions": [
+          {
+            "keyName": "account_id",
+            "condition": "eq",
+            "keyValue": "={{ $('Load Inbox Row').item.json.account_id }}"
+          },
+          {
+            "keyName": "provider_message_id",
+            "condition": "eq",
+            "keyValue": "={{ $('Load Inbox Row').item.json.message_id }}"
+          }
+        ]
+      },
+      "columns": {
+        "mappingMode": "defineBelow",
+        "value": {
+          "account_id": "={{ $('Load Inbox Row').item.json.account_id }}",
+          "provider_message_id": "={{ $('Load Inbox Row').item.json.message_id }}",
+          "ingested_at": "={{ $now.toISO() }}"
+        }
+      }
+    },
+    "name": "Mark Processed",
+    "type": "n8n-nodes-base.dataTable",
+    "typeVersion": 1.1,
+    "position": [440, 0]
+  },
+
+  "__connection_rewires__": {
+    "_comment": "Apply these connection changes when splicing into MailBOX-Classify (names must match the existing node names).",
+    "Load Inbox Row": { "main": [[{ "node": "Dedup Gate", "type": "main", "index": 0 }]] },
+    "Dedup Gate":     { "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]] },
+    "Insert Draft Stub": { "main": [[{ "node": "Mark Processed", "type": "main", "index": 0 }]] },
+    "Mark Processed":    { "main": [[{ "node": "Pack Draft Id", "type": "main", "index": 0 }]] }
+  },
+
+  "__notes__": [
+    "The 'dataTableId' resourceLocator real shape is { mode, value } (modes: list | name | id). The '__rt' key here is documentation only — when hand-editing the exported workflow JSON, write the object as {\"mode\":\"id\",\"value\":\"<id>\"} (or {\"mode\":\"name\",\"value\":\"processed_messages\"}).",
+    "rowNotExists requires at least one filter condition (minRequiredFields=1).",
+    "matchType values: 'anyCondition' (OR) or 'allConditions' (AND). Use allConditions for the (account_id, provider_message_id) pair.",
+    "upsert 'columns' uses the resourceMapper field: mappingMode 'defineBelow' + value map. Match fields come from the same filters block."
+  ]
+}
