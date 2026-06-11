@@ -29,6 +29,7 @@
   "isArchived": false,
   "meta": null,
   "name": "MailBOX-FeedbackDistill",
+  "nodeGroups": [],
   "nodes": [
     {
       "id": "fd000000-0000-0000-0000-000000000001",
@@ -98,6 +99,15 @@
     "errorWorkflow": "MlbxErrHandler01",
     "executionOrder": "v1"
   },
-  "staticData": null,
-  "tags": []
+  "sourceWorkflowId": null,
+  "staticData": {
+    "node:Every 15 Minutes": {
+      "recurrenceRules": []
+    }
+  },
+  "tags": [],
+  "versionMetadata": {
+    "description": null,
+    "name": null
+  }
 }

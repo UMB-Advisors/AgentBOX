@@ -1,12 +1,24 @@
 {
   "active": true,
   "connections": {
-    "Every 5 Minutes": {
+    "Bootstrap Check": {
       "main": [
         [
           {
             "index": 0,
-            "node": "Cooldown Check",
+            "node": "List Accounts",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Cooldown Active?": {
+      "main": [
+        [],
+        [
+          {
+            "index": 0,
+            "node": "Bootstrap Check",
             "type": "main"
           }
         ]
@@ -23,13 +35,34 @@
         ]
       ]
     },
-    "Cooldown Active?": {
+    "Cycle Stats": {
       "main": [
-        [],
         [
           {
             "index": 0,
-            "node": "Bootstrap Check",
+            "node": "Cycle Complete",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Ensure Messages": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Split Messages",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Cooldown Check",
             "type": "main"
           }
         ]
@@ -57,39 +90,6 @@
         ]
       ]
     },
-    "Gmail List": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Split Messages",
-            "type": "main"
-          }
-        ]
-      ]
-    },
-    "Split Messages": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Gmail Get",
-            "type": "main"
-          }
-        ]
-      ]
-    },
-    "Gmail Get": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Get many messages",
-            "type": "main"
-          }
-        ]
-      ]
-    },
     "Get many messages": {
       "main": [
         [
@@ -106,30 +106,40 @@
         ]
       ]
     },
-    "Insert Inbox (HTTP)": {
+    "Gmail Get": {
       "main": [
         [
           {
-            "node": "Only If Newly Inserted",
-            "type": "main",
-            "index": 0
+            "index": 0,
+            "node": "Get many messages",
+            "type": "main"
           }
         ]
       ]
     },
-    "Only If Newly Inserted": {
+    "Gmail List": {
       "main": [
         [
           {
-            "node": "Run Classify Sub",
-            "type": "main",
-            "index": 0
+            "index": 0,
+            "node": "Ensure Messages",
+            "type": "main"
           }
-        ],
-        []
+        ]
       ]
     },
-    "Bootstrap Check": {
+    "Insert Inbox (HTTP)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Only If Newly Inserted",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "List Accounts": {
       "main": [
         [
           {
@@ -140,12 +150,23 @@
         ]
       ]
     },
-    "Cycle Stats": {
+    "Only If Newly Inserted": {
       "main": [
         [
           {
             "index": 0,
-            "node": "Cycle Complete",
+            "node": "Run Classify Sub",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Split Messages": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Gmail Get",
             "type": "main"
           }
         ]
@@ -153,97 +174,85 @@
     }
   },
   "description": null,
-  "id": "C3kG7uKyRgxXpcJv",
+  "id": "sB8vbmVRHvqmJO4N",
   "isArchived": false,
-  "meta": {
-    "templateCredsSetupCompleted": true
-  },
+  "meta": null,
   "name": "MailBOX",
+  "nodeGroups": [],
   "nodes": [
     {
-      "id": "9cb2c0c7-3477-4660-8729-e78b71189c6a",
+      "id": "4030e1d3-9890-42eb-9918-c56049684864",
       "name": "Every 5 Minutes",
       "parameters": {
         "rule": {
           "interval": [
             {
-              "field": "minutes",
-              "minutesInterval": 5
+              "field": "minutes"
             }
           ]
         }
       },
       "position": [
-        0,
-        0
+        -176,
+        176
       ],
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3
     },
     {
-      "id": "fcd00000-0000-0000-0000-000000000001",
+      "id": "008da8d6-a336-4637-9e36-38c599924586",
       "name": "Cooldown Check",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
-      "position": [
-        110,
-        -150
-      ],
       "parameters": {
-        "method": "GET",
-        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/gmail-cooldown",
         "options": {
           "timeout": 5000
-        }
-      }
+        },
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/gmail-cooldown"
+      },
+      "position": [
+        -64,
+        16
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
     },
     {
-      "id": "fcd00000-0000-0000-0000-000000000002",
+      "id": "cc96ba56-f19e-4276-ac08-25cea75ef5b0",
       "name": "Cooldown Active?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        220,
-        -150
-      ],
       "parameters": {
         "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "fcd0c001-0000-0000-0000-000000000001",
+              "leftValue": "={{ $json.in_cooldown }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": true
+            }
+          ],
           "options": {
             "caseSensitive": true,
             "leftValue": "",
             "typeValidation": "strict",
             "version": 2
-          },
-          "conditions": [
-            {
-              "id": "fcd0c001-0000-0000-0000-000000000001",
-              "leftValue": "={{ $json.in_cooldown }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
+          }
         },
         "options": {}
-      }
+      },
+      "position": [
+        96,
+        -48
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
     },
     {
-      "id": "a1f1e2d3-0001-4a00-9000-000000000001",
+      "id": "178b707a-7801-45e7-8815-f847c6987b19",
       "name": "Get Gmail Token",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
-      "position": [
-        220,
-        0
-      ],
       "parameters": {
-        "method": "GET",
-        "url": "=http://mailbox-dashboard:3001/dashboard/api/internal/google/access-token?account_email={{ $('Bootstrap Check').item.json.account_email }}",
-        "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
@@ -254,22 +263,32 @@
         },
         "options": {
           "timeout": 5000
-        }
-      }
+        },
+        "sendHeaders": true,
+        "url": "=http://mailbox-dashboard:3001/dashboard/api/internal/google/access-token?account_email={{ $json.account_email }}"
+      },
+      "position": [
+        48,
+        176
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
     },
     {
-      "id": "a1f1e2d3-0002-4a00-9000-000000000002",
+      "id": "9e8480cb-0555-4b2d-a513-68487e3ada76",
       "name": "Gmail List",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
-      "position": [
-        340,
-        0
-      ],
       "parameters": {
-        "method": "GET",
-        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
-        "sendQuery": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Gmail Token').item.json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        },
         "queryParameters": {
           "parameters": [
             {
@@ -283,6 +302,34 @@
           ]
         },
         "sendHeaders": true,
+        "sendQuery": true,
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages"
+      },
+      "position": [
+        176,
+        176
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
+    },
+    {
+      "id": "9405d4d1-049f-48e0-8abd-600ec33f5bef",
+      "name": "Split Messages",
+      "parameters": {
+        "fieldToSplitOut": "messages",
+        "options": {}
+      },
+      "position": [
+        272,
+        48
+      ],
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1
+    },
+    {
+      "id": "84c9955e-e62f-4cda-90ee-0ba2f52a7627",
+      "name": "Gmail Get",
+      "parameters": {
         "headerParameters": {
           "parameters": [
             {
@@ -293,36 +340,7 @@
         },
         "options": {
           "timeout": 10000
-        }
-      }
-    },
-    {
-      "id": "a1f1e2d3-0003-4a00-9000-000000000003",
-      "name": "Split Messages",
-      "type": "n8n-nodes-base.splitOut",
-      "typeVersion": 1,
-      "position": [
-        440,
-        -120
-      ],
-      "parameters": {
-        "fieldToSplitOut": "messages",
-        "options": {}
-      }
-    },
-    {
-      "id": "a1f1e2d3-0004-4a00-9000-000000000004",
-      "name": "Gmail Get",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
-      "position": [
-        540,
-        -120
-      ],
-      "parameters": {
-        "method": "GET",
-        "url": "=https://gmail.googleapis.com/gmail/v1/users/me/messages/{{ $json.id }}",
-        "sendQuery": true,
+        },
         "queryParameters": {
           "parameters": [
             {
@@ -332,35 +350,32 @@
           ]
         },
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Get Gmail Token').item.json.access_token }}"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 10000
-        }
-      }
-    },
-    {
-      "id": "9024ea76-59b0-4ff6-a4d2-f7340579e1e5",
-      "name": "Get many messages",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+        "sendQuery": true,
+        "url": "=https://gmail.googleapis.com/gmail/v1/users/me/messages/{{ $json.id }}"
+      },
       "position": [
-        640,
-        0
+        416,
+        48
       ],
-      "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "// MBOX-466: normalize Gmail REST (users.messages.get?format=full) output\n// back to the simpleParser-style shape the downstream `Extract Fields` set\n// node consumes (from.value[0].address, to.value[0].address, subject, date,\n// text, inReplyTo, references). The old n8n Gmail node emitted these even with\n// simple:false; raw REST does not, so we rebuild them here.\nconst msg = $json;\nconst payload = msg.payload || {};\nconst headers = payload.headers || [];\n\nfunction header(name) {\n  const target = name.toLowerCase();\n  const h = headers.find((x) => x && typeof x.name === 'string' && x.name.toLowerCase() === target);\n  return h ? h.value : '';\n}\n\n// Extract the bare email address from a header like \"Name <email>\" or \"email\".\nfunction addr(value) {\n  if (!value) return '';\n  const angle = value.match(/<([^>]+)>/);\n  if (angle) return angle[1].trim();\n  const bare = value.match(/[^\\s<>\"]+@[^\\s<>\"]+/);\n  return bare ? bare[0].trim() : value.trim();\n}\n\n// Walk the MIME tree and return the first text/plain body (base64url-decoded).\nfunction findPlainText(part) {\n  if (!part) return '';\n  const mime = part.mimeType || '';\n  if (mime === 'text/plain' && part.body && part.body.data) {\n    return Buffer.from(part.body.data, 'base64url').toString('utf8');\n  }\n  if (Array.isArray(part.parts)) {\n    for (const p of part.parts) {\n      const found = findPlainText(p);\n      if (found) return found;\n    }\n  }\n  return '';\n}\n\n// Single-part messages carry the body directly on payload.body.data.\nlet text = findPlainText(payload);\nif (!text && payload.body && payload.body.data && (payload.mimeType || '').startsWith('text/')) {\n  text = Buffer.from(payload.body.data, 'base64url').toString('utf8');\n}\n\nreturn {\n  id: msg.id,\n  threadId: msg.threadId,\n  from: { value: [{ address: addr(header('From')) }] },\n  to: { value: [{ address: addr(header('To')) }] },\n  subject: header('Subject'),\n  date: (() => { const t = Date.parse(header('Date')); return Number.isNaN(t) ? null : new Date(t).toISOString(); })(),\n  text: text,\n  inReplyTo: header('In-Reply-To'),\n  references: header('References'),\n};\n"
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
     },
     {
-      "id": "cb0c441f-df40-49af-8d26-908f789eb804",
+      "id": "3472b1c6-29a2-48d1-b48c-9dc93fd13ec8",
+      "name": "Get many messages",
+      "parameters": {
+        "jsCode": "// MBOX-466: normalize Gmail REST (users.messages.get?format=full) output\n// back to the simpleParser-style shape the downstream `Extract Fields` set\n// node consumes (from.value[0].address, to.value[0].address, subject, date,\n// text, inReplyTo, references). The old n8n Gmail node emitted these even with\n// simple:false; raw REST does not, so we rebuild them here.\nconst msg = $json;\nconst payload = msg.payload || {};\nconst headers = payload.headers || [];\n\nfunction header(name) {\n  const target = name.toLowerCase();\n  const h = headers.find((x) => x && typeof x.name === 'string' && x.name.toLowerCase() === target);\n  return h ? h.value : '';\n}\n\n// Extract the bare email address from a header like \"Name <email>\" or \"email\".\nfunction addr(value) {\n  if (!value) return '';\n  const angle = value.match(/<([^>]+)>/);\n  if (angle) return angle[1].trim();\n  const bare = value.match(/[^\\s<>\"]+@[^\\s<>\"]+/);\n  return bare ? bare[0].trim() : value.trim();\n}\n\n// Walk the MIME tree and return the first text/plain body (base64url-decoded).\nfunction findPlainText(part) {\n  if (!part) return '';\n  const mime = part.mimeType || '';\n  if (mime === 'text/plain' && part.body && part.body.data) {\n    return Buffer.from(part.body.data, 'base64url').toString('utf8');\n  }\n  if (Array.isArray(part.parts)) {\n    for (const p of part.parts) {\n      const found = findPlainText(p);\n      if (found) return found;\n    }\n  }\n  return '';\n}\n\n// Single-part messages carry the body directly on payload.body.data.\nlet text = findPlainText(payload);\nif (!text && payload.body && payload.body.data && (payload.mimeType || '').startsWith('text/')) {\n  text = Buffer.from(payload.body.data, 'base64url').toString('utf8');\n}\n\nreturn {\n  id: msg.id,\n  threadId: msg.threadId,\n  from: { value: [{ address: addr(header('From')) }] },\n  to: { value: [{ address: (header('To') || '').trim() }] },\n  subject: header('Subject'),\n  date: (() => { const t = Date.parse(header('Date')); return Number.isNaN(t) ? null : new Date(t).toISOString(); })(),\n  text: text,\n  inReplyTo: header('In-Reply-To'),\n  references: header('References'),\n};\n",
+        "mode": "runOnceForEachItem"
+      },
+      "position": [
+        656,
+        176
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "ea6e2864-3c5f-482d-9592-bbb8b489e883",
       "name": "Extract Fields",
       "parameters": {
         "assignments": {
@@ -430,34 +445,34 @@
         "options": {}
       },
       "position": [
-        440,
-        0
+        416,
+        208
       ],
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4
     },
     {
-      "id": "b03f0cf8-12fb-4a81-91b2-118fcdf91845",
+      "id": "84260151-424e-441f-8f81-bd2e2dd3f5c4",
       "name": "Insert Inbox (HTTP)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
-      "position": [
-        660,
-        0
-      ],
       "parameters": {
+        "jsonBody": "={\n  \"message_id\": {{ JSON.stringify($json.message_id || \"\") }},\n  \"thread_id\": {{ JSON.stringify($json.thread_id || \"\") }},\n  \"from_addr\": {{ JSON.stringify($json.from_addr || \"\") }},\n  \"to_addr\": {{ JSON.stringify($json.to_addr || \"\") }},\n  \"subject\": {{ JSON.stringify($json.subject || \"\") }},\n  \"received_at\": {{ JSON.stringify($json.received_at || \"\") }},\n  \"snippet\": {{ JSON.stringify($json.snippet || \"\") }},\n  \"body\": {{ JSON.stringify($json.body || \"\") }},\n  \"in_reply_to\": {{ JSON.stringify($json.in_reply_to || \"\") }},\n  \"references\": {{ JSON.stringify($json.references || \"\") }},\n  \"account_email\": {{ JSON.stringify($('List Accounts').item.json.account_email || \"\") }}\n}",
         "method": "POST",
-        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/inbox-messages",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"message_id\": {{ JSON.stringify($json.message_id || \"\") }},\n  \"thread_id\": {{ JSON.stringify($json.thread_id || \"\") }},\n  \"from_addr\": {{ JSON.stringify($json.from_addr || \"\") }},\n  \"to_addr\": {{ JSON.stringify($json.to_addr || \"\") }},\n  \"subject\": {{ JSON.stringify($json.subject || \"\") }},\n  \"received_at\": {{ JSON.stringify($json.received_at || \"\") }},\n  \"snippet\": {{ JSON.stringify($json.snippet || \"\") }},\n  \"body\": {{ JSON.stringify($json.body || \"\") }},\n  \"in_reply_to\": {{ JSON.stringify($json.in_reply_to || \"\") }},\n  \"references\": {{ JSON.stringify($json.references || \"\") }},\n  \"account_email\": {{ JSON.stringify($('Bootstrap Check').item.json.account_email || \"\") }}\n}",
         "options": {
           "timeout": 5000
-        }
-      }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/inbox-messages"
+      },
+      "position": [
+        544,
+        -48
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
     },
     {
-      "id": "exw00000-0000-0000-0000-000000000001",
+      "id": "324f045c-03dd-47a6-a3b6-a00f5323aba4",
       "name": "Run Classify Sub",
       "parameters": {
         "options": {},
@@ -468,111 +483,146 @@
         }
       },
       "position": [
-        880,
-        0
+        960,
+        160
       ],
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2
     },
     {
-      "id": "673d55a9-1a44-4c1d-a2e0-1bca7394988b",
+      "id": "66f25a5d-8275-44e7-a475-2731f170a1ba",
       "name": "Only If Newly Inserted",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        770,
-        0
-      ],
       "parameters": {
         "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "243a7971-779a-4c76-b3b7-2aaf09735dfe",
+              "leftValue": "={{ $json.created }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": true
+            }
+          ],
           "options": {
             "caseSensitive": true,
             "leftValue": "",
             "typeValidation": "strict",
             "version": 2
-          },
-          "conditions": [
-            {
-              "id": "243a7971-779a-4c76-b3b7-2aaf09735dfe",
-              "leftValue": "={{ $json.created }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
+          }
         },
         "options": {}
-      }
-    },
-    {
-      "name": "Bootstrap Check",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      },
       "position": [
-        0,
+        704,
         0
       ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "90c85912-8eea-4737-9b0e-3e755e14934d",
+      "name": "Bootstrap Check",
       "parameters": {
-        "method": "GET",
-        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/gmail-bootstrap",
         "options": {
           "timeout": 5000
-        }
-      }
-    },
-    {
-      "name": "Cycle Stats",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+        },
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/gmail-bootstrap"
+      },
       "position": [
-        440,
-        200
+        -256,
+        0
       ],
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "return [{ json: { messages_returned: items.length } }];"
-      }
-    },
-    {
-      "name": "Cycle Complete",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        660,
-        200
-      ],
+      "typeVersion": 4.2
+    },
+    {
+      "id": "19316f64-002b-4d4f-8760-12332d51e53c",
+      "name": "Cycle Stats",
       "parameters": {
+        "jsCode": "return [{ json: { messages_returned: items.length } }];"
+      },
+      "position": [
+        272,
+        368
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "de5f0f8b-a7ac-4ca6-a049-0e81645c2085",
+      "name": "Cycle Complete",
+      "parameters": {
+        "jsonBody": "={\n  \"messages_returned\": {{ $json.messages_returned }}\n}",
         "method": "POST",
-        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/gmail-cycle-complete",
+        "options": {
+          "timeout": 5000
+        },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"messages_returned\": {{ $json.messages_returned }}\n}",
-        "options": {
-          "timeout": 5000
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/gmail-cycle-complete"
+      },
+      "position": [
+        496,
+        368
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
         }
-      }
+      },
+      "id": "b7a1c2d3-1111-4aaa-9bbb-2cc3dd4ee5f6",
+      "name": "List Accounts",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT email_address AS account_email FROM mailbox.accounts WHERE email_address <> 'primary@appliance.local' ORDER BY id"
+      },
+      "position": [
+        -120,
+        176
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "id": "c8d2e3f4-2222-4bbb-8ccc-3dd4ee5ff6a7",
+      "name": "Ensure Messages",
+      "parameters": {
+        "jsCode": "// MBOX-466 multi-account: Gmail list response omits `messages` when an\n// account has no matches; default to [] so Split Messages emits 0 items\n// instead of erroring and killing the whole multi-account cycle.\nreturn { json: { messages: $json.messages || [] } };",
+        "mode": "runOnceForEachItem"
+      },
+      "position": [
+        224,
+        112
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
     }
   ],
   "pinData": {},
   "settings": {
+    "binaryMode": "separate",
     "errorWorkflow": "MlbxErrHandler01",
-    "executionOrder": "v1",
-    "saveDataSuccessExecution": "none"
+    "executionOrder": "v1"
   },
+  "sourceWorkflowId": null,
   "staticData": {
-    "node:Every 5 Minute": {
-      "recurrenceRules": []
-    },
     "node:Every 5 Minutes": {
-      "recurrenceRules": []
-    },
-    "node:Every Minute": {
       "recurrenceRules": []
     }
   },
-  "tags": []
+  "tags": [],
+  "versionMetadata": {
+    "description": null,
+    "name": null
+  }
 }
