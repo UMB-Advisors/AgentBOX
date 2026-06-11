@@ -6,7 +6,11 @@ import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { Toast } from "@nous-research/ui/ui/components/toast";
 import { useModalBehavior } from "@/hooks/useModalBehavior";
 import { api } from "@/lib/api";
-import type { CronTemplateMessage, CronTemplateProposal } from "@/lib/api";
+import type {
+  CronTemplateMessage,
+  CronTemplateProposal,
+  AgentTemplateSummary,
+} from "@/lib/api";
 import type { Department } from "@/lib/crm";
 import { cn, themedBody } from "@/lib/utils";
 
@@ -126,6 +130,9 @@ export interface CronTemplateBuilderProps {
   /** Called when the user accepts a draft. `departmentId` is "" when no CRM
    *  department matches the template category. */
   onUse: (proposal: CronTemplateProposal, departmentId: string) => void;
+  /** Optional Agent Template id to pre-ground the conversation in (e.g. the
+   *  template already applied in the create form). "" / undefined = none. */
+  defaultTemplateId?: string;
 }
 
 /** Interactive, LLM-assisted builder for a new agent job. The user picks a
@@ -139,6 +146,7 @@ export function CronTemplateBuilder({
   onClose,
   departments,
   onUse,
+  defaultTemplateId = "",
 }: CronTemplateBuilderProps) {
   const { toast, showToast } = useToast();
   const [messages, setMessages] = useState<CronTemplateMessage[]>([]);
@@ -147,9 +155,24 @@ export function CronTemplateBuilder({
   const [proposal, setProposal] = useState<CronTemplateProposal | null>(null);
   // Category of the picked template, so the accepted job can inherit a Department.
   const [pickedCategory, setPickedCategory] = useState("");
+  // AgentBOX pattern grounding: when set, the generated prompt follows that
+  // template's structure (passed to the assist endpoint as template_id).
+  const [patterns, setPatterns] = useState<AgentTemplateSummary[]>([]);
+  const [activeTemplateId, setActiveTemplateId] = useState(defaultTemplateId);
   const threadRef = useRef<HTMLDivElement>(null);
 
   const modalRef = useModalBehavior({ open: true, onClose });
+
+  // Load AgentBOX pattern templates for the grounding selector. If unreachable
+  // the selector just stays empty and the builder works generically.
+  useEffect(() => {
+    api
+      .getAgentTemplates()
+      .then((r) => setPatterns(r.templates ?? []))
+      .catch(() => setPatterns([]));
+  }, []);
+
+  const activePattern = patterns.find((p) => p.id === activeTemplateId) ?? null;
 
   // Keep the transcript scrolled to the latest turn.
   useEffect(() => {
@@ -169,7 +192,7 @@ export function CronTemplateBuilder({
       setInput("");
       setSending(true);
       try {
-        const res = await api.assistCronTemplate(next);
+        const res = await api.assistCronTemplate(next, activeTemplateId || null);
         setMessages([...next, { role: "assistant", content: res.reply }]);
         if (res.proposal) setProposal(res.proposal);
       } catch (e) {
@@ -180,7 +203,7 @@ export function CronTemplateBuilder({
         setSending(false);
       }
     },
-    [messages, sending, showToast],
+    [messages, sending, showToast, activeTemplateId],
   );
 
   const handleUse = useCallback(() => {
@@ -232,6 +255,40 @@ export function CronTemplateBuilder({
         <div className="grid min-h-0 flex-1 grid-cols-1 sm:grid-cols-[260px_1fr]">
           {/* Template gallery, grouped by department */}
           <aside className="min-h-0 overflow-y-auto border-b border-border p-4 sm:border-b-0 sm:border-r">
+            {patterns.length > 0 && (
+              <div className="mb-4">
+                <p className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
+                  Ground in a pattern
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {patterns.map((p) => {
+                    const active = p.id === activeTemplateId;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setActiveTemplateId(active ? "" : p.id)}
+                        aria-pressed={active}
+                        className={cn(
+                          "flex flex-col items-start gap-0.5 border px-2.5 py-2 text-left text-sm transition-colors",
+                          active
+                            ? "border-primary bg-primary/10"
+                            : "border-border bg-background/40 hover:border-foreground/30 hover:bg-background/70",
+                        )}
+                      >
+                        <span className="font-courier text-foreground">{p.name}</span>
+                        <span className="text-xs text-muted-foreground">{p.summary}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {activePattern && (
+                  <p className="mt-1.5 text-xs text-primary">
+                    The drafted prompt will follow this pattern. Click again to clear.
+                  </p>
+                )}
+              </div>
+            )}
             <p className="mb-3 text-xs uppercase tracking-wider text-muted-foreground">
               Templates by department
             </p>
@@ -272,8 +329,9 @@ export function CronTemplateBuilder({
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
                   <Sparkles className="size-6 text-primary/60" />
                   <p>
-                    Pick a template on the left, or describe the job you want
-                    below.
+                    {activePattern
+                      ? `Describe your outcome — the assistant will draft a prompt that follows the ${activePattern.name} pattern.`
+                      : "Pick a template on the left, or describe the job you want below."}
                   </p>
                   <p className="text-xs">
                     The assistant will ask a question or two, then draft a

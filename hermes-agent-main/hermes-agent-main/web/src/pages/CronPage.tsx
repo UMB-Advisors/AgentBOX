@@ -681,6 +681,7 @@ export default function CronPage() {
           onClose={() => setTemplateBuilderOpen(false)}
           departments={departments}
           onUse={applyProposal}
+          defaultTemplateId={appliedTemplate?.id}
         />
       )}
 

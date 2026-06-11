@@ -5147,6 +5147,62 @@ class CronTemplateMessage(BaseModel):
 
 class CronTemplateAssistRequest(BaseModel):
     messages: List[CronTemplateMessage]
+    # Optional Agent Template id (hermes_cli/agent_templates). When set, the
+    # assistant grounds the generated prompt in that template's pattern.
+    template_id: Optional[str] = None
+
+
+def _template_grounding(template_id: Optional[str]) -> str:
+    """Build a system-prompt suffix that grounds generation in a template.
+
+    When the builder is anchored to an Agent Template, the produced prompt must
+    follow that template's pattern (deterministic fan, typed artifacts, the
+    cloud-escalation node, the human approve gate, propose-only review). Returns
+    "" when no/unknown template so the builder stays fully generic by default.
+    """
+    tid = (template_id or "").strip()
+    if not tid:
+        return ""
+    try:
+        from hermes_cli import agent_templates
+        tpl = agent_templates.get_template(tid)
+    except Exception:
+        _log.debug("template grounding lookup failed for %s", tid, exc_info=True)
+        return ""
+    if not tpl:
+        return ""
+
+    defaults = tpl.get("defaults") or {}
+    skeleton = str(defaults.get("prompt") or "").strip()
+    prims = "; ".join(
+        f"{p.get('key')}: {p.get('title')}"
+        for p in (tpl.get("primitives") or [])
+        if p.get("key")
+    )
+    nodes = " -> ".join(
+        f"{n.get('n')} {n.get('node')}"
+        f"[{'model' if n.get('probabilistic') else 'deterministic'}; {n.get('routing_t2')}]"
+        for n in (tpl.get("nodes") or [])
+        if n.get("node")
+    )
+
+    out = [
+        f"\n\nTEMPLATE GROUNDING — the user is building this job from the "
+        f"\"{tpl.get('name', '')}\" pattern (tier {tpl.get('hardware_tier', '')}). "
+        "The FINAL prompt you produce MUST follow this pattern's structure."
+    ]
+    if prims:
+        out.append(f"Primitives — {prims}.")
+    if nodes:
+        out.append(f"Node fan — {nodes}.")
+    if skeleton:
+        out.append(
+            "Use this skeleton as the backbone, adapting it to the user's "
+            "outcome (keep the deterministic fan, typed artifacts between nodes, "
+            "the cloud-escalation node, the human approve gate, and the "
+            "propose-only review loop):\n" + skeleton
+        )
+    return "\n".join(out)
 
 
 def _extract_cron_proposal(text: str) -> Optional[Dict[str, Any]]:
@@ -5213,7 +5269,8 @@ def cron_template_assist(body: CronTemplateAssistRequest):
     if not convo:
         raise HTTPException(status_code=400, detail="messages required")
 
-    messages = [{"role": "system", "content": _CRON_TEMPLATE_SYSTEM_PROMPT}, *convo]
+    system_prompt = _CRON_TEMPLATE_SYSTEM_PROMPT + _template_grounding(body.template_id)
+    messages = [{"role": "system", "content": system_prompt}, *convo]
 
     # Match the dashboard's configured brain. Empty → call_llm auto-detects.
     provider = model = None
