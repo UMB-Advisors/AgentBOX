@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExternalLink, KeyRound, RefreshCw } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -10,11 +10,16 @@ import { Toast } from "@nous-research/ui/ui/components/toast";
 import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { Link } from "react-router-dom";
 import { PluginPage } from "@/plugins";
-import KanbanListView from "@/components/KanbanListView";
+import CommandPalette, { type PaletteCommand } from "@/components/CommandPalette";
+import KanbanListView, {
+  type GroupBy,
+  type TaskContextAction,
+} from "@/components/KanbanListView";
 import { cn } from "@/lib/utils";
 import { parseQuickAdd } from "@/lib/quickAdd";
 import {
   api,
+  type KanbanTask,
   type LinearBoard,
   type LinearTeam,
   type TaskProviderId,
@@ -158,6 +163,15 @@ export default function OrgTasks({ kanbanName }: { kanbanName: string | null }) 
 // through a stable DOM id instead.
 const QUICK_ADD_INPUT_ID = "kanban-quick-add-input";
 
+interface PaletteState {
+  open: boolean;
+  /** Non-null = the palette opened in this task's context (row hotkeys). */
+  task: KanbanTask | null;
+  action: TaskContextAction | null;
+}
+
+const PALETTE_CLOSED: PaletteState = { open: false, task: null, action: null };
+
 function NativeTasks({ kanbanName }: { kanbanName: string }) {
   const { toast, showToast } = useToast();
   const [subView, setSubView] = useState<NativeSubView>(readStoredSubView);
@@ -165,6 +179,11 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
   // so the list refetches without owning that plumbing itself.
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [assigneeNames, setAssigneeNames] = useState<string[]>([]);
+  // Group-by lives here (not in the list) so the palette can drive it.
+  const [groupBy, setGroupBy] = useState<GroupBy>("status");
+  const [requestedTaskId, setRequestedTaskId] = useState<string | null>(null);
+  const [palette, setPalette] = useState<PaletteState>(PALETTE_CLOSED);
+  const [paletteTasks, setPaletteTasks] = useState<KanbanTask[]>([]);
 
   const selectSubView = useCallback((v: NativeSubView) => {
     setSubView(v);
@@ -192,6 +211,102 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
       alive = false;
     };
   }, [refreshNonce]);
+
+  const openPalette = useCallback(
+    (task: KanbanTask | null = null, action: TaskContextAction | null = null) => {
+      setPalette({ open: true, task, action });
+      // Fresh task list for the fuzzy search — fetched here because the
+      // Board sub-view is an opaque plugin embed with no board we can read.
+      api
+        .getKanbanBoard()
+        .then((b) => setPaletteTasks(b.columns.flatMap((c) => c.tasks)))
+        .catch(() => {});
+    },
+    [],
+  );
+
+  const closePalette = useCallback(() => setPalette(PALETTE_CLOSED), []);
+
+  // Cmd/Ctrl+K toggles the palette (PRD §1.4). Scoped to the Tasks tab by
+  // construction: the listener mounts with NativeTasks and the cleanup
+  // removes it on unmount — no global leak.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (palette.open) closePalette();
+        else openPalette();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [palette.open, openPalette, closePalette]);
+
+  const focusQuickAdd = useCallback(() => {
+    document.getElementById(QUICK_ADD_INPUT_ID)?.focus();
+  }, []);
+
+  // Palette task pick → the detail panel lives in the List view; switch
+  // there if needed and let the list open it (smallest reading of PRD §1.4
+  // "select → opens detail panel").
+  const openTaskDetail = useCallback(
+    (task: KanbanTask) => {
+      selectSubView("list");
+      setRequestedTaskId(task.id);
+    },
+    [selectSubView],
+  );
+
+  const handleRequestedTask = useCallback(() => setRequestedTaskId(null), []);
+
+  // Row hotkeys s/p/a/c jump straight into the palette's task submenus.
+  const handleTaskAction = useCallback(
+    (task: KanbanTask, action: TaskContextAction) => openPalette(task, action),
+    [openPalette],
+  );
+
+  const commands = useMemo<PaletteCommand[]>(
+    () => [
+      { id: "new-task", label: "New task", hint: "quick-add", run: focusQuickAdd },
+      {
+        id: "view-board",
+        label: "Switch to Board view",
+        run: () => selectSubView("board"),
+      },
+      {
+        id: "view-list",
+        label: "Switch to List view",
+        run: () => selectSubView("list"),
+      },
+      // Grouping renders in the List view; switch over so it's visible.
+      {
+        id: "group-status",
+        label: "Group by Status",
+        run: () => {
+          setGroupBy("status");
+          selectSubView("list");
+        },
+      },
+      {
+        id: "group-assignee",
+        label: "Group by Assignee",
+        run: () => {
+          setGroupBy("assignee");
+          selectSubView("list");
+        },
+      },
+      {
+        id: "group-priority",
+        label: "Group by Priority",
+        run: () => {
+          setGroupBy("priority");
+          selectSubView("list");
+        },
+      },
+      { id: "refresh", label: "Refresh tasks", run: bumpRefresh },
+    ],
+    [bumpRefresh, focusQuickAdd, selectSubView],
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -232,8 +347,28 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
         <KanbanListView
           onOpenBoard={() => selectSubView("board")}
           refreshNonce={refreshNonce}
+          groupBy={groupBy}
+          onGroupByChange={setGroupBy}
+          requestedTaskId={requestedTaskId}
+          onRequestedTaskHandled={handleRequestedTask}
+          onTaskAction={handleTaskAction}
+          onFocusQuickAdd={focusQuickAdd}
+          hotkeysEnabled={!palette.open}
         />
       )}
+
+      <CommandPalette
+        open={palette.open}
+        onClose={closePalette}
+        commands={commands}
+        tasks={paletteTasks}
+        assignees={assigneeNames}
+        initialTask={palette.task}
+        initialAction={palette.action}
+        onOpenTask={openTaskDetail}
+        onMutated={bumpRefresh}
+        notify={showToast}
+      />
     </div>
   );
 }

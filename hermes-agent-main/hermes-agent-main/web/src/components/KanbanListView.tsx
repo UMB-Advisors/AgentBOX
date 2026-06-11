@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ExternalLink, MessageSquare, RefreshCw, X } from "lucide-react";
+import { CircleHelp, ExternalLink, MessageSquare, RefreshCw, X } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Card, CardContent } from "@nous-research/ui/ui/components/card";
@@ -33,7 +33,11 @@ import {
 // implied by PRD §1.3's quick-add aliases (!urgent=3 !high=2 !medium=1
 // !low=0); out-of-range ints still render as `P{n}`.
 
-type GroupBy = "status" | "assignee" | "priority";
+export type GroupBy = "status" | "assignee" | "priority";
+
+/** Task-context actions shared by the row hotkeys (s/p/a/c) and the command
+ *  palette submenus (PRD §1.4). */
+export type TaskContextAction = "status" | "priority" | "assignee" | "comment";
 
 interface TaskGroup {
   key: string;
@@ -57,7 +61,7 @@ const STATUS_ORDER = [
 // owned and "review" has no transition verb (the plugin API 400s on both),
 // so neither is offered as an edit target — tasks already in them still
 // render, and their current status is prepended so the select isn't blank.
-const SETTABLE_STATUSES = [
+export const SETTABLE_STATUSES = [
   "triage",
   "todo",
   "scheduled",
@@ -71,7 +75,7 @@ const SETTABLE_STATUSES = [
 // bulk archiving is the separate `archive` flag, out of scope for the v1 bar.
 const BULK_STATUSES = ["triage", "todo", "scheduled", "ready", "blocked", "done"];
 
-const PRIORITY_OPTIONS: Array<{ value: number; label: string }> = [
+export const PRIORITY_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 3, label: "Urgent" },
   { value: 2, label: "High" },
   { value: 1, label: "Medium" },
@@ -84,7 +88,7 @@ const PRIORITY_OPTIONS: Array<{ value: number; label: string }> = [
 // unassigns on empty string).
 const UNASSIGN_SENTINEL = "__unassign__";
 
-function priorityLabel(p: number): string {
+export function priorityLabel(p: number): string {
   return PRIORITY_OPTIONS.find((o) => o.value === p)?.label ?? `P${p}`;
 }
 
@@ -94,7 +98,7 @@ function priorityTone(p: number): "warning" | "secondary" | "outline" {
   return "outline";
 }
 
-function shortId(id: string): string {
+export function shortId(id: string): string {
   return id.slice(0, 8);
 }
 
@@ -177,20 +181,75 @@ function groupTasks(tasks: KanbanTask[], groupBy: GroupBy): TaskGroup[] {
   return groups;
 }
 
+const KEY_TO_ACTION: Record<string, TaskContextAction> = {
+  s: "status",
+  p: "priority",
+  a: "assignee",
+  c: "comment",
+};
+
+// Documented in the "?" help popover (PRD §1.4 keyboard map).
+const SHORTCUTS: Array<{ keys: string; what: string }> = [
+  { keys: "↑ / ↓", what: "Move row focus" },
+  { keys: "Enter", what: "Open detail" },
+  { keys: "x", what: "Toggle select" },
+  { keys: "s", what: "Set status" },
+  { keys: "p", what: "Set priority" },
+  { keys: "a", what: "Assign" },
+  { keys: "c", what: "Comment" },
+  { keys: "/", what: "Focus quick-add" },
+  { keys: "Cmd/Ctrl+K", what: "Command palette" },
+  { keys: "?", what: "This help" },
+];
+
+function rowDomId(id: string): string {
+  return `kanban-row-${id}`;
+}
+
+function isEditableTarget(t: EventTarget | null): boolean {
+  return (
+    t instanceof HTMLElement &&
+    (t.tagName === "INPUT" ||
+      t.tagName === "TEXTAREA" ||
+      t.tagName === "SELECT" ||
+      t.isContentEditable)
+  );
+}
+
 export default function KanbanListView({
   onOpenBoard,
   refreshNonce,
+  groupBy,
+  onGroupByChange,
+  requestedTaskId,
+  onRequestedTaskHandled,
+  onTaskAction,
+  onFocusQuickAdd,
+  hotkeysEnabled,
 }: {
   onOpenBoard: () => void;
-  /** Bumped by the parent after out-of-view mutations (quick-add) to force
-   *  a refetch without the list owning that plumbing. */
+  /** Bumped by the parent after out-of-view mutations (quick-add, palette)
+   *  to force a refetch without the list owning that plumbing. */
   refreshNonce: number;
+  /** Lifted so the command palette's "Group by …" can drive it (PRD §1.4). */
+  groupBy: GroupBy;
+  onGroupByChange: (groupBy: GroupBy) => void;
+  /** Palette task pick → open this task's detail panel, then ack. */
+  requestedTaskId: string | null;
+  onRequestedTaskHandled: () => void;
+  /** Row hotkeys s/p/a/c — parent opens the palette in task context. */
+  onTaskAction: (task: KanbanTask, action: TaskContextAction) => void;
+  /** "/" hotkey — parent focuses the quick-add bar. */
+  onFocusQuickAdd: () => void;
+  /** Parent disables row hotkeys while the palette overlay is open. */
+  hotkeysEnabled: boolean;
 }) {
   const { toast, showToast } = useToast();
   const [board, setBoard] = useState<KanbanBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [groupBy, setGroupBy] = useState<GroupBy>("status");
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -221,6 +280,8 @@ export default function KanbanListView({
     [board],
   );
   const groups = useMemo(() => groupTasks(tasks, groupBy), [tasks, groupBy]);
+  // Flattened visible order for ↑/↓ row focus.
+  const flatTasks = useMemo(() => groups.flatMap((g) => g.tasks), [groups]);
   const assignees = board?.assignees ?? [];
   const detail =
     detailId != null ? (tasks.find((t) => t.id === detailId) ?? null) : null;
@@ -286,6 +347,84 @@ export default function KanbanListView({
     });
   }, []);
 
+  const openTask = useCallback((id: string) => {
+    setFocusedId(id);
+    setDetailId(id);
+  }, []);
+
+  // External detail-open requests (palette task pick / "Open detail").
+  useEffect(() => {
+    if (requestedTaskId == null) return;
+    openTask(requestedTaskId);
+    onRequestedTaskHandled();
+  }, [requestedTaskId, onRequestedTaskHandled, openTask]);
+
+  // Row keyboard map (PRD §1.4). One window listener while the list is
+  // mounted, removed on cleanup — no global leaks. It yields whenever a
+  // modal layer owns the keyboard (detail panel; palette via
+  // `hotkeysEnabled`) or focus sits in a form field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!hotkeysEnabled || detailId != null) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isEditableTarget(e.target)) return;
+      if (e.key === "?") {
+        e.preventDefault();
+        setHelpOpen((v) => !v);
+        return;
+      }
+      if (helpOpen) {
+        if (e.key === "Escape") setHelpOpen(false);
+        return;
+      }
+      if (e.key === "/") {
+        e.preventDefault();
+        onFocusQuickAdd();
+        return;
+      }
+      if (!flatTasks.length) return;
+      const idx =
+        focusedId != null ? flatTasks.findIndex((t) => t.id === focusedId) : -1;
+      const focused = idx >= 0 ? flatTasks[idx] : null;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const nextIdx =
+          e.key === "ArrowDown"
+            ? Math.min(idx + 1, flatTasks.length - 1)
+            : Math.max(idx - 1, 0);
+        const next = flatTasks[nextIdx];
+        setFocusedId(next.id);
+        document
+          .getElementById(rowDomId(next.id))
+          ?.scrollIntoView({ block: "nearest" });
+        return;
+      }
+      if (!focused) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        openTask(focused.id);
+      } else if (e.key === "x") {
+        e.preventDefault();
+        toggleSelect(focused.id);
+      } else if (e.key in KEY_TO_ACTION) {
+        e.preventDefault();
+        onTaskAction(focused, KEY_TO_ACTION[e.key]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    detailId,
+    flatTasks,
+    focusedId,
+    helpOpen,
+    hotkeysEnabled,
+    onFocusQuickAdd,
+    onTaskAction,
+    openTask,
+    toggleSelect,
+  ]);
+
   if (error && !board) {
     return (
       <Card>
@@ -321,7 +460,7 @@ export default function KanbanListView({
           id="kanban-group-by"
           className="w-36"
           value={groupBy}
-          onValueChange={(v) => setGroupBy(v as GroupBy)}
+          onValueChange={(v) => onGroupByChange(v as GroupBy)}
           aria-label="Group tasks by"
         >
           <SelectOption value="status">Status</SelectOption>
@@ -340,6 +479,51 @@ export default function KanbanListView({
         <span className="text-xs text-muted-foreground">
           {tasks.length} task{tasks.length === 1 ? "" : "s"}
         </span>
+        <div className="relative ml-auto">
+          <Button
+            type="button"
+            ghost
+            size="icon"
+            aria-label="Keyboard shortcuts"
+            onClick={() => setHelpOpen((v) => !v)}
+          >
+            <CircleHelp className="h-4 w-4" />
+          </Button>
+          {helpOpen && (
+            <div
+              role="dialog"
+              aria-label="Keyboard shortcuts"
+              className="absolute right-0 z-50 mt-1 w-64 rounded-md border border-border bg-card p-3 shadow-xl"
+            >
+              <div className="flex items-center justify-between pb-2">
+                <span className="text-xs font-medium uppercase text-muted-foreground">
+                  Keyboard
+                </span>
+                <Button
+                  ghost
+                  size="icon"
+                  aria-label="Close shortcuts"
+                  onClick={() => setHelpOpen(false)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <ul className="flex flex-col gap-1 text-xs">
+                {SHORTCUTS.map((sc) => (
+                  <li
+                    key={sc.what}
+                    className="flex items-center justify-between gap-3"
+                  >
+                    <span className="text-muted-foreground">{sc.what}</span>
+                    <kbd className="rounded border border-border bg-midground/10 px-1 font-mono text-[10px]">
+                      {sc.keys}
+                    </kbd>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       </div>
 
       {selected.size > 0 && (
@@ -372,8 +556,9 @@ export default function KanbanListView({
                     task={t}
                     groupBy={groupBy}
                     selected={selected.has(t.id)}
+                    focused={focusedId === t.id}
                     onToggleSelect={toggleSelect}
-                    onOpen={setDetailId}
+                    onOpen={openTask}
                   />
                 ))}
               </ul>
@@ -465,17 +650,20 @@ function TaskRow({
   task,
   groupBy,
   selected,
+  focused,
   onToggleSelect,
   onOpen,
 }: {
   task: KanbanTask;
   groupBy: GroupBy;
   selected: boolean;
+  /** Keyboard row focus (↑/↓) — visual ring only, separate from selection. */
+  focused: boolean;
   onToggleSelect: (id: string) => void;
   onOpen: (id: string) => void;
 }) {
   return (
-    <li>
+    <li id={rowDomId(task.id)}>
       <div
         role="button"
         tabIndex={0}
@@ -486,6 +674,7 @@ function TaskRow({
         className={cn(
           "flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-midground/5",
           selected && "bg-midground/8",
+          focused && "ring-1 ring-inset ring-brand",
         )}
       >
         {/* Checkbox clicks must not open the detail panel. */}
