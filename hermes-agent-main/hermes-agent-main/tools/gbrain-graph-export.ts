@@ -353,6 +353,30 @@ async function main(): Promise<void> {
     });
   }
 
+  // ── Tour (Learn mode) ───────────────────────────────────────────────────────
+  // UA's "Learn mode" walks graph.tour; its store no-ops every tour action when
+  // tour is empty (`if (!graph.tour || graph.tour.length === 0) return`), so an
+  // empty tour makes Learn mode silently do nothing. Build a deterministic tour
+  // — one step per layer (cluster), same shape as UA's generateHeuristicTour —
+  // so Learn mode steps through the brain's topical clusters. No LLM.
+  const tour = layers.map((layer, i) => {
+    const names = layer.nodeIds
+      .map((id) => nameById.get(id))
+      .filter((n): n is string => Boolean(n))
+      .slice(0, 6);
+    const more =
+      layer.nodeIds.length > names.length
+        ? `, +${layer.nodeIds.length - names.length} more`
+        : "";
+    const keyNotes = names.length ? ` Key notes: ${names.join(", ")}${more}.` : "";
+    return {
+      order: i + 1,
+      title: layer.name,
+      description: `${layer.description}${keyNotes}`,
+      nodeIds: layer.nodeIds,
+    };
+  });
+
   const graph = {
     version: "1.0.0",
     kind: "knowledge",
@@ -368,14 +392,14 @@ async function main(): Promise<void> {
     nodes,
     edges,
     layers,
-    tour: [],
+    tour,
   };
 
   await Bun.write(outPath, JSON.stringify(graph, null, 2));
   console.error(
     `gbrain-graph-export: pages=${pages.length} link-edges=${linkEdgeCount} ` +
       `similarity-edges=${simEdgeCount} total-edges=${edges.length} ` +
-      `layers=${layers.length} → ${outPath}`,
+      `layers=${layers.length} tour=${tour.length} → ${outPath}`,
   );
 
   if (typeof engine.close === "function") {
