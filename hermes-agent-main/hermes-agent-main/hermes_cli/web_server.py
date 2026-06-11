@@ -774,7 +774,7 @@ def _gbrain_cli_text(args: List[str], timeout: float = 30.0) -> Optional[str]:
 # relative imports (../core/…) require it to run from inside the gbrain source
 # tree, so we self-install it into $GBRAIN_DIR/src/tools/ before running.
 # Generation runs in a background thread (PGLite + bun is seconds-to-minutes);
-# the GraphPage UI polls /api/graph/status.
+# the GraphPage UI polls /graph-app/status.
 _GRAPH_GEN_LOCK = threading.Lock()
 _GRAPH_GEN: Dict[str, Any] = {
     "busy": False,
@@ -796,7 +796,7 @@ def _run_graph_export() -> None:
     Background-thread worker. Resolves bun + the gbrain checkout the same way as
     the digest helpers, self-installs the adapter into the gbrain source tree
     (its relative imports require that location), runs it, and records the
-    outcome in ``_GRAPH_GEN`` for ``/api/graph/status``. Never raises.
+    outcome in ``_GRAPH_GEN`` for ``/graph-app/status``. Never raises.
     """
     bun = os.environ.get("GBRAIN_BUN") or str(Path.home() / ".bun" / "bin" / "bun")
     gbrain_dir = Path(os.environ.get("GBRAIN_DIR") or (Path.home() / "gbrain-src"))
@@ -6540,7 +6540,7 @@ def mount_spa(application: FastAPI):
 
     # Brain Graph: serve the static UA bundle + gbrain snapshot same-origin under
     # /graph-app/. Served DYNAMICALLY (per-request) rather than via a startup
-    # StaticFiles mount, so a graph generated at runtime (POST /api/graph/generate)
+    # StaticFiles mount, so a graph generated at runtime (POST /graph-app/generate)
     # is visible WITHOUT a dashboard restart — the old mount was gated on
     # index.html existing at startup, which froze the placeholder until restart.
     # Registered BEFORE the SPA catch-all so /{full_path} doesn't swallow it. Not
@@ -6575,6 +6575,45 @@ def mount_spa(application: FastAPI):
             headers={"Cache-Control": "no-cache"},
         )
 
+    # Brain Graph control plane (GraphPage's "Generate Brain Graph" button).
+    # Deliberately under /graph-app/ rather than /api/graph/ so it is NOT behind
+    # the /api/* dashboard auth gate — the bundle, snapshot, and SPA are all
+    # ungated the same way, and on the appliance the edge (Caddy basic-auth) +
+    # loopback binding front the whole origin. /status is read-only readiness;
+    # /generate triggers the gbrain→UA adapter (guarded by a busy-lock so it can
+    # never pile up). Registered BEFORE the /graph-app/{sub} file catch-all below
+    # so it doesn't swallow these as asset requests.
+    @application.get("/graph-app/status")
+    async def graph_status():
+        with _GRAPH_GEN_LOCK:
+            state = dict(_GRAPH_GEN)
+        info: Dict[str, Any] = {
+            "bundleReady": (GRAPH_APP_DIST / "index.html").is_file(),
+            "snapshotReady": _graph_snapshot.is_file(),
+            "generating": bool(state["busy"]),
+            "lastOk": state["ok"],
+            "error": state["error"],
+            "summary": state["summary"],
+        }
+        if _graph_snapshot.is_file():
+            try:
+                data = json.loads(_graph_snapshot.read_text())
+                info["nodes"] = len(data.get("nodes", []))
+                info["edges"] = len(data.get("edges", []))
+                info["generatedAt"] = (data.get("project") or {}).get("analyzedAt")
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+        return JSONResponse(info)
+
+    @application.post("/graph-app/generate")
+    async def graph_generate():
+        with _GRAPH_GEN_LOCK:
+            if _GRAPH_GEN["busy"]:
+                return JSONResponse({"started": False, "busy": True}, status_code=202)
+            _GRAPH_GEN.update(busy=True, started_at=time.time(), error=None, summary=None)
+        threading.Thread(target=_run_graph_export, name="graph-export", daemon=True).start()
+        return JSONResponse({"started": True, "busy": True}, status_code=202)
+
     @application.get("/graph-app")
     @application.get("/graph-app/{sub:path}")
     async def graph_app_files(sub: str = ""):
@@ -6598,40 +6637,6 @@ def mount_spa(application: FastAPI):
             content=target.read_bytes(),
             media_type=media_type or "application/octet-stream",
         )
-
-    # Brain Graph generation API (used by GraphPage's "Generate Brain Graph"
-    # button). /status reports bundle + snapshot readiness and the last run's
-    # outcome; /generate kicks off the gbrain → UA adapter in a background thread.
-    @application.get("/api/graph/status")
-    async def graph_status():
-        with _GRAPH_GEN_LOCK:
-            state = dict(_GRAPH_GEN)
-        info: Dict[str, Any] = {
-            "bundleReady": (GRAPH_APP_DIST / "index.html").is_file(),
-            "snapshotReady": _graph_snapshot.is_file(),
-            "generating": bool(state["busy"]),
-            "lastOk": state["ok"],
-            "error": state["error"],
-            "summary": state["summary"],
-        }
-        if _graph_snapshot.is_file():
-            try:
-                data = json.loads(_graph_snapshot.read_text())
-                info["nodes"] = len(data.get("nodes", []))
-                info["edges"] = len(data.get("edges", []))
-                info["generatedAt"] = (data.get("project") or {}).get("analyzedAt")
-            except (OSError, json.JSONDecodeError, ValueError):
-                pass
-        return JSONResponse(info)
-
-    @application.post("/api/graph/generate")
-    async def graph_generate():
-        with _GRAPH_GEN_LOCK:
-            if _GRAPH_GEN["busy"]:
-                return JSONResponse({"started": False, "busy": True}, status_code=202)
-            _GRAPH_GEN.update(busy=True, started_at=time.time(), error=None, summary=None)
-        threading.Thread(target=_run_graph_export, name="graph-export", daemon=True).start()
-        return JSONResponse({"started": True, "busy": True}, status_code=202)
 
     @application.get("/{full_path:path}")
     async def serve_spa(full_path: str, request: Request):

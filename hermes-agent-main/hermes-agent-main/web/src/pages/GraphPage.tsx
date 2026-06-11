@@ -135,6 +135,9 @@ export default function GraphPage() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const [status, setStatus] = useState<GraphStatus | null>(null);
+  // True once the first status probe has resolved (success OR failure) — gates
+  // the loading spinner so a failed/blocked probe can never spin forever.
+  const [probed, setProbed] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Bumped to remount (reload) the iframe once a fresh snapshot lands.
@@ -146,7 +149,7 @@ export default function GraphPage() {
 
   const fetchStatus = useCallback(async (): Promise<GraphStatus | null> => {
     try {
-      const res = await fetch("/api/graph/status", { headers: { accept: "application/json" } });
+      const res = await fetch("/graph-app/status", { headers: { accept: "application/json" } });
       if (!res.ok) return null;
       const data = (await res.json()) as GraphStatus;
       setStatus(data);
@@ -158,7 +161,7 @@ export default function GraphPage() {
 
   // Initial readiness check — decides empty-state-button vs. graph iframe.
   useEffect(() => {
-    void fetchStatus();
+    void fetchStatus().finally(() => setProbed(true));
   }, [fetchStatus]);
 
   // Kick off generation, then poll status until the server is no longer busy.
@@ -166,7 +169,7 @@ export default function GraphPage() {
     setError(null);
     setGenerating(true);
     try {
-      const res = await fetch("/api/graph/generate", { method: "POST" });
+      const res = await fetch("/graph-app/generate", { method: "POST" });
       if (!res.ok && res.status !== 202) throw new Error(`generate failed (${res.status})`);
     } catch (e) {
       setGenerating(false);
@@ -255,8 +258,9 @@ export default function GraphPage() {
   }, [paint]);
 
   // Initial status probe in flight — avoid flashing the empty-state on a box
-  // that already has a graph.
-  if (status === null) {
+  // that already has a graph. Gated on `probed`, not `status`, so a failed or
+  // blocked probe falls through to the empty-state instead of spinning forever.
+  if (!probed) {
     return (
       <div className="flex h-[calc(100dvh-7rem)] w-full items-center justify-center border border-border bg-background/40">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -265,7 +269,7 @@ export default function GraphPage() {
   }
 
   // Show the graph once a snapshot exists; otherwise the generate empty-state.
-  const ready = status.snapshotReady === true;
+  const ready = status?.snapshotReady === true;
 
   if (!ready) {
     return (
