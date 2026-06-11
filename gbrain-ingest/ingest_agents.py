@@ -195,11 +195,18 @@ def main() -> int:
     if (not args.dry_run and last_good_id is not None
             and (since_id is None or last_good_id > since_id)):
         common.write_watermark(WATERMARK_FILE, str(last_good_id))
-        common.log(f"watermark -> {last_good_id}")
+        common.log(f"watermark -> {last_good_id}"
+                   + (f" ({errors} error(s) past it; those rows retry "
+                      "next run)" if errors else ""))
     elif errors:
         common.log("watermark held at first failure; failed row retries next run")
 
     common.log(f"done: written={written} errors={errors}")
+    # Strict exit like ingest_feedback (deliberately unlike the
+    # sliding-window pipelines, which exit 0 on partial success): outcome
+    # rows are a clean internal ledger, so ANY row error is anomalous and
+    # systemd should surface it. The id watermark guarantees failed rows
+    # retry either way.
     return 1 if errors else 0
 
 
