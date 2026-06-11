@@ -36,13 +36,14 @@
       ]
     }
   },
-  "description": "Global error workflow — wired as settings.errorWorkflow on every MailBOX workflow. Fires whenever any workflow execution errors (the failure mode behind STAQPRO-287's ghost stubs: n8n nodes have 0 retries and errors died silently until an operator noticed). Formats a single HTML alert email (workflow, failed node, error message, execution URL) and sends it via the appliance Gmail OAuth credential, same delivery path as MailBOX-AlertCheck. Per-source-workflow throttle via workflow static data (default 60 min, ERROR_ALERT_THROTTLE_MIN) so a broken 5-min poller emails once an hour, not 12 times. Recipient: ERROR_ALERT_RECIPIENT, falling back to MAILBOX_OPERATOR_EMAIL. Must be active=true; do NOT set an errorWorkflow on this workflow itself.",
+  "description": "Global error workflow \u2014 wired as settings.errorWorkflow on every MailBOX workflow. Fires whenever any workflow execution errors (the failure mode behind STAQPRO-287's ghost stubs: n8n nodes have 0 retries and errors died silently until an operator noticed). Formats a single HTML alert email (workflow, failed node, error message, execution URL) and sends it via the appliance Gmail OAuth credential, same delivery path as MailBOX-AlertCheck. Per-source-workflow throttle via workflow static data (default 60 min, ERROR_ALERT_THROTTLE_MIN) so a broken 5-min poller emails once an hour, not 12 times. Recipient: ERROR_ALERT_RECIPIENT, falling back to MAILBOX_OPERATOR_EMAIL. Must be active=true; do NOT set an errorWorkflow on this workflow itself.",
   "id": "MlbxErrHandler01",
   "isArchived": false,
   "meta": {
     "templateCredsSetupCompleted": true
   },
   "name": "MailBOX-ErrorHandler",
+  "nodeGroups": [],
   "nodes": [
     {
       "id": "e7000000-0000-0000-0000-000000000001",
@@ -59,7 +60,7 @@
       "id": "e7000000-0000-0000-0000-000000000002",
       "name": "Format & Throttle",
       "parameters": {
-        "jsCode": "// Error-trigger payload has two shapes: execution errors carry\n// { execution: { id, url, error, lastNodeExecuted, mode }, workflow },\n// trigger-activation failures carry { trigger: { error, mode }, workflow }.\nconst data = $input.first().json;\nconst wf = data.workflow ?? {};\nconst exec = data.execution ?? {};\nconst err = exec.error ?? data.trigger?.error ?? {};\n\nconst wfName = wf.name ?? 'unknown workflow';\nconst wfId = wf.id ?? 'unknown';\nconst failedNode = err.node?.name ?? exec.lastNodeExecuted ?? 'unknown node';\nconst message = err.message ?? 'no error message';\nconst execUrl = exec.url ?? '';\nconst now = Date.now();\n\n// Per-source-workflow throttle so a broken schedule poller alerts once\n// per window instead of once per tick. Static data persists across\n// executions of this workflow only.\nconst throttleMin = Number($env.ERROR_ALERT_THROTTLE_MIN ?? 60);\nconst staticData = $getWorkflowStaticData('global');\nstaticData.lastAlertAt = staticData.lastAlertAt ?? {};\nconst lastAt = Number(staticData.lastAlertAt[wfId] ?? 0);\nconst throttled = now - lastAt < throttleMin * 60_000;\nif (!throttled) {\n  staticData.lastAlertAt[wfId] = now;\n}\n\nconst recipient = $env.ERROR_ALERT_RECIPIENT || $env.MAILBOX_OPERATOR_EMAIL || '';\n\nconst escapeHtml = (s) => String(s).replace(/[&<>\"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c]));\nconst html = [\n  '<h3>MailBOX workflow error</h3>',\n  `<p><b>Workflow:</b> ${escapeHtml(wfName)}<br/>`,\n  `<b>Failed node:</b> ${escapeHtml(failedNode)}<br/>`,\n  `<b>Time:</b> ${new Date(now).toISOString()}</p>`,\n  `<p><b>Error:</b><br/><code>${escapeHtml(message)}</code></p>`,\n  execUrl ? `<p><a href=\"${escapeHtml(execUrl)}\">Open execution</a></p>` : '',\n  `<p style=\"color:#888\">Further errors from this workflow are muted for ${throttleMin} min.</p>`,\n].join('\\n');\n\nreturn [{\n  json: {\n    should_send: Boolean(recipient) && !throttled,\n    throttled,\n    recipient,\n    subject: `[MailBOX] Workflow error: ${wfName} — ${failedNode}`,\n    html,\n  },\n}];"
+        "jsCode": "// Error-trigger payload has two shapes: execution errors carry\n// { execution: { id, url, error, lastNodeExecuted, mode }, workflow },\n// trigger-activation failures carry { trigger: { error, mode }, workflow }.\nconst data = $input.first().json;\nconst wf = data.workflow ?? {};\nconst exec = data.execution ?? {};\nconst err = exec.error ?? data.trigger?.error ?? {};\n\nconst wfName = wf.name ?? 'unknown workflow';\nconst wfId = wf.id ?? 'unknown';\nconst failedNode = err.node?.name ?? exec.lastNodeExecuted ?? 'unknown node';\nconst message = err.message ?? 'no error message';\nconst execUrl = exec.url ?? '';\nconst now = Date.now();\n\n// Per-source-workflow throttle so a broken schedule poller alerts once\n// per window instead of once per tick. Static data persists across\n// executions of this workflow only.\nconst throttleMin = Number($env.ERROR_ALERT_THROTTLE_MIN ?? 60);\nconst staticData = $getWorkflowStaticData('global');\nstaticData.lastAlertAt = staticData.lastAlertAt ?? {};\nconst lastAt = Number(staticData.lastAlertAt[wfId] ?? 0);\nconst throttled = now - lastAt < throttleMin * 60_000;\nif (!throttled) {\n  staticData.lastAlertAt[wfId] = now;\n}\n\nconst recipient = $env.ERROR_ALERT_RECIPIENT || $env.MAILBOX_OPERATOR_EMAIL || '';\n\nconst escapeHtml = (s) => String(s).replace(/[&<>\"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c]));\nconst html = [\n  '<h3>MailBOX workflow error</h3>',\n  `<p><b>Workflow:</b> ${escapeHtml(wfName)}<br/>`,\n  `<b>Failed node:</b> ${escapeHtml(failedNode)}<br/>`,\n  `<b>Time:</b> ${new Date(now).toISOString()}</p>`,\n  `<p><b>Error:</b><br/><code>${escapeHtml(message)}</code></p>`,\n  execUrl ? `<p><a href=\"${escapeHtml(execUrl)}\">Open execution</a></p>` : '',\n  `<p style=\"color:#888\">Further errors from this workflow are muted for ${throttleMin} min.</p>`,\n].join('\\n');\n\nreturn [{\n  json: {\n    should_send: Boolean(recipient) && !throttled,\n    throttled,\n    recipient,\n    subject: `[MailBOX] Workflow error: ${wfName} \u2014 ${failedNode}`,\n    html,\n  },\n}];"
       },
       "position": [
         220,
@@ -73,25 +74,25 @@
       "name": "Should Send?",
       "parameters": {
         "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "e7000c01-0000-0000-0000-000000000001",
+              "leftValue": "={{ $json.should_send }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": true
+            }
+          ],
           "options": {
             "caseSensitive": true,
             "leftValue": "",
             "typeValidation": "strict",
             "version": 2
-          },
-          "conditions": [
-            {
-              "id": "e7000c01-0000-0000-0000-000000000001",
-              "leftValue": "={{ $json.should_send }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
+          }
         },
         "options": {}
       },
@@ -103,24 +104,24 @@
       "typeVersion": 2.2
     },
     {
-      "id": "e7000000-0000-0000-0000-000000000004",
-      "name": "Send Error Alert",
-      "parameters": {
-        "resource": "message",
-        "operation": "send",
-        "sendTo": "={{ $('Format & Throttle').item.json.recipient }}",
-        "subject": "={{ $('Format & Throttle').item.json.subject }}",
-        "emailType": "html",
-        "message": "={{ $('Format & Throttle').item.json.html }}",
-        "options": {
-          "appendAttribution": false
-        }
-      },
       "credentials": {
         "gmailOAuth2": {
           "id": "vEz5mz0uaAtlK8yz",
           "name": "Gmail account"
         }
+      },
+      "id": "e7000000-0000-0000-0000-000000000004",
+      "name": "Send Error Alert",
+      "parameters": {
+        "emailType": "html",
+        "message": "={{ $('Format & Throttle').item.json.html }}",
+        "operation": "send",
+        "options": {
+          "appendAttribution": false
+        },
+        "resource": "message",
+        "sendTo": "={{ $('Format & Throttle').item.json.recipient }}",
+        "subject": "={{ $('Format & Throttle').item.json.subject }}"
       },
       "position": [
         660,
@@ -134,6 +135,11 @@
   "settings": {
     "executionOrder": "v1"
   },
+  "sourceWorkflowId": null,
   "staticData": null,
-  "tags": []
+  "tags": [],
+  "versionMetadata": {
+    "description": null,
+    "name": null
+  }
 }
