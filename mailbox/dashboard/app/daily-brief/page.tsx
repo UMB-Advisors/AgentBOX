@@ -24,6 +24,7 @@ const EMPTY_PAYLOAD: DigestPayload = {
   oldest_pending: [],
   awaiting_reply: [],
   health: { sent_24h: 0, stuck_approved: 0, firing_alerts: [] },
+  job_outcomes: { since_hours: 24, total: 0, businesses: [] },
 };
 
 const URGENT_BODY_LIMIT = 8;
