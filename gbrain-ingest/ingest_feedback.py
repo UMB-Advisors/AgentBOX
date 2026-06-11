@@ -15,6 +15,10 @@ via the mailbox prompt_rules injection.
   verbatim, never summarized.
 - Incremental via an integer id watermark
   (~/.hermes/gbrain-ingest/feedback.watermark); --backfill ignores it.
+  Rows are processed in id order and the watermark advances to the last
+  id BEFORE the first failure: the failed row and everything after it are
+  retried next run (re-captures are harmless slug upserts), while rows
+  that succeeded before the failure are never refetched.
 - Sender/subject/draft text originate from external email and LLM output:
   they are secret-redacted before capture and clearly labeled in the page
   so recalled context cannot pose as operator instructions.
@@ -72,15 +76,27 @@ def fetch_feedback(since_id: int | None, limit: int | None) -> list[dict]:
 
 
 def build_feedback_page(fb: dict, entity) -> tuple[str, str]:
-    """Pure: feedback row + Attribution -> (slug, rendered page)."""
+    """Pure: feedback row + Attribution -> (slug, rendered page).
+
+    Everything DB-sourced that lands in the page BODY goes through
+    redact_secrets — body text is recalled into agent context, and the
+    upstream values trace back to external email / LLM output.
+    """
+    if fb.get("id") is None:
+        raise RuntimeError("feedback row has no id; refusing to build page")
     reason = fb.get("reason_code") or "other"
     subject = common.redact_secrets(fb.get("subject") or "(no subject)")
     note = common.redact_secrets((fb.get("free_text") or "").strip())
     excerpt = common.redact_secrets((fb.get("draft_excerpt") or "").strip())
     sender = common.redact_secrets(fb.get("from_addr") or "(unknown sender)")
+    category = common.redact_secrets(fb.get("classification_category") or "unknown")
     account_email = fb.get("account_email") or ""
+    account_disp = common.redact_secrets(account_email) or "(unknown account)"
 
     slug = f"feedback/{int(fb['id'])}"
+    tags = ["draft-feedback", f"reason:{reason}", f"entity:{entity.entity}"]
+    if account_email:
+        tags.append("account:" + common.slugify(account_email.split("@")[0]))
     frontmatter = {
         "title": f"Draft rejected ({REASON_LABELS.get(reason, reason)}): {subject}"[:140],
         "type": "draft-feedback",
@@ -94,19 +110,17 @@ def build_feedback_page(fb: dict, entity) -> tuple[str, str]:
         "entity": entity.entity,
         "attribution_rung": f"{entity.rung}:{entity.rung_name}",
         "attribution_confidence": round(entity.confidence, 3),
-        "tags": ["draft-feedback", f"reason:{reason}",
-                 f"entity:{entity.entity}",
-                 "account:" + common.slugify(account_email.split("@")[0])],
+        "tags": tags,
     }
 
     lines = [
         f"# Rejected draft: {subject}",
         "",
         f"On {fb.get('rejected_at', '')} the operator rejected an AI-drafted "
-        f"reply on account {account_email}.",
+        f"reply on account {account_disp}.",
         "",
         f"- Sender: {sender}",
-        f"- Classification: {fb.get('classification_category') or 'unknown'}",
+        f"- Classification: {category}",
         f"- Rejection reason: {reason} ({REASON_LABELS.get(reason, reason)})",
         "",
         "## Operator note (verbatim)",
@@ -125,11 +139,51 @@ def build_feedback_page(fb: dict, entity) -> tuple[str, str]:
         "",
         "## Lesson",
         "",
-        f"When drafting replies to {sender} or similar "
-        f"{fb.get('classification_category') or ''} emails on "
-        f"{account_email}, account for this rejection.",
+        f"When drafting replies to {sender} or similar {category} emails on "
+        f"{account_disp}, account for this rejection.",
     ]
     return slug, common.render_page(frontmatter, "\n".join(lines))
+
+
+def process_rows(rows: list[dict], ladder_kwargs: dict, crm_lookup,
+                 dry_run: bool = False,
+                 capture=None) -> tuple[int, int, int | None]:
+    """Attribute + capture rows (already in ascending id order).
+
+    Returns (written, errors, last_good_id) where last_good_id is the
+    highest id N such that every row with id <= N succeeded — the safe
+    watermark value. Successes AFTER the first failure are still captured
+    (upserts are harmless) but do not advance the watermark, so the failed
+    row is retried next run.
+    """
+    capture = capture or common.gbrain_capture
+    written = errors = 0
+    last_good_id: int | None = None
+    for fb in rows:
+        try:
+            sender = next(iter(extract_emails(fb.get("from_addr"))), None)
+            participants = (extract_emails(fb.get("from_addr"))
+                            + extract_emails(fb.get("to_addr")))
+            # Deterministic ladder: llm_classify_fn stays None (no rung 4).
+            entity = attribute(
+                fb.get("account_email"), sender, participants,
+                fb.get("subject"), fb.get("free_text"),
+                crm_lookup=crm_lookup, llm_classify_fn=None, **ladder_kwargs,
+            )
+            slug, content = build_feedback_page(fb, entity)
+            if dry_run:
+                print(f"DRY {entity.entity:10s} r{entity.rung} {slug} "
+                      f"[{fb.get('reason_code')}] {(fb.get('subject') or '')[:60]}")
+            else:
+                capture(entity.entity, slug, content, page_type="draft-feedback")
+                written += 1
+        except Exception as exc:  # unattended timer job: log row, keep going
+            errors += 1
+            common.log(f"ERROR feedback id={fb.get('id')}: {exc}")
+            continue
+        if not errors and fb.get("id") is not None:
+            last_good_id = int(fb["id"])
+    return written, errors, last_good_id
 
 
 def main() -> int:
@@ -167,46 +221,31 @@ def main() -> int:
             since_id = args.since_id
         else:
             wm = common.read_watermark(WATERMARK_FILE)
-            since_id = int(wm) if wm else None
+            try:
+                since_id = int(wm) if wm else None
+            except ValueError:
+                common.log(f"WARNING: corrupt watermark {wm!r}; doing a full "
+                           "scan (slug upserts make re-ingest harmless)")
+                since_id = None
     rows = fetch_feedback(since_id, args.limit)
     common.log(f"feedback rows to ingest: {len(rows)} "
                f"(since_id={since_id if since_id is not None else 'ALL'})")
 
-    written = errors = 0
-    max_id = since_id
-    for fb in rows:
-        sender = next(iter(extract_emails(fb.get("from_addr"))), None)
-        participants = extract_emails(fb.get("from_addr")) + extract_emails(fb.get("to_addr"))
-        # Deterministic ladder: llm_classify_fn stays None (no rung 4).
-        entity = attribute(
-            fb.get("account_email"), sender, participants,
-            fb.get("subject"), fb.get("free_text"),
-            crm_lookup=crm_lookup, llm_classify_fn=None, **kwargs,
-        )
-        slug, content = build_feedback_page(fb, entity)
-        if args.dry_run:
-            print(f"DRY {entity.entity:10s} r{entity.rung} {slug} "
-                  f"[{fb.get('reason_code')}] {(fb.get('subject') or '')[:60]}")
-        else:
-            try:
-                common.gbrain_capture(entity.entity, slug, content,
-                                      page_type="draft-feedback")
-                written += 1
-            except RuntimeError as exc:
-                errors += 1
-                common.log(f"ERROR {slug}: {exc}")
-                continue
-        if max_id is None or int(fb["id"]) > max_id:
-            max_id = int(fb["id"])
+    written, errors, last_good_id = process_rows(
+        rows, kwargs, crm_lookup, dry_run=args.dry_run)
 
-    if not args.dry_run and max_id is not None and not errors:
-        common.write_watermark(WATERMARK_FILE, str(max_id))
-        common.log(f"watermark -> {max_id}")
+    if (not args.dry_run and last_good_id is not None
+            and (since_id is None or last_good_id > since_id)):
+        common.write_watermark(WATERMARK_FILE, str(last_good_id))
+        common.log(f"watermark -> {last_good_id}")
     elif errors:
-        common.log("errors occurred; watermark NOT advanced (will retry next run)")
+        common.log("watermark held at first failure; failed row retries next run")
 
     common.log(f"done: written={written} errors={errors}")
-    return 1 if errors and not written else 0
+    # Any error is a unit failure: this runs as a systemd oneshot, and a
+    # zero exit on partial failure would hide the problem from
+    # `systemctl --user status` / failure-state monitoring.
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":

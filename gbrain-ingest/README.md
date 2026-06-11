@@ -105,8 +105,17 @@ processed. The timer run only rebuilds threads with newer messages (a new
 message refreshes its whole thread page). On any write error the watermark
 is NOT advanced, so the next run retries.
 
-`~/.hermes/gbrain-ingest/feedback.watermark` holds the max
-`draft_feedback.id` processed (same error-holds-watermark semantics).
+`~/.hermes/gbrain-ingest/feedback.watermark` holds the highest
+`draft_feedback.id` such that every row up to and including it succeeded.
+On a partial failure the watermark stops at the last id BEFORE the first
+failed row: that row and everything after it are refetched next run
+(later rows that already succeeded get harmlessly re-upserted), so a
+persistently failing row never silently skips and never blocks earlier
+progress. A corrupt watermark file degrades to a full scan with a
+warning. Exit code is non-zero if ANY row errored, so
+`systemctl --user status gbrain-ingest-feedback` surfaces partial
+failures (the email pipeline exits 0 on partial success — differing on
+purpose here).
 
 - Reset / full re-ingest: `python3 ingest_email.py --backfill`
 - Ingest from a point: `python3 ingest_email.py --since '2026-06-01T00:00:00Z'`

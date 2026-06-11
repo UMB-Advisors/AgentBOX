@@ -4,6 +4,10 @@
 # the lock so psql/gbrain access stays serial).
 [Unit]
 Description=gbrain ingest: draft_feedback -> rejected-draft lesson pages
+# After= only, matching the sibling units: in a systemd USER session
+# network-online.target may never activate, so a Requires= here would
+# permanently wedge the service. If the box is up before docker is, the
+# psql call fails, the watermark holds, and the next timer run retries.
 After=network-online.target
 
 [Service]
