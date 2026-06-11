@@ -16,8 +16,11 @@ The `*.json` files in this directory are the version-controlled exports of the n
 | `MailBOX-Imap-Send.json` | `mailbox-imap-send` | Webhook `/webhook/mailbox-imap-send` | **MBOX-357 (P1 T5).** Per-provider egress for IMAP accounts. Dashboard routes here (via `N8N_IMAP_WEBHOOK_URL`) when the draft's account is IMAP — leaves `MailBOX-Send` (the live Gmail path) untouched. Same `{ draft_id }` + `send_attempt_at` CAS lock; sends via SMTP `Send Email`, writes `drafts.provider_message_id`. **Not yet imported/activated on the fleet.** |
 | `MailBOX-Digest.json` | `MlbxDigestSb0001` | Schedule (daily @ `DIGEST_SEND_HOUR_LOCAL`) | MBOX-132. Daily operator digest. GET `/api/internal/digest` (render + send-decision), gate on `should_send`, Gmail send (appliance OAuth), then POST `/api/internal/digest/record` to claim the day in `mailbox.digest_sends`. **Not yet imported/activated on the fleet — import + activate per the procedure below.** |
 | `MailBOX-MsgAction.json` | `MailBOXMsgAction00000001` | Webhook `/webhook/mailbox-msg-action` | MBOX-369. Triggered by the dashboard on a per-row queue action (archive/delete/mark-read). One HTTP Request node hits the Gmail REST API: `messages.modify` removeLabelIds `[INBOX]` (archive) / `[UNREAD]` (mark_read), or `messages.trash` (delete — recoverable). Snooze is appliance-local and does NOT call this. Gmail-only (IMAP accounts have no equivalent yet). **Not yet imported/activated on the fleet — import + activate per the procedure below.** |
+| `MailBOX-ErrorHandler.json` | `MlbxErrHandler01` | Error trigger | Global error workflow — every other MailBOX workflow points at it via `settings.errorWorkflow`. On any execution error: formats one HTML alert (workflow, failed node, error message, execution link) and emails it via the appliance Gmail OAuth credential. Per-source-workflow throttle (default 60 min, `ERROR_ALERT_THROTTLE_MIN`) so a broken 5-min poller alerts hourly, not per tick. Recipient: `ERROR_ALERT_RECIPIENT` → fallback `MAILBOX_OPERATOR_EMAIL`. Closes the silent-failure mode behind STAQPRO-287's ghost stubs. |
 
-`legacy/` archives the deactivated NIM-era workflows (kept for reference, not imported).
+> **ErrorHandler caveats:** must be `active=true` like everything else; never set an `errorWorkflow` on the ErrorHandler itself; re-link its Gmail OAuth2 credential per appliance like the other Gmail nodes. If no recipient env is set it computes-but-skips the send (visible in its execution log).
+
+The NIM-era `legacy/` exports were deleted 2026-06-11 (EOL since the Ollama Cloud pivot; recoverable from git history).
 
 > **MailBOX-MsgAction activation (MBOX-369, on-box step):** after `n8n-import-workflows.sh`, re-link the `gmailOAuth2` "Gmail account" credential on the `Gmail Action` HTTP node (the JSON ships M1's credential id `vEz5mz0uaAtlK8yz`; it differs per appliance), confirm the credential scope grants `gmail.modify` (the broad `https://mail.google.com/` n8n default covers it), set `N8N_MSG_ACTION_URL` if overriding the default `http://n8n:5678/webhook/mailbox-msg-action`, activate the workflow, and restart n8n. Webhook-triggered, so it must be `active=true`. Verify with a single archive on a throwaway message and confirm it leaves the Gmail inbox. **Single-account caveat:** the one credential serves every `account_id` until the MBOX-162 multi-account credential resolution lands.
 
@@ -38,7 +41,7 @@ SSH_HOST=jetson-dustin ./scripts/n8n-export-workflows.sh
 SSH_HOST=local ./scripts/n8n-export-workflows.sh
 ```
 
-Output is normalized via `jq --sort-keys` with volatile fields (`versionCounter`, `versionId`, `instanceId`, `triggerCount`, etc.) stripped. A re-export against an unchanged appliance produces a no-op diff — useful as a drift detector.
+The export discovers workflows live (`n8n export:workflow --all`) and writes one file per workflow whose name starts with `MailBOX` — workflows created in the n8n UI on a box are picked up automatically, and it warns about live-but-unexported and repo-but-not-live mismatches. Output is normalized via `jq --sort-keys` with volatile fields (`versionCounter`, `versionId`, `instanceId`, `triggerCount`, etc.) stripped. A re-export against an unchanged appliance produces a no-op diff — useful as a drift detector. **Run it after every on-box workflow edit and commit the diff** — n8n runs from its DB, so the repo drifts silently otherwise.
 
 ### Import (push canonical state → new appliance)
 
@@ -55,7 +58,7 @@ After import, on the target appliance:
    - `MailBOX-Send` → Gmail OAuth2 + Postgres
    - `MailBOX-Imap` → **IMAP** (`MailBox IMAP`) — host/port/TLS/user/app-password for the operator's mailbox (DR-58: app-password / basic-auth for v1). Also set `Build Inbox Payload`'s `account_email` to that account's address (omit only on a single-account appliance where the IMAP account IS the default).
    - `MailBOX-Imap-Send` → **SMTP** (`MailBox SMTP`) — the operator's outbound server (domain-aligned, no relay per NC-37) + Postgres.
-2. **Activate** the trigger-bearing workflows: `MailBOX` (schedule), `MailBOX-Send` (webhook), and — when an IMAP account exists — `MailBOX-Imap` (IMAP trigger) + `MailBOX-Imap-Send` (webhook). Sub-workflows (`MailBOX-Classify`, `MailBOX-Draft`) **stay inactive** — they're invoked via `executeWorkflow`. (Activating them surfaces "no native trigger" cosmetic noise on every restart.)
+2. **Activate ALL workflows** — the import script now does this via `n8n update:workflow --active=true`. On n8n 2.x **every** workflow must be `active=true`, including the `executeWorkflow` sub-workflows (`MailBOX-Classify`, `MailBOX-Draft`): the pre-2.x "sub-workflows stay inactive" guidance was retracted by STAQPRO-181 (2.x throws *"Workflow is not active and cannot be executed"* and dark-classifies the inbox).
    > **DR-56 residual (verify before relying on IMAP):** stand up `MailBOX-Imap`'s `emailReadImap` against a test mailbox and confirm it polls + hands off reliably, and that `MailBOX-Imap-Send`'s SMTP `Send Email` lands the reply in-thread (true RFC `In-Reply-To`/`References` threading is the S-MP-2 gate — kill-criterion is ship flat + flag degraded mode).
 3. **Restart n8n** to pick up activation:
    ```bash
@@ -110,7 +113,7 @@ If you get a 500 or the request hangs:
 - **Don't** switch to Postgres `Execute Query` for the UPDATE nodes — comma-split bug bites email-body-style content (Pitfall #1).
 - Tables qualify as `mailbox.drafts` / `mailbox.inbox_messages` (Pitfall #8).
 - **Don't** downgrade Gmail Reply to "On Error: Stop" — must be `continueErrorOutput` so failures populate `error_message` instead of silently dropping (Pitfall #7).
-- Sub-workflows that use `executeWorkflowTrigger` should have `active: false`. Activating them emits "no native trigger" cosmetic errors every restart.
+- ~~Sub-workflows that use `executeWorkflowTrigger` should have `active: false`.~~ **Retracted on n8n 2.x (STAQPRO-181):** ALL workflows must be `active=true` or `executeWorkflow` calls fail with "Workflow is not active and cannot be executed". The "no native trigger" noise on restart is cosmetic; live with it.
 - `n8n update:workflow --active=…` is a NO-OP at runtime unless n8n is restarted. The flag persists to the DB but the live runtime keeps the old activation state cached.
 - Bcrypt hashes in `.env` (Caddy basic_auth) need `$` → `$$` escaping or docker compose silently truncates them.
 - **Cross-node values**: never read a value produced by a non-adjacent node via bare `$json.<field>` — use `$('Node').item.json.<field>`. `$json` re-points the instant a node is inserted upstream (this is exactly how MBOX-344 broke every send for 4 days). See the dedicated section below; guarded by `dashboard/test/n8n-expr-lint.test.ts`.

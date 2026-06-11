@@ -216,8 +216,9 @@ docker compose --profile qdrant-bootstrap run --rm mailbox-qdrant-bootstrap || l
 
 # ── STAGE 6: n8n credential + workflows + activate ────────────────────────
 # Fresh n8n has no credentials; the workflows hard-reference the Postgres
-# credential id JFX4tvrffvKnTouV. Create it with that exact id, import the 4
-# core workflows (ids preserved incl sub-workflow refs), activate each by id
+# credential id JFX4tvrffvKnTouV. Create it with that exact id, import the 5
+# core workflows (ids preserved incl sub-workflow refs + the global
+# errorWorkflow target MlbxErrHandler01), activate each by id
 # (n8n dropped update:workflow --all), restart (CLI activation is a no-op until
 # restart). Validated working on the prototype 2026-05-31.
 log "STAGE 6 — n8n credential + workflows"
@@ -228,7 +229,7 @@ printf '[{"id":"JFX4tvrffvKnTouV","name":"MailBox Postgres","type":"postgres","d
 docker cp "$CJ" mailbox-n8n-1:/tmp/creds.json >/dev/null
 docker exec mailbox-n8n-1 n8n import:credentials --input=/tmp/creds.json >/dev/null 2>&1 && log "  Postgres credential imported (JFX4tvrffvKnTouV)"
 docker exec mailbox-n8n-1 rm -f /tmp/creds.json; rm -f "$CJ"
-for w in MailBOX MailBOX-Classify MailBOX-Draft MailBOX-Send; do
+for w in MailBOX MailBOX-Classify MailBOX-Draft MailBOX-Send MailBOX-ErrorHandler; do
   [ -f "n8n/workflows/$w.json" ] || { log "  WARN: n8n/workflows/$w.json missing"; continue; }
   docker cp "n8n/workflows/$w.json" "mailbox-n8n-1:/tmp/$w.json" >/dev/null
   docker exec mailbox-n8n-1 n8n import:workflow --input="/tmp/$w.json" >/dev/null 2>&1 && log "  imported $w"

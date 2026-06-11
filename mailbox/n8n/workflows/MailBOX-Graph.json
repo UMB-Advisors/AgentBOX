@@ -381,6 +381,7 @@
   ],
   "pinData": {},
   "settings": {
+    "errorWorkflow": "MlbxErrHandler01",
     "executionOrder": "v1",
     "saveDataSuccessExecution": "none"
   },
