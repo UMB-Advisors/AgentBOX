@@ -15,6 +15,8 @@ import {
   api,
   type KanbanBulkUpdateBody,
   type KanbanBoard,
+  type KanbanFilterState,
+  type KanbanMeta,
   type KanbanTask,
   type KanbanUpdateTaskBody,
 } from "@/lib/api";
@@ -114,6 +116,73 @@ function fmtAge(seconds: number | null | undefined): string {
 
 function taskAgeSeconds(t: KanbanTask): number | null {
   return t.age?.created_age_seconds ?? null;
+}
+
+// Due dates (PRD §2.2) are date-only ISO strings compared in the LOCAL
+// timezone: parse YYYY-MM-DD into a local-midnight Date and diff against
+// today's local midnight. "Due ≤ 48h" therefore means due today, tomorrow,
+// or the day after (diff 0–2 days) — the date-only reading of 48 hours.
+export function daysUntilDue(dueAt: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueAt);
+  if (!m) return null;
+  const due = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+}
+
+export function isOverdue(dueAt: string): boolean {
+  const days = daysUntilDue(dueAt);
+  return days != null && days < 0;
+}
+
+// Client-side FilterState application (PRD §2.1). Runs over the whole
+// loaded board — an appliance board tops out at a few hundred tasks, so
+// there's no server-side filtering (noted ceiling; revisit if that grows).
+function applyFilter(
+  tasks: KanbanTask[],
+  filter: KanbanFilterState,
+  meta: KanbanMeta | null,
+): KanbanTask[] {
+  const text = filter.text.trim().toLowerCase();
+  return tasks.filter((t) => {
+    if (filter.statuses.length && !filter.statuses.includes(t.status)) {
+      return false;
+    }
+    if (
+      filter.assignees.length &&
+      !(t.assignee != null && filter.assignees.includes(t.assignee))
+    ) {
+      return false;
+    }
+    if (
+      filter.tenants.length &&
+      !(t.tenant != null && filter.tenants.includes(t.tenant))
+    ) {
+      return false;
+    }
+    const tm = meta?.tasks[t.id];
+    if (
+      filter.labels.length &&
+      !(tm?.labels ?? []).some((l) => filter.labels.includes(l))
+    ) {
+      return false;
+    }
+    if (filter.cycleId != null && tm?.cycle_id !== filter.cycleId) {
+      return false;
+    }
+    if (filter.overdueOnly && !(tm?.due_at != null && isOverdue(tm.due_at))) {
+      return false;
+    }
+    if (
+      text &&
+      !t.title.toLowerCase().includes(text) &&
+      !t.id.toLowerCase().includes(text)
+    ) {
+      return false;
+    }
+    return true;
+  });
 }
 
 // In-group sort per PRD §1.2: priority desc, then age asc (newest first).
@@ -226,6 +295,8 @@ export default function KanbanListView({
   onTaskAction,
   onFocusQuickAdd,
   hotkeysEnabled,
+  filter,
+  meta,
 }: {
   onOpenBoard: () => void;
   /** Bumped by the parent after out-of-view mutations (quick-add, palette)
@@ -243,6 +314,11 @@ export default function KanbanListView({
   onFocusQuickAdd: () => void;
   /** Parent disables row hotkeys while the palette overlay is open. */
   hotkeysEnabled: boolean;
+  /** Active FilterState (chips + saved views live in the parent). */
+  filter: KanbanFilterState;
+  /** Sidecar meta (due dates etc.); null while loading — the list still
+   *  renders, sidecar-driven filters/badges just stay inert. */
+  meta: KanbanMeta | null;
 }) {
   const { toast, showToast } = useToast();
   const [board, setBoard] = useState<KanbanBoard | null>(null);
@@ -279,7 +355,14 @@ export default function KanbanListView({
     () => (board ? board.columns.flatMap((c) => c.tasks) : []),
     [board],
   );
-  const groups = useMemo(() => groupTasks(tasks, groupBy), [tasks, groupBy]);
+  const filteredTasks = useMemo(
+    () => applyFilter(tasks, filter, meta),
+    [tasks, filter, meta],
+  );
+  const groups = useMemo(
+    () => groupTasks(filteredTasks, groupBy),
+    [filteredTasks, groupBy],
+  );
   // Flattened visible order for ↑/↓ row focus.
   const flatTasks = useMemo(() => groups.flatMap((g) => g.tasks), [groups]);
   const assignees = board?.assignees ?? [];
@@ -477,7 +560,9 @@ export default function KanbanListView({
           <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
         </Button>
         <span className="text-xs text-muted-foreground">
-          {tasks.length} task{tasks.length === 1 ? "" : "s"}
+          {filteredTasks.length === tasks.length
+            ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}`
+            : `${filteredTasks.length} of ${tasks.length} tasks`}
         </span>
         <div className="relative ml-auto">
           <Button
@@ -535,10 +620,12 @@ export default function KanbanListView({
         />
       )}
 
-      {tasks.length === 0 ? (
+      {filteredTasks.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            No tasks on the board yet. Switch to Board view to create one.
+            {tasks.length === 0
+              ? "No tasks on the board yet. Switch to Board view to create one."
+              : "No tasks match the current filters."}
           </CardContent>
         </Card>
       ) : (

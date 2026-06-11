@@ -11,6 +11,7 @@ import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { Link } from "react-router-dom";
 import { PluginPage } from "@/plugins";
 import CommandPalette, { type PaletteCommand } from "@/components/CommandPalette";
+import KanbanFilterBar, { EMPTY_FILTER } from "@/components/KanbanFilterBar";
 import KanbanListView, {
   type GroupBy,
   type TaskContextAction,
@@ -19,6 +20,9 @@ import { cn } from "@/lib/utils";
 import { parseQuickAdd } from "@/lib/quickAdd";
 import {
   api,
+  type KanbanFilterState,
+  type KanbanMeta,
+  type KanbanSavedView,
   type KanbanTask,
   type LinearBoard,
   type LinearTeam,
@@ -184,6 +188,12 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
   const [requestedTaskId, setRequestedTaskId] = useState<string | null>(null);
   const [palette, setPalette] = useState<PaletteState>(PALETTE_CLOSED);
   const [paletteTasks, setPaletteTasks] = useState<KanbanTask[]>([]);
+  // Sidecar meta doc (due dates, saved views, …) + the active FilterState
+  // (PRD §2.1/§2.2). activeViewId is a built-in chip id or a saved-view id;
+  // null = ad-hoc filter with no view selected.
+  const [meta, setMeta] = useState<KanbanMeta | null>(null);
+  const [filter, setFilter] = useState<KanbanFilterState>(EMPTY_FILTER);
+  const [activeViewId, setActiveViewId] = useState<string | null>("all");
 
   const selectSubView = useCallback((v: NativeSubView) => {
     setSubView(v);
@@ -195,6 +205,82 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
   }, []);
 
   const bumpRefresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
+
+  // Sidecar meta load — refetched with the board (refreshNonce) so due
+  // dates / views edited elsewhere stay current. Failure leaves meta null:
+  // the list renders fine, sidecar-driven UI just stays inert.
+  useEffect(() => {
+    let alive = true;
+    api
+      .getKanbanMeta()
+      .then((m) => alive && setMeta(m))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [refreshNonce]);
+
+  const selectView = useCallback((id: string, filters: KanbanFilterState) => {
+    setActiveViewId(id);
+    // Copy the arrays so ad-hoc edits never mutate the stored view.
+    setFilter({
+      ...filters,
+      statuses: [...filters.statuses],
+      assignees: [...filters.assignees],
+      tenants: [...filters.tenants],
+      labels: [...filters.labels],
+    });
+  }, []);
+
+  const putViews = useCallback(
+    async (views: KanbanSavedView[], okMessage: string) => {
+      try {
+        const updated = await api.putKanbanMeta({ views });
+        setMeta(updated);
+        showToast(okMessage, "success");
+        return updated;
+      } catch (e: unknown) {
+        showToast(
+          `Saving views failed: ${e instanceof Error ? e.message : String(e)}`,
+          "error",
+        );
+        return null;
+      }
+    },
+    [showToast],
+  );
+
+  const saveView = useCallback(
+    (name: string) => {
+      const id = `v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      const views = [...(meta?.views ?? []), { id, name, filters: filter }];
+      void putViews(views, `View "${name}" saved ✓`).then((updated) => {
+        if (updated) setActiveViewId(id);
+      });
+    },
+    [filter, meta, putViews],
+  );
+
+  const updateView = useCallback(
+    (id: string) => {
+      const views = (meta?.views ?? []).map((v) =>
+        v.id === id ? { ...v, filters: filter } : v,
+      );
+      void putViews(views, "View updated ✓");
+    },
+    [filter, meta, putViews],
+  );
+
+  const deleteView = useCallback(
+    (id: string) => {
+      const views = (meta?.views ?? []).filter((v) => v.id !== id);
+      void putViews(views, "View deleted ✓").then((updated) => {
+        // Keep the (now ad-hoc) filter; just drop the chip highlight.
+        if (updated) setActiveViewId((cur) => (cur === id ? null : cur));
+      });
+    },
+    [meta, putViews],
+  );
 
   // Known assignees for quick-add @validation (PRD §1.3). Re-fetched after
   // mutations so freshly-used names show up.
@@ -344,17 +430,34 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
       {subView === "board" ? (
         <PluginPage name={kanbanName} />
       ) : (
-        <KanbanListView
-          onOpenBoard={() => selectSubView("board")}
-          refreshNonce={refreshNonce}
-          groupBy={groupBy}
-          onGroupByChange={setGroupBy}
-          requestedTaskId={requestedTaskId}
-          onRequestedTaskHandled={handleRequestedTask}
-          onTaskAction={handleTaskAction}
-          onFocusQuickAdd={focusQuickAdd}
-          hotkeysEnabled={!palette.open}
-        />
+        <>
+          <KanbanFilterBar
+            filter={filter}
+            onFilterChange={(f) => setFilter(f)}
+            views={meta?.views ?? []}
+            activeViewId={activeViewId}
+            onSelectView={selectView}
+            onSaveView={saveView}
+            onUpdateView={updateView}
+            onDeleteView={deleteView}
+            showOverdue={Object.values(meta?.tasks ?? {}).some(
+              (t) => t.due_at != null,
+            )}
+          />
+          <KanbanListView
+            onOpenBoard={() => selectSubView("board")}
+            refreshNonce={refreshNonce}
+            groupBy={groupBy}
+            onGroupByChange={setGroupBy}
+            requestedTaskId={requestedTaskId}
+            onRequestedTaskHandled={handleRequestedTask}
+            onTaskAction={handleTaskAction}
+            onFocusQuickAdd={focusQuickAdd}
+            hotkeysEnabled={!palette.open}
+            filter={filter}
+            meta={meta}
+          />
+        </>
       )}
 
       <CommandPalette
