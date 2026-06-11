@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -698,73 +699,304 @@ async def get_status():
     }
 
 
-# Brief in-process cache so Home loads don't spawn a gbrain CLI (bun + pglite,
-# ~seconds) on every request. Forward-only; refreshed once past the TTL.
+# Brief in-process cache so Home loads don't hit the gbrain daemon on every
+# request. Forward-only; refreshed once past the TTL.
 _DIGEST_CACHE: Dict[str, Any] = {"ts": 0.0, "data": None}
 _DIGEST_TTL_SECONDS = 300.0
 
 
-def _gbrain_cli_json(args: List[str], timeout: float = 30.0) -> Any:
-    """Run a gbrain CLI subcommand with ``--json`` and return parsed JSON, else None.
+# ── gbrain data access ──────────────────────────────────────────────────────
+# Digest reads (salience / anomalies / query highlights) are all exposed as
+# read-scope ops by the long-running ``gbrain serve`` daemon, so they go over
+# MCP Streamable HTTP (OAuth client_credentials, dashboard read creds from
+# GBRAIN_DASHBOARD_CLIENT_ID/SECRET). Only genuinely CLI/bun-bound work (the
+# graph-export adapter) still shells out — and every shell-out must carry
+# GBRAIN_HOME (+ GBRAIN_DATABASE_URL when set) or the raw CLI starts with no
+# brain configured: that missing env was the historical "Home digest always
+# empty" bug on the appliance.
 
-    Resolves bun + the gbrain checkout from env (``GBRAIN_BUN`` / ``GBRAIN_DIR``)
-    with loopback-appliance defaults. The CLI prints one-time migration/log
-    noise to stderr; JSON goes to stdout. Never raises.
+_GBRAIN_HTTP_TIMEOUT = 5.0  # per HTTP call; CLI shell-outs keep 30s/600s
+
+
+def _gbrain_env_value(name: str, default: Optional[str] = None) -> Optional[str]:
+    """Resolve a gbrain setting from process env, else ``$HERMES_HOME/.env``.
+
+    The dashboard service unit does not export GBRAIN_* vars; the appliance
+    keeps them in the hermes .env file, so fall back to it (``load_env`` is
+    mtime-memoised — cheap). Never raises.
     """
-    bun = os.environ.get("GBRAIN_BUN") or str(Path.home() / ".bun" / "bin" / "bun")
-    gbrain_dir = os.environ.get("GBRAIN_DIR") or str(Path.home() / "gbrain-src")
-    cli = str(Path(gbrain_dir) / "src" / "cli.ts")
+    val = os.environ.get(name)
+    if val:
+        return val
     try:
-        proc = subprocess.run(
-            [bun, "run", cli, *args, "--json"],
-            cwd=gbrain_dir,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+        val = (load_env() or {}).get(name)
+    except Exception:
+        val = None
+    return val or default
+
+
+def _parse_env_file(path: Path) -> Dict[str, str]:
+    """Parse a sh-style ``KEY=VALUE`` env file (as sourced via ``set -a``).
+
+    Handles optional ``export `` prefixes, surrounding quotes, comments and
+    blank lines. Returns {} on any error — never raises.
+    """
+    out: Dict[str, str] = {}
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].lstrip()
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip()
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+                val = val[1:-1]
+            if key:
+                out[key] = val
+    except Exception:
+        return {}
+    return out
+
+
+def _gbrain_subprocess_env() -> Dict[str, str]:
+    """Environment for gbrain CLI / bun adapter subprocesses (argv-only).
+
+    Single resolution point for ALL gbrain shell-outs: pass GBRAIN_HOME and
+    GBRAIN_DATABASE_URL through explicitly so the CLI opens the SAME brain
+    as ``gbrain serve``. Resolution order per key: process env, then hermes
+    .env, then (DATABASE_URL only) ``$GBRAIN_HOME/.gbrain/postgres.env`` —
+    the file the ``~/.local/bin/gbrain`` wrapper sources, and on the
+    appliance the ONLY place the postgres connection string lives (the
+    box's config.json is ``{"engine": "postgres"}`` with no database_url).
+    Loopback-appliance default home: ``~/.hermesbox`` when its ``.gbrain/``
+    layout exists (the wrapper sets the same).
+    """
+    env = dict(os.environ)
+    for key in ("GBRAIN_HOME", "GBRAIN_DATABASE_URL"):
+        val = _gbrain_env_value(key)
+        if val:
+            env[key] = val
+    if not env.get("GBRAIN_HOME"):
+        hermesbox = Path.home() / ".hermesbox"
+        if (hermesbox / ".gbrain").is_dir():
+            env["GBRAIN_HOME"] = str(hermesbox)
+    # Final fallback for the connection string: the wrapper-sourced env file
+    # under the resolved brain home (postgres engine keeps it there, 0600).
+    if not env.get("GBRAIN_DATABASE_URL") and env.get("GBRAIN_HOME"):
+        pg_env = _parse_env_file(
+            Path(env["GBRAIN_HOME"]) / ".gbrain" / "postgres.env"
         )
-    except (subprocess.SubprocessError, OSError):
-        return None
-    if proc.returncode != 0:
-        return None
-    out = (proc.stdout or "").strip()
-    if not out:
-        return None
-    try:
-        return json.loads(out)
-    except json.JSONDecodeError:
-        # Tolerate any leading non-JSON noise that slipped onto stdout.
-        start = out.find("[")
-        if start == -1:
-            start = out.find("{")
-        if start > 0:
+        val = pg_env.get("GBRAIN_DATABASE_URL")
+        if val:
+            env["GBRAIN_DATABASE_URL"] = val
+    return env
+
+
+class _GbrainDaemonClient:
+    """Minimal MCP-over-HTTP client for ``gbrain serve``.
+
+    Fallback copy of the canonical implementation at
+    ``plugins/memory/gbrain/client.py`` (GbrainClient) for deployed
+    checkouts that predate the gbrain memory plugin — keep behavior in
+    sync with it. OAuth 2.1 client_credentials with cached bearer token
+    (one forced refresh on 401), ``POST {base}/mcp`` JSON-RPC
+    ``tools/call``, plain-JSON or SSE response bodies.
+    """
+
+    def __init__(self, base_url: str, *, client_id: Optional[str] = None,
+                 client_secret: Optional[str] = None,
+                 timeout: float = _GBRAIN_HTTP_TIMEOUT,
+                 cli_fallback: bool = False):
+        # ``cli_fallback`` accepted for signature parity with the canonical
+        # client; this fallback never shells out.
+        del cli_fallback
+        self.base_url = (base_url or "").rstrip("/")
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._timeout = timeout
+        self._token: Optional[str] = None
+        self._token_expiry: float = 0.0
+        self._token_endpoint: Optional[str] = None
+        self._token_lock = threading.Lock()
+        self._rpc_id = 0
+
+    # Single transport seam — tests monkeypatch _request.
+    def _request(self, url: str, *, data: Optional[bytes] = None,
+                 headers: Optional[Dict[str, str]] = None,
+                 method: str = "POST",
+                 timeout: Optional[float] = None) -> Tuple[int, Dict[str, str], bytes]:
+        req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout or self._timeout) as resp:
+                return resp.status, dict(resp.headers), resp.read()
+        except urllib.error.HTTPError as e:
             try:
-                return json.loads(out[start:])
-            except json.JSONDecodeError:
-                return None
-        return None
+                body = e.read() or b""
+            except Exception:
+                body = b""
+            return e.code, dict(e.headers or {}), body
+
+    def _get_token(self, *, force: bool = False) -> str:
+        if not (self._client_id and self._client_secret):
+            raise RuntimeError("gbrain dashboard credentials not configured")
+        with self._token_lock:
+            if not force and self._token and time.monotonic() < self._token_expiry - 60.0:
+                return self._token
+            if not self._token_endpoint:
+                status, _, body = self._request(
+                    f"{self.base_url}/.well-known/oauth-authorization-server",
+                    method="GET",
+                )
+                if status != 200:
+                    raise RuntimeError(f"gbrain OAuth discovery failed (HTTP {status})")
+                self._token_endpoint = json.loads(
+                    body.decode("utf-8", errors="replace"))["token_endpoint"]
+            form = urllib.parse.urlencode({
+                "grant_type": "client_credentials",
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+            }).encode("ascii")
+            status, _, body = self._request(
+                self._token_endpoint, data=form,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            if status != 200:
+                raise RuntimeError(f"gbrain token request failed (HTTP {status})")
+            payload = json.loads(body.decode("utf-8", errors="replace"))
+            self._token = payload["access_token"]
+            self._token_expiry = time.monotonic() + float(payload.get("expires_in", 3600))
+            return self._token
+
+    @staticmethod
+    def _parse_sse(text: str) -> Optional[dict]:
+        last = None
+        for line in text.splitlines():
+            if not line.startswith("data:"):
+                continue
+            chunk = line[len("data:"):].strip()
+            if not chunk:
+                continue
+            try:
+                obj = json.loads(chunk)
+            except ValueError:
+                continue
+            if isinstance(obj, dict) and ("result" in obj or "error" in obj):
+                last = obj
+        return last
+
+    def call_tool(self, name: str, arguments: Dict[str, Any],
+                  *, timeout: Optional[float] = None) -> Any:
+        if not self.base_url:
+            raise RuntimeError("gbrain base URL is not configured")
+        self._rpc_id += 1
+        body = json.dumps({
+            "jsonrpc": "2.0",
+            "id": self._rpc_id,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        }).encode("utf-8")
+        token = self._get_token()
+        for attempt in (0, 1):
+            status, resp_headers, raw = self._request(
+                f"{self.base_url}/mcp", data=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Authorization": f"Bearer {token}",
+                },
+                timeout=timeout,
+            )
+            if status == 401 and attempt == 0:
+                token = self._get_token(force=True)
+                continue
+            break
+        if status != 200:
+            raise RuntimeError(f"gbrain serve answered HTTP {status}")
+        text = raw.decode("utf-8", errors="replace")
+        content_type = next(
+            (v for k, v in (resp_headers or {}).items()
+             if k.lower() == "content-type"), "") or ""
+        if "text/event-stream" in content_type.lower():
+            envelope = self._parse_sse(text)
+        else:
+            try:
+                envelope = json.loads(text)
+            except ValueError:
+                envelope = self._parse_sse(text)
+        if not isinstance(envelope, dict):
+            raise RuntimeError("unparseable gbrain response")
+        if "error" in envelope:
+            raise RuntimeError(
+                str((envelope.get("error") or {}).get("message", envelope["error"])))
+        result = envelope.get("result") or {}
+        text_payload = ""
+        for item in result.get("content") or []:
+            if isinstance(item, dict) and item.get("type") == "text":
+                text_payload = item.get("text", "")
+                break
+        if result.get("isError"):
+            raise RuntimeError(text_payload or "gbrain tool call failed")
+        try:
+            return json.loads(text_payload)
+        except (ValueError, TypeError):
+            return text_payload
 
 
-def _gbrain_cli_text(args: List[str], timeout: float = 30.0) -> Optional[str]:
-    """Run a gbrain CLI subcommand and return raw stdout text, else None.
+# Prefer the canonical client when the checkout ships the gbrain memory
+# plugin (PROJECT_ROOT is on sys.path); deployed boxes whose hermes-agent
+# checkout predates it use the local fallback above.
+try:
+    from plugins.memory.gbrain.client import GbrainClient as _CanonicalGbrainClient
+except Exception:  # pragma: no cover — older deployed checkouts
+    _CanonicalGbrainClient = None
 
-    For commands that have no ``--json`` mode (e.g. ``query``). Never raises.
+_GBRAIN_CLIENT_LOCK = threading.Lock()
+_GBRAIN_CLIENT: Dict[str, Any] = {"key": None, "client": None}
+
+
+def _get_gbrain_client() -> Optional[Any]:
+    """Lazily build (and cache) the daemon client, or None when unconfigured.
+
+    Dashboard read creds are passed EXPLICITLY: the box also carries generic
+    GBRAIN_CLIENT_ID/SECRET that belong to another consumer, so do not use
+    ``GbrainClient.from_env``. Rebuilds if the resolved settings change
+    (e.g. the operator edits .env).
     """
-    bun = os.environ.get("GBRAIN_BUN") or str(Path.home() / ".bun" / "bin" / "bun")
-    gbrain_dir = os.environ.get("GBRAIN_DIR") or str(Path.home() / "gbrain-src")
-    cli = str(Path(gbrain_dir) / "src" / "cli.ts")
-    try:
-        proc = subprocess.run(
-            [bun, "run", cli, *args],
-            cwd=gbrain_dir,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    base_url = _gbrain_env_value("GBRAIN_SERVE_URL", "http://127.0.0.1:3131")
+    client_id = _gbrain_env_value("GBRAIN_DASHBOARD_CLIENT_ID")
+    client_secret = _gbrain_env_value("GBRAIN_DASHBOARD_CLIENT_SECRET")
+    if not (base_url and client_id and client_secret):
+        return None
+    key = (base_url, client_id, client_secret)
+    with _GBRAIN_CLIENT_LOCK:
+        if _GBRAIN_CLIENT["key"] == key and _GBRAIN_CLIENT["client"] is not None:
+            return _GBRAIN_CLIENT["client"]
+        cls = _CanonicalGbrainClient or _GbrainDaemonClient
+        client = cls(
+            base_url,
+            client_id=client_id,
+            client_secret=client_secret,
+            timeout=_GBRAIN_HTTP_TIMEOUT,
+            cli_fallback=False,  # digest is a hot path — never spawn the CLI
         )
-    except (subprocess.SubprocessError, OSError):
+        _GBRAIN_CLIENT["key"] = key
+        _GBRAIN_CLIENT["client"] = client
+        return client
+
+
+def _gbrain_op(name: str, arguments: Dict[str, Any]) -> Any:
+    """``tools/call`` one read op on the daemon; payload or None. Never raises."""
+    client = _get_gbrain_client()
+    if client is None:
         return None
-    if proc.returncode != 0:
+    try:
+        return client.call_tool(name, dict(arguments), timeout=_GBRAIN_HTTP_TIMEOUT)
+    except Exception as exc:  # degraded source contributes nothing
+        _log.debug("gbrain op %s failed: %s", name, exc)
         return None
-    return proc.stdout or None
 
 
 # ── Brain Graph generation ──────────────────────────────────────────────────
@@ -814,13 +1046,16 @@ def _resolve_gbrain_home() -> Optional[str]:
 def _run_graph_export() -> None:
     """Generate ``knowledge-graph.json`` into ``GRAPH_APP_DIST`` via the adapter.
 
-    Background-thread worker. Resolves bun + the gbrain checkout the same way as
-    the digest helpers, self-installs the adapter into the gbrain source tree
+    Background-thread worker. This is the one genuinely CLI/bun-bound gbrain
+    path left (the adapter's relative ``../core`` imports rule out the HTTP
+    daemon), so it runs with :func:`_gbrain_subprocess_env` — explicit
+    GBRAIN_HOME / GBRAIN_DATABASE_URL — to open the same brain as
+    ``gbrain serve``. Self-installs the adapter into the gbrain source tree
     (its relative imports require that location), runs it, and records the
     outcome in ``_GRAPH_GEN`` for ``/graph-app/status``. Never raises.
     """
-    bun = os.environ.get("GBRAIN_BUN") or str(Path.home() / ".bun" / "bin" / "bun")
-    gbrain_dir = Path(os.environ.get("GBRAIN_DIR") or (Path.home() / "gbrain-src"))
+    bun = _gbrain_env_value("GBRAIN_BUN") or str(Path.home() / ".bun" / "bin" / "bun")
+    gbrain_dir = Path(_gbrain_env_value("GBRAIN_DIR") or (Path.home() / "gbrain-src"))
     out_path = GRAPH_APP_DIST / "knowledge-graph.json"
     error: Optional[str] = None
     summary: Optional[str] = None
@@ -857,6 +1092,7 @@ def _run_graph_export() -> None:
         proc = subprocess.run(
             [bun, "run", str(adapter), "--out", str(out_path)],
             cwd=str(gbrain_dir),
+            env=_gbrain_subprocess_env(),
             capture_output=True,
             text=True,
             timeout=600,
@@ -896,47 +1132,35 @@ def _run_graph_export() -> None:
             )
 
 
-def _gbrain_query_highlights(prompt: str, limit: int = 5) -> List[str]:
-    """Semantic-search highlights via ``gbrain query`` (no --json mode).
+def _gbrain_highlights_from_query(payload: Any, limit: int = 5) -> List[str]:
+    """Build HIGHLIGHTS bullets from the daemon ``query`` op's results.
 
-    Parses its text output — result lines look like
-    ``[0.3641] meetings/…-zephyr-kickoff -- <snippet>`` and snippets can wrap
-    onto continuation lines. Returns pre-formatted bullet strings (possibly
+    The op returns structured SearchResult rows (``slug`` / ``title`` /
+    ``chunk_text`` / ``score``) — no text-scraping needed. Pure; tolerates
+    any payload shape and returns pre-formatted bullet strings (possibly
     empty). Never raises.
     """
-    import re
-
-    out = _gbrain_cli_text(
-        ["query", prompt, "--limit", str(limit), "--detail", "low"]
-    )
-    if not out:
+    if isinstance(payload, dict):
+        payload = payload.get("results") or payload.get("items") or []
+    if not isinstance(payload, list):
         return []
-    row_re = re.compile(r"^\[[0-9.]+\]\s+(\S+)\s+--\s+(.*)$")
-    results: List[Dict[str, str]] = []
-    current: Optional[Dict[str, str]] = None
-    for raw in out.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        if line.lower().startswith("no results"):
-            return []
-        m = row_re.match(line)
-        if m:
-            if current:
-                results.append(current)
-            slug, snippet = m.group(1), m.group(2)
-            current = {"label": slug.rsplit("/", 1)[-1], "snippet": snippet}
-        elif current:
-            current["snippet"] += " " + line
-    if current:
-        results.append(current)
-
     bullets: List[str] = []
-    for r in results[:limit]:
-        snippet = " ".join(r["snippet"].split())
+    for item in payload:
+        if len(bullets) >= limit:
+            break
+        if not isinstance(item, dict):
+            continue
+        slug = str(item.get("slug") or item.get("title") or "").strip()
+        if not slug:
+            continue
+        label = slug.rsplit("/", 1)[-1]
+        snippet = " ".join(
+            str(item.get("chunk_text") or item.get("snippet")
+                or item.get("content") or "").split()
+        )
         if len(snippet) > 160:
             snippet = snippet[:157].rstrip() + "…"
-        bullets.append(f"  • {r['label']}: {snippet}")
+        bullets.append(f"  • {label}: {snippet}" if snippet else f"  • {label}")
     return bullets
 
 
@@ -985,12 +1209,13 @@ def _format_gbrain_digest(
 def _read_latest_digest() -> dict:
     """Build the Home digest live from gbrain: recent salience + anomalies.
 
-    Shells out to the on-box gbrain CLI — ``gbrain salience`` and
-    ``gbrain anomalies``, the ops gbrain itself recommends for
-    "what's notable / current state" (see their ``--help``; semantic search is
-    explicitly the wrong tool here). The result is cached for a few minutes so
-    Home loads don't spawn bun + pglite each time. Never raises: any failure
-    yields the empty shape (``markdown: None``) so :func:`get_latest_digest`
+    Calls the long-running ``gbrain serve`` daemon — ``get_recent_salience``
+    and ``find_anomalies``, the ops gbrain itself recommends for "what's
+    notable / current state" (semantic search is explicitly the wrong tool
+    here), plus a ``query`` op for the HIGHLIGHTS section. The result is
+    cached for a few minutes so Home loads don't hammer the daemon. Never
+    raises: any failing source contributes nothing and total failure yields
+    the empty shape (``markdown: None``) so :func:`get_latest_digest`
     always answers 200.
 
     Blocking — run via ``run_in_executor`` from async code.
@@ -1003,16 +1228,19 @@ def _read_latest_digest() -> dict:
     if cached is not None and (mono - _DIGEST_CACHE.get("ts", 0.0)) < _DIGEST_TTL_SECONDS:
         return cached
 
-    salience = _gbrain_cli_json(["salience", "--days", "14", "--limit", "10"])
-    anomalies = _gbrain_cli_json(["anomalies"])
+    salience = _gbrain_op("get_recent_salience", {"days": 14, "limit": 10})
+    anomalies = _gbrain_op("find_anomalies", {})
     salience = salience if isinstance(salience, list) else []
     anomalies = anomalies if isinstance(anomalies, list) else []
 
-    query_prompt = os.environ.get(
+    query_prompt = _gbrain_env_value(
         "GBRAIN_DIGEST_QUERY",
         "most important open items, decisions, risks, and follow-ups",
     )
-    highlights = _gbrain_query_highlights(query_prompt, limit=5)
+    highlights = _gbrain_highlights_from_query(
+        _gbrain_op("query", {"query": query_prompt, "limit": 5, "detail": "low"}),
+        limit=5,
+    )
 
     markdown = _format_gbrain_digest(salience, anomalies, highlights)
     data = {
