@@ -269,6 +269,19 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  /** Known kanban assignees: profiles on disk + names in use on the board. */
+  getKanbanAssignees: () =>
+    fetchJSON<{ assignees: KanbanAssignee[] }>("/api/plugins/kanban/assignees"),
+  /** Append a comment to a kanban task (server defaults author to "dashboard"). */
+  addKanbanComment: (id: string, body: string, author?: string) =>
+    fetchJSON<{ ok: boolean }>(
+      `/api/plugins/kanban/tasks/${encodeURIComponent(id)}/comments`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(author ? { body, author } : { body }),
+      },
+    ),
   /** Org Chart Tasks: which task provider to show (native kanban vs Linear). */
   getTasksPrefs: () => fetchJSON<TasksPrefs>("/api/tasks/prefs"),
   setTasksPrefs: (body: { provider?: TaskProviderId; linear_team_id?: string }) =>
@@ -1856,6 +1869,16 @@ export interface KanbanBulkUpdateBody {
 }
 export interface KanbanBulkUpdateResponse {
   results: Array<{ id: string; ok: boolean; error?: string }>;
+}
+
+/** One entry from ``GET /api/plugins/kanban/assignees``
+ *  (``kanban_db.known_assignees``): every configured profile on disk plus
+ *  any name holding a non-archived task. */
+export interface KanbanAssignee {
+  name: string;
+  on_disk: boolean;
+  /** Non-archived task counts keyed by status. */
+  counts: Record<string, number>;
 }
 
 /** Org Chart Tasks provider selection (persisted server-side). */
