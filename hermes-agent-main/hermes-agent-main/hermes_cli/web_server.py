@@ -16,6 +16,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import secrets
 import stat
 import subprocess
@@ -1516,6 +1517,147 @@ def _write_tasks_prefs(prefs: Dict[str, Any]) -> None:
     _TASKS_PREFS_FILE.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
 
 
+# ---------------------------------------------------------------------------
+# Kanban Linear-UX sidecar metadata (docs/kanban-linear-ux.v0.1.0.md §2.2).
+# Linear-only fields the kanban plugin DB doesn't model -- due dates, labels,
+# estimates, cycles, saved views -- live in ~/.hermes/kanban-meta.json, served
+# by the /api/tasks/meta endpoints below. Read/merge/write mirrors the digest
+# prefs pattern; single-operator appliance, so no locking beyond the atomic
+# tmp+rename write. The plugin Board UI never sees these fields (accepted);
+# they render in our web/src views only.
+# ---------------------------------------------------------------------------
+
+_KANBAN_META_FILE = get_hermes_home() / "kanban-meta.json"
+_DEFAULT_KANBAN_META: Dict[str, Any] = {
+    "version": 1,
+    "tasks": {},  # task id -> {due_at?, labels?, estimate?, cycle_id?}
+    "labels": [],  # [{id, name, color}]
+    "cycles": [],  # [{id, name, start, end}]
+    "views": [],  # [{id, name, filters: FilterState}]
+}
+_KANBAN_TASK_META_FIELDS = ("due_at", "labels", "estimate", "cycle_id")
+# Mirrors the frontend FilterState (PRD §2.1): key -> default. Saved views
+# persist exactly this shape.
+_KANBAN_FILTER_DEFAULTS: Dict[str, Any] = {
+    "statuses": [],
+    "assignees": [],
+    "tenants": [],
+    "labels": [],
+    "cycleId": None,
+    "text": "",
+    "overdueOnly": False,
+}
+
+
+def _valid_iso_date(value: Any) -> bool:
+    """Strict YYYY-MM-DD naming a real calendar day (rejects 2026-02-31)."""
+    from datetime import date as _date
+
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return False
+    try:
+        _date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _valid_hex_color(value: Any) -> bool:
+    return isinstance(value, str) and bool(re.fullmatch(r"#[0-9a-fA-F]{6}", value))
+
+
+def _str_list(value: Any) -> Optional[List[str]]:
+    """``value`` as a list of strings, or None when malformed."""
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        return None
+    return list(value)
+
+
+def _clean_filter_state(value: Any) -> Optional[Dict[str, Any]]:
+    """Validate a saved view's FilterState: unknown keys rejected (None),
+    missing keys filled with defaults, wrong-typed values rejected."""
+    if not isinstance(value, dict):
+        return None
+    if set(value) - set(_KANBAN_FILTER_DEFAULTS):
+        return None
+    out = json.loads(json.dumps(_KANBAN_FILTER_DEFAULTS))
+    for key in ("statuses", "assignees", "tenants", "labels"):
+        if key in value:
+            lst = _str_list(value[key])
+            if lst is None:
+                return None
+            out[key] = lst
+    if "cycleId" in value:
+        if value["cycleId"] is not None and not isinstance(value["cycleId"], str):
+            return None
+        out["cycleId"] = value["cycleId"]
+    if "text" in value:
+        if not isinstance(value["text"], str):
+            return None
+        out["text"] = value["text"]
+    if "overdueOnly" in value:
+        if not isinstance(value["overdueOnly"], bool):
+            return None
+        out["overdueOnly"] = value["overdueOnly"]
+    return out
+
+
+def _clean_task_meta_entry(value: Any) -> Dict[str, Any]:
+    """Best-effort sanitize of one stored task entry (reads stay tolerant --
+    a hand-edited bad field drops out instead of poisoning the doc)."""
+    entry: Dict[str, Any] = {}
+    if not isinstance(value, dict):
+        return entry
+    if _valid_iso_date(value.get("due_at")):
+        entry["due_at"] = value["due_at"]
+    labels = _str_list(value.get("labels"))
+    if labels:
+        entry["labels"] = labels
+    est = value.get("estimate")
+    if isinstance(est, int) and not isinstance(est, bool) and 0 <= est <= 100:
+        entry["estimate"] = est
+    if isinstance(value.get("cycle_id"), str) and value["cycle_id"]:
+        entry["cycle_id"] = value["cycle_id"]
+    return entry
+
+
+def _read_kanban_meta() -> Dict[str, Any]:
+    """Load the sidecar doc merged over defaults; a corrupt file logs and
+    falls back to defaults (same posture as ``_read_digest_prefs``)."""
+    meta = json.loads(json.dumps(_DEFAULT_KANBAN_META))
+    try:
+        if _KANBAN_META_FILE.exists():
+            data = json.loads(_KANBAN_META_FILE.read_text("utf-8"))
+            if isinstance(data, dict):
+                tasks = data.get("tasks")
+                if isinstance(tasks, dict):
+                    for tid, raw in tasks.items():
+                        entry = _clean_task_meta_entry(raw)
+                        if isinstance(tid, str) and tid and entry:
+                            meta["tasks"][tid] = entry
+                for key in ("labels", "cycles", "views"):
+                    items = data.get(key)
+                    if isinstance(items, list):
+                        meta[key] = [
+                            i
+                            for i in items
+                            if isinstance(i, dict)
+                            and isinstance(i.get("id"), str)
+                            and i["id"]
+                        ]
+    except Exception:
+        _log.warning("failed to read kanban meta; using defaults", exc_info=True)
+    return meta
+
+
+def _write_kanban_meta(meta: Dict[str, Any]) -> None:
+    """Atomic write: tmp + rename, so a crash never half-writes the doc."""
+    _KANBAN_META_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _KANBAN_META_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    tmp.replace(_KANBAN_META_FILE)
+
+
 def _linear_api_key() -> Optional[str]:
     """LINEAR_API_KEY from the process env, falling back to ~/.hermes/.env.
 
@@ -1982,6 +2124,244 @@ async def put_tasks_prefs(body: TasksPrefsBody):
     _write_tasks_prefs(prefs)
     prefs["linear_configured"] = _linear_api_key() is not None
     return prefs
+
+
+@app.get("/api/tasks/meta")
+async def get_kanban_meta():
+    """Kanban sidecar metadata doc: due dates, labels, cycles, saved views."""
+    return _read_kanban_meta()
+
+
+@app.put("/api/tasks/meta")
+async def put_kanban_meta(body: Dict[str, Any]):
+    """Replace top-level meta arrays (+ optional lazy prune of task entries).
+
+    Each provided key among ``labels`` / ``cycles`` / ``views`` is a
+    full-array replace, validated; omitted keys are untouched. Task entries
+    referencing labels/cycles that just disappeared are scrubbed (same
+    keep-selections-valid pattern as digest news_sources).
+
+    GC (PRD §2.2, "keep it simple"): the client passes
+    ``prune_missing: true`` + ``live_task_ids`` (every id on the board it
+    just fetched) and the server drops task entries not in that list. Lazy
+    and client-triggered -- the server never scans the plugin DB. Note the
+    board payload excludes archived tasks, so archiving a task sheds its
+    sidecar meta on the next prune (accepted; due dates on archived tasks
+    are dead weight).
+    """
+    allowed = {"labels", "cycles", "views", "prune_missing", "live_task_ids"}
+    unknown = sorted(set(body) - allowed)
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"unknown keys: {unknown}")
+    meta = _read_kanban_meta()
+
+    if "labels" in body:
+        if not isinstance(body["labels"], list):
+            raise HTTPException(status_code=400, detail="labels must be a list")
+        labels: List[Dict[str, Any]] = []
+        seen_labels: set = set()
+        for raw in body["labels"]:
+            if not isinstance(raw, dict) or set(raw) - {"id", "name", "color"}:
+                raise HTTPException(
+                    status_code=400, detail="each label must be {id, name, color}"
+                )
+            lid, name, color = raw.get("id"), raw.get("name"), raw.get("color")
+            if not (isinstance(lid, str) and lid):
+                raise HTTPException(status_code=400, detail="label id required")
+            if not (isinstance(name, str) and name.strip()):
+                raise HTTPException(status_code=400, detail="label name required")
+            if not _valid_hex_color(color):
+                raise HTTPException(
+                    status_code=400, detail="label color must be #rrggbb"
+                )
+            if lid in seen_labels:
+                raise HTTPException(
+                    status_code=400, detail=f"duplicate label id {lid!r}"
+                )
+            seen_labels.add(lid)
+            labels.append({"id": lid, "name": name.strip(), "color": color})
+        meta["labels"] = labels
+
+    if "cycles" in body:
+        if not isinstance(body["cycles"], list):
+            raise HTTPException(status_code=400, detail="cycles must be a list")
+        cycles: List[Dict[str, Any]] = []
+        seen_cycles: set = set()
+        for raw in body["cycles"]:
+            if not isinstance(raw, dict) or set(raw) - {"id", "name", "start", "end"}:
+                raise HTTPException(
+                    status_code=400,
+                    detail="each cycle must be {id, name, start, end}",
+                )
+            cid, name = raw.get("id"), raw.get("name")
+            start, end = raw.get("start"), raw.get("end")
+            if not (isinstance(cid, str) and cid):
+                raise HTTPException(status_code=400, detail="cycle id required")
+            if not (isinstance(name, str) and name.strip()):
+                raise HTTPException(status_code=400, detail="cycle name required")
+            if not _valid_iso_date(start) or not _valid_iso_date(end):
+                raise HTTPException(
+                    status_code=400,
+                    detail="cycle start/end must be ISO dates (YYYY-MM-DD)",
+                )
+            if end < start:  # ISO dates compare lexicographically
+                raise HTTPException(
+                    status_code=400, detail="cycle end must not precede start"
+                )
+            if cid in seen_cycles:
+                raise HTTPException(
+                    status_code=400, detail=f"duplicate cycle id {cid!r}"
+                )
+            seen_cycles.add(cid)
+            cycles.append({"id": cid, "name": name.strip(), "start": start, "end": end})
+        meta["cycles"] = cycles
+
+    if "views" in body:
+        if not isinstance(body["views"], list):
+            raise HTTPException(status_code=400, detail="views must be a list")
+        views: List[Dict[str, Any]] = []
+        seen_views: set = set()
+        for raw in body["views"]:
+            if not isinstance(raw, dict) or set(raw) - {"id", "name", "filters"}:
+                raise HTTPException(
+                    status_code=400, detail="each view must be {id, name, filters}"
+                )
+            vid, name = raw.get("id"), raw.get("name")
+            if not (isinstance(vid, str) and vid):
+                raise HTTPException(status_code=400, detail="view id required")
+            if not (isinstance(name, str) and name.strip()):
+                raise HTTPException(status_code=400, detail="view name required")
+            filters = _clean_filter_state(raw.get("filters"))
+            if filters is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"view {name!r} has an invalid filters object "
+                    f"(allowed keys: {sorted(_KANBAN_FILTER_DEFAULTS)})",
+                )
+            if vid in seen_views:
+                raise HTTPException(
+                    status_code=400, detail=f"duplicate view id {vid!r}"
+                )
+            seen_views.add(vid)
+            views.append({"id": vid, "name": name.strip(), "filters": filters})
+        meta["views"] = views
+
+    # Scrub task entries against the (possibly shrunk) label/cycle universe.
+    label_ids = {l["id"] for l in meta["labels"]}
+    cycle_ids = {c["id"] for c in meta["cycles"]}
+    for tid in list(meta["tasks"]):
+        entry = meta["tasks"][tid]
+        if "labels" in entry:
+            kept = [l for l in entry["labels"] if l in label_ids]
+            if kept:
+                entry["labels"] = kept
+            else:
+                entry.pop("labels")
+        if "cycle_id" in entry and entry["cycle_id"] not in cycle_ids:
+            entry.pop("cycle_id")
+        if not entry:
+            meta["tasks"].pop(tid)
+
+    if "prune_missing" in body and not isinstance(body["prune_missing"], bool):
+        raise HTTPException(status_code=400, detail="prune_missing must be a bool")
+    if body.get("prune_missing"):
+        live = _str_list(body.get("live_task_ids"))
+        if live is None:
+            raise HTTPException(
+                status_code=400,
+                detail="prune_missing requires live_task_ids: string[]",
+            )
+        live_set = set(live)
+        meta["tasks"] = {t: e for t, e in meta["tasks"].items() if t in live_set}
+
+    _write_kanban_meta(meta)
+    return meta
+
+
+@app.patch("/api/tasks/meta/tasks/{task_id}")
+async def patch_kanban_task_meta(task_id: str, body: Dict[str, Any]):
+    """Merge one task's sidecar entry (PRD §2.2 schema).
+
+    ``null`` clears a field (so does ``labels: []``); the whole entry is
+    removed once every field is cleared. Returns the resulting entry
+    (``{}`` when removed). Plain dict body instead of a pydantic model:
+    absent-vs-null must be distinguishable and unknown keys must 400.
+    """
+    # kanban_db ids are always "t_" + 4-byte hex (``_new_task_id``; callers
+    # can't supply their own), so anything else is garbage — reject it before
+    # it becomes a JSON dict key in the sidecar doc, where malformed keys
+    # (huge strings, control chars) could corrupt the file in subtle ways.
+    if not re.fullmatch(r"t_[0-9a-f]{8}", task_id):
+        raise HTTPException(status_code=400, detail="invalid task id")
+    unknown = sorted(set(body) - set(_KANBAN_TASK_META_FIELDS))
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"unknown keys: {unknown}")
+    meta = _read_kanban_meta()
+    entry: Dict[str, Any] = dict(meta["tasks"].get(task_id) or {})
+
+    if "due_at" in body:
+        due = body["due_at"]
+        if due is None:
+            entry.pop("due_at", None)
+        elif _valid_iso_date(due):
+            entry["due_at"] = due
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="due_at must be an ISO date (YYYY-MM-DD) or null",
+            )
+
+    if "labels" in body:
+        raw = body["labels"]
+        if raw is None:
+            entry.pop("labels", None)
+        else:
+            labels = _str_list(raw)
+            if labels is None:
+                raise HTTPException(
+                    status_code=400, detail="labels must be a list of label ids or null"
+                )
+            known = {l["id"] for l in meta["labels"]}
+            bad = sorted(set(labels) - known)
+            if bad:
+                raise HTTPException(
+                    status_code=400, detail=f"unknown label ids: {bad}"
+                )
+            deduped = list(dict.fromkeys(labels))
+            if deduped:
+                entry["labels"] = deduped
+            else:
+                entry.pop("labels", None)
+
+    if "estimate" in body:
+        est = body["estimate"]
+        if est is None:
+            entry.pop("estimate", None)
+        elif isinstance(est, int) and not isinstance(est, bool) and 0 <= est <= 100:
+            entry["estimate"] = est
+        else:
+            raise HTTPException(
+                status_code=400, detail="estimate must be an int 0-100 or null"
+            )
+
+    if "cycle_id" in body:
+        cid = body["cycle_id"]
+        if cid is None:
+            entry.pop("cycle_id", None)
+        elif isinstance(cid, str) and any(c["id"] == cid for c in meta["cycles"]):
+            entry["cycle_id"] = cid
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="cycle_id must reference an existing cycle or be null",
+            )
+
+    if entry:
+        meta["tasks"][task_id] = entry
+    else:
+        meta["tasks"].pop(task_id, None)
+    _write_kanban_meta(meta)
+    return entry
 
 
 @app.get("/api/tasks/linear/teams")
