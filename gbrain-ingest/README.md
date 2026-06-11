@@ -1,9 +1,9 @@
 # gbrain-ingest
 
 Phase-2 ingestion pipelines for the agentbox2 gbrain memory layer. Pulls
-mailbox email threads, CRM contacts, and recent Google Drive docs into
-per-entity gbrain sources so hermes memory recall has real knowledge to
-draw on.
+mailbox email threads, CRM contacts, recent Google Drive docs, and
+rejected-draft feedback into per-entity gbrain sources so hermes memory
+recall has real knowledge to draw on.
 
 Runs ON the box (`UMB@agentbox2`) with stock python3 (stdlib + PyYAML,
 which is already installed). No psycopg2, no pip installs: DB reads go
@@ -21,9 +21,11 @@ which upserts via put_page), LLM calls hit the local ollama.
 | `ingest_contacts.py` | crm_contacts -> one contact page per contact, plain fact sentences |
 | `ingest_email.py` | inbox_messages -> one page PER THREAD, qwen3 summary, watermark-incremental |
 | `ingest_drive.py` | recent Google Docs per connected account -> distilled pages |
-| `systemd/` | user units: email 15min, contacts daily, drive daily, dream nightly |
+| `ingest_feedback.py` | draft_feedback -> one rejected-draft lesson page per rejection, fully deterministic (no LLM), id-watermark incremental |
+| `systemd/` | user units: email 15min, feedback 30min, contacts daily, drive daily, dream nightly |
 | `tests/test_attribution.py` | ladder unit tests (`uv run --with pytest --with pyyaml -- pytest tests/`) |
 | `tests/test_redact.py` | secret-redaction unit tests |
+| `tests/test_ingest_feedback.py` | feedback page-builder + SQL-shape unit tests |
 
 ## Secret redaction
 
@@ -65,7 +67,8 @@ mkdir -p ~/.config/systemd/user
 cp ~/gbrain-ingest/systemd/* ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now gbrain-ingest-email.timer \
-    gbrain-ingest-contacts.timer gbrain-ingest-drive.timer gbrain-dream.timer
+    gbrain-ingest-contacts.timer gbrain-ingest-drive.timer \
+    gbrain-ingest-feedback.timer gbrain-dream.timer
 ```
 
 All jobs share `flock /tmp/gbrain-ingest.lock` so at most ONE LLM consumer
@@ -86,11 +89,14 @@ python3 ingest_email.py --backfill                      # 1 qwen3 call/thread, s
 
 python3 ingest_drive.py --dry-run
 python3 ingest_drive.py --limit 25                      # per account
+
+python3 ingest_feedback.py --backfill --dry-run         # check attribution
+python3 ingest_feedback.py --backfill                   # no LLM, fast
 ```
 
 Re-running anything is safe: slugs are stable
-(`contacts/<id>-<name>`, `email/<thread_id>`, `drive/<name>-<idhash>`)
-and `gbrain capture` upserts by slug.
+(`contacts/<id>-<name>`, `email/<thread_id>`, `drive/<name>-<idhash>`,
+`feedback/<id>`) and `gbrain capture` upserts by slug.
 
 ## Watermarks
 
@@ -99,8 +105,21 @@ processed. The timer run only rebuilds threads with newer messages (a new
 message refreshes its whole thread page). On any write error the watermark
 is NOT advanced, so the next run retries.
 
+`~/.hermes/gbrain-ingest/feedback.watermark` holds the highest
+`draft_feedback.id` such that every row up to and including it succeeded.
+On a partial failure the watermark stops at the last id BEFORE the first
+failed row: that row and everything after it are refetched next run
+(later rows that already succeeded get harmlessly re-upserted), so a
+persistently failing row never silently skips and never blocks earlier
+progress. A corrupt watermark file degrades to a full scan with a
+warning. Exit code is non-zero if ANY row errored, so
+`systemctl --user status gbrain-ingest-feedback` surfaces partial
+failures (the email pipeline exits 0 on partial success — differing on
+purpose here).
+
 - Reset / full re-ingest: `python3 ingest_email.py --backfill`
 - Ingest from a point: `python3 ingest_email.py --since '2026-06-01T00:00:00Z'`
+- Feedback equivalents: `--backfill` / `--since-id <draft_feedback.id>`
 
 ## Adding an entity
 
