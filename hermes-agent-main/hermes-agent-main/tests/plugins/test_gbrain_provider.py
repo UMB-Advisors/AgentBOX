@@ -6,6 +6,14 @@ Covers the Phase 1 plan's 5 cases:
   3. Write gate: cron context blocks writes; primary + readOnly:false writes
   4. No pre-wrapped <memory-context> fences in prefetch output
   5. is_available() env semantics, no network I/O
+
+Phase 2 additions:
+  6. Snippet prefetch: content snippets with [source/slug] page refs
+     (query-op hits carry chunk_text — never bare paths again)
+  7. Entity-source scoping via memory.gbrain.source (query source_id,
+     capture routing; unset = combined / no filter)
+  8. World-visible writes (visibility: world frontmatter on every capture)
+  9. Per-context credential env-name selection (cron/dashboard prefixes)
 """
 
 import json
@@ -34,9 +42,11 @@ class FakeClient:
         self.capture_calls = []
         self.forget_calls = []
 
-    def recall(self, query, *, limit=5, timeout=None, cli_fallback=None):
+    def recall(self, query, *, limit=5, source=None, timeout=None,
+               cli_fallback=None):
         self.recall_calls.append(
-            {"query": query, "limit": limit, "cli_fallback": cli_fallback}
+            {"query": query, "limit": limit, "source": source,
+             "cli_fallback": cli_fallback}
         )
         if self.recall_exc:
             raise self.recall_exc
@@ -44,8 +54,10 @@ class FakeClient:
             time.sleep(self.recall_delay)
         return self.recall_payload
 
-    def capture(self, text, *, tags=None, slug=None, timeout=None):
-        self.capture_calls.append({"text": text, "tags": tags, "slug": slug})
+    def capture(self, text, *, tags=None, slug=None, source=None,
+                visibility=None, timeout=None):
+        self.capture_calls.append({"text": text, "tags": tags, "slug": slug,
+                                   "source": source, "visibility": visibility})
         return slug or "inbox/hermes/test-slug"
 
     def forget(self, fact_id, *, reason=None, timeout=None):
@@ -480,3 +492,274 @@ def test_queue_prefetch_warms_cache(monkeypatch, tmp_path):
     # cache is consumed — second prefetch does a fresh recall
     assert p.prefetch("next turn question", session_id="s1") == "warmed result"
     assert len(client.recall_calls) == 2  # one warmup + one fresh
+
+
+# ---------------------------------------------------------------------------
+# 6. Phase 2 — snippet prefetch: content + page refs, never bare paths
+# ---------------------------------------------------------------------------
+
+def test_format_recall_results_reads_chunk_text():
+    """The gbrain query op returns SearchResult dicts whose content lives
+    in chunk_text (no text/content/snippet key) — pre-fix these degraded
+    to a bare slug like 'inbox/2026-06-11-...'."""
+    payload = [{"slug": "inbox/2026-06-11-abcd1234",
+                "title": "note", "chunk_text": "the actual page content",
+                "score": 0.83, "page_id": 7}]
+    out = _format_recall_results(payload)
+    assert out == "[inbox/2026-06-11-abcd1234] the actual page content"
+
+
+def test_format_recall_results_ref_includes_source():
+    payload = [{"slug": "notes/deploy", "source_id": "umb",
+                "chunk_text": "deploy runbook"}]
+    assert _format_recall_results(payload) == "[umb/notes/deploy] deploy runbook"
+
+
+def test_format_recall_results_snippet_budget_split():
+    """With a snippet budget every hit contributes a word-safe snippet —
+    the first hit must not swallow the whole window."""
+    items = [
+        {"slug": f"p/{i}", "chunk_text": " ".join(f"w{i}x{j}" for j in range(80))}
+        for i in range(4)
+    ]
+    out = _format_recall_results(items, snippet_budget=400)
+    parts = out.split("\n\n")
+    assert len(parts) == 4
+    for i, part in enumerate(parts):
+        ref = f"[p/{i}] "
+        assert part.startswith(ref)
+        # per-item snippet is word-safe truncated to budget // n_items
+        assert len(part) <= len(ref) + 100
+        assert part.endswith("…")
+
+
+def test_prefetch_returns_budgeted_snippets_with_refs(monkeypatch, tmp_path):
+    payload = [
+        {"slug": "notes/deploy", "source_id": "umb", "score": 0.9,
+         "chunk_text": "deploy facts " * 40},
+        {"slug": "inbox/2026-06-11-abcd1234", "source_id": "umb", "score": 0.5,
+         "chunk_text": "inbox content body " * 40},
+    ]
+    p = _make_provider(
+        monkeypatch, tmp_path,
+        config={"contextChars": 300},
+        client=FakeClient(recall_payload=payload),
+    )
+    out = p.prefetch("deploys?")
+    assert out.startswith("[umb/notes/deploy] deploy facts")
+    assert "[umb/inbox/2026-06-11-abcd1234] inbox content body" in out
+    assert len(out) <= 300  # still truncated to contextChars total
+
+
+# ---------------------------------------------------------------------------
+# 7. Phase 2 — entity-source scoping (memory.gbrain.source)
+# ---------------------------------------------------------------------------
+
+def test_source_config_scopes_recall_and_captures(monkeypatch, tmp_path):
+    client = FakeClient(recall_payload="hit")
+    p = _make_provider(
+        monkeypatch, tmp_path,
+        config={"readOnly": False, "source": "umb"},
+        client=client,
+    )
+    assert p.prefetch("anything relevant?") == "hit"
+    json.loads(p.handle_tool_call("gbrain_recall", {"query": "q"}))
+    assert [c["source"] for c in client.recall_calls] == ["umb", "umb"]
+
+    p.handle_tool_call("gbrain_capture", {"text": "note"})
+    p.on_session_end([{"role": "user", "content": "hi"}])
+    p.on_pre_compress([{"role": "user", "content": "hi"}])
+    assert len(client.capture_calls) == 3
+    assert all(c["source"] == "umb" for c in client.capture_calls)
+
+
+def test_source_unset_means_combined_no_filter(monkeypatch, tmp_path):
+    client = FakeClient(recall_payload="hit")
+    p = _make_provider(monkeypatch, tmp_path,
+                       config={"readOnly": False}, client=client)
+    p.prefetch("anything relevant?")
+    p.handle_tool_call("gbrain_capture", {"text": "note"})
+    assert client.recall_calls[0]["source"] is None
+    assert client.capture_calls[0]["source"] is None
+
+
+def test_client_recall_passes_source_id_arg(monkeypatch):
+    sent = []
+
+    def fake_request(self, url, *, data=None, headers=None, method="POST",
+                     timeout=None):
+        body = json.loads(data.decode()) if data else {}
+        if body.get("method") == "tools/call":
+            sent.append(body["params"])
+        return 200, {"Content-Type": "application/json"}, _mcp_envelope(
+            [{"slug": "a", "chunk_text": "x"}])
+
+    monkeypatch.setattr(GbrainClient, "_request", fake_request)
+    c = GbrainClient("http://127.0.0.1:3131", static_token="t")
+    c.recall("q", source="umb")
+    assert sent[-1]["name"] == "query"
+    assert sent[-1]["arguments"]["source_id"] == "umb"
+    c.recall("q")  # unset → no per-call source filter on the wire
+    assert "source_id" not in sent[-1]["arguments"]
+
+
+def test_client_cli_capture_fallback_passes_source(monkeypatch):
+    import plugins.memory.gbrain.client as client_mod
+
+    def fake_request(self, url, *, data=None, headers=None, method="POST",
+                     timeout=None):
+        return 200, {"Content-Type": "application/json"}, json.dumps({
+            "jsonrpc": "2.0", "id": 1,
+            "error": {"code": -32601, "message": "unknown_operation: put_page"},
+        }).encode()
+
+    cli_calls = {}
+
+    class FakeProc:
+        returncode = 0
+        stdout = "ok"
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        cli_calls["cmd"] = cmd
+        cli_calls["kwargs"] = kwargs
+        return FakeProc()
+
+    monkeypatch.setattr(GbrainClient, "_request", fake_request)
+    monkeypatch.setattr(client_mod.subprocess, "run", fake_run)
+    c = GbrainClient("http://127.0.0.1:3131", static_token="t")
+    c.capture("note body", slug="inbox/hermes/s1", source="umb",
+              visibility="world")
+    cmd = cli_calls["cmd"]
+    assert cmd[cmd.index("--source") + 1] == "umb"
+    assert "visibility: world" in cli_calls["kwargs"]["input"]
+
+
+# ---------------------------------------------------------------------------
+# 8. Phase 2 — world-visible writes
+# ---------------------------------------------------------------------------
+
+def test_all_write_paths_are_world_visible(monkeypatch, tmp_path):
+    client = FakeClient()
+    p = _make_provider(monkeypatch, tmp_path, agent_context="primary",
+                       config={"readOnly": False}, client=client)
+    p.handle_tool_call("gbrain_capture", {"text": "note"})
+    p.on_session_end([{"role": "user", "content": "hi"}])
+    p.on_pre_compress([{"role": "user", "content": "hi"}])
+    assert len(client.capture_calls) == 3
+    assert all(c["visibility"] == "world" for c in client.capture_calls)
+
+
+def test_client_capture_writes_world_visibility_frontmatter(monkeypatch):
+    sent = []
+
+    def fake_request(self, url, *, data=None, headers=None, method="POST",
+                     timeout=None):
+        body = json.loads(data.decode()) if data else {}
+        if body.get("method") == "tools/call":
+            sent.append(body["params"])
+        return 200, {"Content-Type": "application/json"}, _mcp_envelope(
+            {"ok": True})
+
+    monkeypatch.setattr(GbrainClient, "_request", fake_request)
+    c = GbrainClient("http://127.0.0.1:3131", static_token="t")
+    slug = c.capture("remember this", tags=["a"],
+                     slug="hermes/sessions/2026-06-10-zz",
+                     source="umb", visibility="world")
+    assert slug == "hermes/sessions/2026-06-10-zz"
+    assert sent[-1]["name"] == "put_page"
+    args = sent[-1]["arguments"]
+    assert args["slug"] == slug
+    content = args["content"]
+    assert content.startswith("---\n")
+    assert "\nvisibility: world\n" in content
+    # put_page has no per-call source param — the entity is recorded as a
+    # source:<slug> tag so attribution survives on broader-scoped tokens.
+    assert '"source:umb"' in content
+    assert "remember this" in content
+
+
+# ---------------------------------------------------------------------------
+# 9. Phase 2 — per-context credential env-name selection
+# ---------------------------------------------------------------------------
+
+_CRED_VARS = [
+    "GBRAIN_CLIENT_ID", "GBRAIN_CLIENT_SECRET", "GBRAIN_API_TOKEN",
+    "GBRAIN_CRON_CLIENT_ID", "GBRAIN_CRON_CLIENT_SECRET",
+    "GBRAIN_CRON_API_TOKEN",
+    "GBRAIN_DASHBOARD_CLIENT_ID", "GBRAIN_DASHBOARD_CLIENT_SECRET",
+    "GBRAIN_DASHBOARD_API_TOKEN",
+]
+
+
+def _init_real_client_provider(monkeypatch, *, agent_context="primary",
+                               platform="cli", env=None):
+    for var in _CRED_VARS:
+        monkeypatch.delenv(var, raising=False)
+    for var, value in (env or {}).items():
+        monkeypatch.setenv(var, value)
+    monkeypatch.setenv("GBRAIN_SERVE_URL", "http://127.0.0.1:3131")
+    monkeypatch.setattr(gbrain_mod, "_read_provider_config", lambda: {})
+    p = GbrainMemoryProvider()
+    p.initialize("session-1", hermes_home="/tmp", platform=platform,
+                 agent_context=agent_context)
+    assert isinstance(p._client, GbrainClient)
+    return p
+
+
+def test_creds_cron_context_prefers_cron_env(monkeypatch):
+    p = _init_real_client_provider(
+        monkeypatch, agent_context="cron", platform="cron",
+        env={"GBRAIN_CLIENT_ID": "canon-id",
+             "GBRAIN_CLIENT_SECRET": "canon-sec",
+             "GBRAIN_CRON_CLIENT_ID": "cron-id",
+             "GBRAIN_CRON_CLIENT_SECRET": "cron-sec"},
+    )
+    assert p._client._client_id == "cron-id"
+    assert p._client._client_secret == "cron-sec"
+
+
+def test_creds_dashboard_selected_via_platform(monkeypatch):
+    p = _init_real_client_provider(
+        monkeypatch, agent_context="primary", platform="dashboard",
+        env={"GBRAIN_CLIENT_ID": "canon-id",
+             "GBRAIN_CLIENT_SECRET": "canon-sec",
+             "GBRAIN_DASHBOARD_CLIENT_ID": "dash-id",
+             "GBRAIN_DASHBOARD_CLIENT_SECRET": "dash-sec"},
+    )
+    assert p._client._client_id == "dash-id"
+    assert p._client._client_secret == "dash-sec"
+
+
+def test_creds_primary_uses_canonical_even_with_overrides_set(monkeypatch):
+    p = _init_real_client_provider(
+        monkeypatch, agent_context="primary", platform="cli",
+        env={"GBRAIN_CLIENT_ID": "canon-id",
+             "GBRAIN_CLIENT_SECRET": "canon-sec",
+             "GBRAIN_CRON_CLIENT_ID": "cron-id",
+             "GBRAIN_CRON_CLIENT_SECRET": "cron-sec"},
+    )
+    assert p._client._client_id == "canon-id"
+    assert p._client._client_secret == "canon-sec"
+
+
+def test_creds_incomplete_override_falls_back_to_canonical(monkeypatch):
+    # cron id without a secret is incomplete — canonical pair wins
+    p = _init_real_client_provider(
+        monkeypatch, agent_context="cron", platform="cron",
+        env={"GBRAIN_CLIENT_ID": "canon-id",
+             "GBRAIN_CLIENT_SECRET": "canon-sec",
+             "GBRAIN_CRON_CLIENT_ID": "cron-id"},
+    )
+    assert p._client._client_id == "canon-id"
+    assert p._client._client_secret == "canon-sec"
+
+
+def test_creds_context_static_token_override(monkeypatch):
+    p = _init_real_client_provider(
+        monkeypatch, agent_context="cron", platform="cron",
+        env={"GBRAIN_CLIENT_ID": "canon-id",
+             "GBRAIN_CLIENT_SECRET": "canon-sec",
+             "GBRAIN_CRON_API_TOKEN": "cron-token"},
+    )
+    assert p._client._static_token == "cron-token"
