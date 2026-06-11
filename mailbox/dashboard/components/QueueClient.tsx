@@ -13,47 +13,21 @@ import { DraftDetail } from './DraftDetail';
 import { EmptyState } from './EmptyState';
 import { type CooldownState, GmailCooldownBanner } from './GmailCooldownBanner';
 import { NewDraftsBanner } from './NewDraftsBanner';
+import {
+  PANES_AUTOSAVE_ID,
+  POLL_INTERVAL_MS,
+  RESIZE_HANDLE_CLASS,
+  RIGHT_PANE_PREF_KEY,
+  STUCK_APPROVED_THRESHOLD_MS,
+} from './queue/constants';
+import { type FolderKey, type Mode, modeForFolder, type ToastMsg } from './queue/utils';
 import type { RejectPayload } from './RejectPopover';
 import { RightPane } from './RightPane';
 import { ShortcutsHelp } from './ShortcutsHelp';
 import { StuckApproved } from './StuckApproved';
 import { Toast } from './Toast';
 
-const POLL_INTERVAL_MS = 30_000;
-const STUCK_APPROVED_THRESHOLD_MS = 5 * 60 * 1000;
-// P1b (MBOX-162) — persist the right-pane open/closed toggle. The pane *sizes*
-// are persisted by react-resizable-panels' autoSaveId; this only persists
-// whether the third pane is shown at all (it's a desktop-only affordance).
-const RIGHT_PANE_PREF_KEY = 'mailbox-queue-right-pane-open-v1';
-// react-resizable-panels persistence key for the horizontal pane sizes.
-const PANES_AUTOSAVE_ID = 'mailbox-queue-panes-v1';
-// Thin resize handle with hover/drag affordance; the inset span widens the
-// hit target without widening the visible rule. Ported from the sandbox.
-const RESIZE_HANDLE_CLASS =
-  'relative w-px bg-border-subtle transition-colors data-[resize-handle-state=hover]:bg-accent-orange/50 data-[resize-handle-state=drag]:bg-accent-orange';
-
 type Busy = { draftId: number; kind: ActionKind | 'retry' } | null;
-// STAQPRO-331 #9 — widened to carry an optional action (Undo button) and a
-// per-message duration override (Undo lingers 5s vs the 4s default).
-type ToastMsg = {
-  kind: 'success' | 'error';
-  text: string;
-  action?: { label: string; onClick: () => void };
-  durationMs?: number;
-} | null;
-// STAQPRO-382 Phase 2a-2 (2026-05-15) — folder-driven queue. `folder` comes
-// from `app/queue/page.tsx` which reads the URL ?folder= search param.
-// `mode` is derived from folder and replaces the previous `view: 'pending' |
-// 'sent'` internal state. The Sidebar (left rail) handles folder switching;
-// the inline Inbox/Sent tab nav is gone.
-type FolderKey = 'queue' | 'priority' | 'approved' | 'sent' | 'rejected' | 'all';
-type Mode = 'active' | 'archive';
-
-function modeForFolder(folder: FolderKey): Mode {
-  // 'queue', 'priority' and 'all' include pending+edited drafts that are still
-  // actionable. The others show already-actioned drafts.
-  return folder === 'queue' || folder === 'priority' || folder === 'all' ? 'active' : 'archive';
-}
 
 interface Props {
   folder: FolderKey;
