@@ -1,0 +1,13 @@
+[Unit]
+Description=Run gbrain draft-feedback ingestion every 30 minutes
+
+[Timer]
+# Offset from the email timer (*:0/15) so the two rarely contend for the
+# shared flock; Persistent catches missed runs after suspend/reboot.
+OnCalendar=*:11/30
+RandomizedDelaySec=60
+Persistent=true
+Unit=gbrain-ingest-feedback.service
+
+[Install]
+WantedBy=timers.target
