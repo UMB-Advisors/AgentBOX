@@ -318,10 +318,12 @@ export default function GraphPage() {
             </p>
           )}
           {error && (
-            <p className="mt-3 inline-flex items-start gap-1.5 text-left text-xs text-red-500">
+            <div className="mt-3 flex items-start gap-1.5 text-left text-xs text-red-500">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{error}</span>
-            </p>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono leading-relaxed">
+                {error}
+              </pre>
+            </div>
           )}
         </div>
       </div>
