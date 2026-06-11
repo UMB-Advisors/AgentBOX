@@ -16,6 +16,7 @@ import {
   api,
   type KanbanBulkUpdateBody,
   type KanbanBoard,
+  type KanbanCycle,
   type KanbanFilterState,
   type KanbanLabel,
   type KanbanMeta,
@@ -358,10 +359,11 @@ export default function KanbanListView({
   /** Detail-panel sidecar edits (due date / labels / estimate / cycle) —
    *  parent owns the PATCH + toast + meta fold-back. */
   onPatchMeta: (taskId: string, patch: KanbanTaskMetaPatch) => void;
-  /** Live board task ids after every fetch (drives the parent's lazy
-   *  sidecar prune, PRD §2.2). MUST be referentially stable or the list
-   *  refetches whenever the parent re-renders. */
-  onBoardLoaded: (liveIds: string[]) => void;
+  /** Live board tasks after every fetch — drives the parent's lazy sidecar
+   *  prune (PRD §2.2) and the per-cycle progress rollup (PRD §3.3). MUST be
+   *  referentially stable or the list refetches whenever the parent
+   *  re-renders. */
+  onBoardLoaded: (tasks: KanbanTask[]) => void;
 }) {
   const { toast, showToast } = useToast();
   const [board, setBoard] = useState<KanbanBoard | null>(null);
@@ -379,7 +381,7 @@ export default function KanbanListView({
         const b = await api.getKanbanBoard();
         setBoard(b);
         setError(null);
-        onBoardLoaded(b.columns.flatMap((c) => c.tasks.map((t) => t.id)));
+        onBoardLoaded(b.columns.flatMap((c) => c.tasks));
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -736,6 +738,7 @@ export default function KanbanListView({
           task={detail}
           taskMeta={meta?.tasks[detail.id] ?? null}
           allLabels={meta?.labels ?? []}
+          cycles={meta?.cycles ?? []}
           assignees={assignees}
           panelRef={panelRef}
           onClose={closeDetail}
@@ -969,6 +972,7 @@ function DetailPanel({
   task,
   taskMeta,
   allLabels,
+  cycles,
   assignees,
   panelRef,
   onClose,
@@ -981,6 +985,8 @@ function DetailPanel({
   taskMeta: KanbanTaskMeta | null;
   /** Every defined label (multi-assign toggles, PRD §3.1). */
   allLabels: KanbanLabel[];
+  /** Every defined cycle (assignment select, PRD §3.3). */
+  cycles: KanbanCycle[];
   assignees: string[];
   panelRef: ReturnType<typeof useModalBehavior>;
   onClose: () => void;
@@ -1135,6 +1141,26 @@ function DetailPanel({
                 value={taskMeta?.estimate ?? null}
                 onCommit={(v) => onPatchMeta(task.id, { estimate: v })}
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="kanban-detail-cycle">Cycle</Label>
+              <Select
+                id="kanban-detail-cycle"
+                value={taskMeta?.cycle_id ?? ""}
+                onValueChange={(v) => {
+                  // "" clears (sidecar PATCH maps null to "remove field").
+                  if (v !== (taskMeta?.cycle_id ?? "")) {
+                    onPatchMeta(task.id, { cycle_id: v || null });
+                  }
+                }}
+              >
+                <SelectOption value="">No cycle</SelectOption>
+                {cycles.map((c) => (
+                  <SelectOption key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectOption>
+                ))}
+              </Select>
             </div>
           </div>
 

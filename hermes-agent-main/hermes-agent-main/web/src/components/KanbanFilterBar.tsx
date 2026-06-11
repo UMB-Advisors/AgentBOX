@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Check, Pencil, Plus, Tag, Trash2, X } from "lucide-react";
+import { CalendarRange, Check, Pencil, Plus, Tag, Trash2, X } from "lucide-react";
+import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import {
   Dialog,
@@ -10,7 +11,12 @@ import {
 import { Input } from "@nous-research/ui/ui/components/input";
 import { Label } from "@nous-research/ui/ui/components/label";
 import { cn } from "@/lib/utils";
-import type { KanbanFilterState, KanbanLabel, KanbanSavedView } from "@/lib/api";
+import type {
+  KanbanCycle,
+  KanbanFilterState,
+  KanbanLabel,
+  KanbanSavedView,
+} from "@/lib/api";
 
 // Filter chip bar for the native Tasks list (PRD
 // docs/kanban-linear-ux.v0.1.0.md §2.1): built-in chips (All / Active /
@@ -53,6 +59,22 @@ export function makeLabel(name: string, existing: KanbanLabel[]): KanbanLabel {
     name,
     color: LABEL_PALETTE[existing.length % LABEL_PALETTE.length],
   };
+}
+
+/** Per-cycle rollup computed by the parent from the loaded board + sidecar
+ *  (PRD §3.3): done = status "done"; unestimated tasks count 0 points. */
+export interface KanbanCycleProgress {
+  doneTasks: number;
+  totalTasks: number;
+  donePoints: number;
+  totalPoints: number;
+}
+
+/** Today as a local-tz YYYY-MM-DD (cycle dates are date-only, PRD §3.3). */
+function localISODate(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 // "Active" = everything between triage and done (PRD §2.1).
@@ -117,6 +139,9 @@ export default function KanbanFilterBar({
   showOverdue,
   labels,
   onSaveLabels,
+  cycles,
+  cycleProgress,
+  onSaveCycles,
 }: {
   filter: KanbanFilterState;
   onFilterChange: (filter: KanbanFilterState) => void;
@@ -136,6 +161,12 @@ export default function KanbanFilterBar({
   labels: KanbanLabel[];
   /** Full-array label replace (parent owns the PUT + meta state). */
   onSaveLabels: (labels: KanbanLabel[]) => void;
+  /** Sidecar cycles — CRUD dropdown + filter (§3.3). */
+  cycles: KanbanCycle[];
+  /** done/total tasks · points per cycle id (parent computes from board). */
+  cycleProgress: Record<string, KanbanCycleProgress>;
+  /** Full-array cycle replace (parent owns the PUT + meta state). */
+  onSaveCycles: (cycles: KanbanCycle[]) => void;
 }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
@@ -252,6 +283,14 @@ export default function KanbanFilterBar({
           })
         }
         onManage={() => setManageLabelsOpen(true)}
+      />
+
+      <CyclesDropdown
+        cycles={cycles}
+        progress={cycleProgress}
+        activeCycleId={filter.cycleId}
+        onSelectCycle={(id) => onFilterChange({ ...filter, cycleId: id })}
+        onSave={onSaveCycles}
       />
 
       <Input
@@ -572,5 +611,223 @@ function ManageLabelsDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Cycles-lite dropdown (PRD §3.3): CRUD (name + start/end dates), pick-to-
+// filter, and per-cycle progress — done/total tasks · done/total points with
+// a thin bar. Bar fraction is TASK-based (points still shown in the text);
+// the PRD doesn't pick one and tasks are always defined, points often 0.
+// No burn-up charts, no auto-rollover (v2 candidates per the PRD).
+function CyclesDropdown({
+  cycles,
+  progress,
+  activeCycleId,
+  onSelectCycle,
+  onSave,
+}: {
+  cycles: KanbanCycle[];
+  progress: Record<string, KanbanCycleProgress>;
+  /** FilterState.cycleId — selecting the active cycle again clears it. */
+  activeCycleId: string | null;
+  onSelectCycle: (id: string | null) => void;
+  onSave: (cycles: KanbanCycle[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  // One shared form drives both create (id null) and edit; null = closed.
+  const [form, setForm] = useState<{
+    id: string | null;
+    name: string;
+    start: string;
+    end: string;
+  } | null>(null);
+
+  const today = localISODate();
+  // "Current cycle = today within [start, end]" (PRD §3.3) — ISO dates
+  // compare lexicographically, mirroring the server check.
+  const isCurrent = (c: KanbanCycle) => c.start <= today && today <= c.end;
+  const active = cycles.find((c) => c.id === activeCycleId) ?? null;
+
+  const trimmedName = (form?.name ?? "").trim();
+  const rangeInvalid =
+    form != null && form.start !== "" && form.end !== "" && form.end < form.start;
+  const formInvalid =
+    form == null || !trimmedName || !form.start || !form.end || rangeInvalid;
+
+  const submitForm = () => {
+    if (form == null || formInvalid) return;
+    if (form.id != null) {
+      onSave(
+        cycles.map((c) =>
+          c.id === form.id
+            ? { id: c.id, name: trimmedName, start: form.start, end: form.end }
+            : c,
+        ),
+      );
+    } else {
+      const id = `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      onSave([...cycles, { id, name: trimmedName, start: form.start, end: form.end }]);
+    }
+    setForm(null);
+  };
+
+  return (
+    <div className="relative">
+      <Button
+        type="button"
+        ghost
+        size="sm"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        prefix={<CalendarRange className="h-3.5 w-3.5" />}
+      >
+        {active ? active.name : "Cycles"}
+      </Button>
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            aria-hidden="true"
+            onClick={() => {
+              setOpen(false);
+              setForm(null);
+            }}
+          />
+          <div
+            role="menu"
+            aria-label="Cycles"
+            className="absolute left-0 z-50 mt-1 w-72 rounded-md border border-border bg-card p-1 shadow-xl"
+          >
+            {cycles.length === 0 && (
+              <p className="px-2 py-2 text-xs text-muted-foreground">
+                No cycles yet.
+              </p>
+            )}
+            {cycles.map((c) => {
+              const pr = progress[c.id] ?? {
+                doneTasks: 0,
+                totalTasks: 0,
+                donePoints: 0,
+                totalPoints: 0,
+              };
+              const pct = pr.totalTasks
+                ? Math.round((pr.doneTasks / pr.totalTasks) * 100)
+                : 0;
+              const selected = activeCycleId === c.id;
+              return (
+                <div key={c.id} className="rounded px-2 py-1.5 hover:bg-midground/5">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      onClick={() => onSelectCycle(selected ? null : c.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <span
+                        className={cn(
+                          "min-w-0 truncate text-sm",
+                          selected && "text-brand",
+                        )}
+                      >
+                        {c.name}
+                      </span>
+                      {isCurrent(c) && <Badge tone="outline">current</Badge>}
+                      {selected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                    </button>
+                    <Button
+                      type="button"
+                      ghost
+                      size="icon"
+                      aria-label={`Edit cycle ${c.name}`}
+                      onClick={() =>
+                        setForm({ id: c.id, name: c.name, start: c.start, end: c.end })
+                      }
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      ghost
+                      size="icon"
+                      aria-label={`Delete cycle ${c.name}`}
+                      onClick={() => onSave(cycles.filter((x) => x.id !== c.id))}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {c.start} → {c.end} · {pr.doneTasks}/{pr.totalTasks} tasks ·{" "}
+                    {pr.donePoints}/{pr.totalPoints} pts
+                  </p>
+                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-midground/10">
+                    <div
+                      className="h-full rounded-full bg-brand"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+
+            {form != null ? (
+              <form
+                className="mt-1 grid gap-1.5 border-t border-border p-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submitForm();
+                }}
+              >
+                <Input
+                  autoFocus
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Cycle name"
+                  aria-label="Cycle name"
+                />
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="date"
+                    value={form.start}
+                    onChange={(e) => setForm({ ...form, start: e.target.value })}
+                    aria-label="Cycle start date"
+                  />
+                  <span className="text-xs text-muted-foreground">→</span>
+                  <Input
+                    type="date"
+                    value={form.end}
+                    onChange={(e) => setForm({ ...form, end: e.target.value })}
+                    aria-label="Cycle end date"
+                  />
+                </div>
+                {rangeInvalid && (
+                  <p className="text-xs text-destructive">
+                    End date precedes start date.
+                  </p>
+                )}
+                <div className="flex gap-1.5">
+                  <Button type="submit" size="sm" disabled={formInvalid}>
+                    {form.id != null ? "Save" : "Add"}
+                  </Button>
+                  <Button type="button" ghost size="sm" onClick={() => setForm(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="mt-1 border-t border-border pt-1">
+                <button
+                  type="button"
+                  onClick={() => setForm({ id: null, name: "", start: "", end: "" })}
+                  className="w-full rounded px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-midground/5 hover:text-foreground"
+                >
+                  New cycle…
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

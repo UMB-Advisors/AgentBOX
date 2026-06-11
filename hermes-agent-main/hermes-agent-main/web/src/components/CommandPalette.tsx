@@ -38,6 +38,7 @@ type Mode =
   | { kind: "task"; task: KanbanTask }
   | { kind: "pick"; task: KanbanTask; field: "status" | "priority" | "assignee" }
   | { kind: "label"; task: KanbanTask }
+  | { kind: "cycle"; task: KanbanTask }
   | { kind: "archive"; task: KanbanTask }
   | { kind: "comment"; task: KanbanTask };
 
@@ -247,6 +248,11 @@ export default function CommandPalette({
             run: () => enter({ kind: "label", task: t }),
           },
           {
+            id: "cycle",
+            label: "Set cycle…",
+            run: () => enter({ kind: "cycle", task: t }),
+          },
+          {
             id: "comment",
             label: "Comment…",
             run: () => enter({ kind: "comment", task: t }),
@@ -335,6 +341,44 @@ export default function CommandPalette({
                 ),
             };
           });
+      }
+      case "cycle": {
+        // Assign / clear the task's sidecar cycle (PRD §3.3).
+        const t = mode.task;
+        const all = meta?.cycles ?? [];
+        if (!all.length) {
+          return [
+            {
+              id: "none",
+              label: "No cycles defined",
+              hint: "manage from the filter bar",
+              run: onClose,
+            },
+          ];
+        }
+        const current = meta?.tasks[t.id]?.cycle_id;
+        const clear: PaletteItem[] = fuzzyMatch(q, "no cycle")
+          ? [
+              {
+                id: "__none__",
+                label: "No cycle",
+                hint: current == null ? "current" : undefined,
+                run: () => void patchMeta(t, { cycle_id: null }, "Cycle cleared ✓"),
+              },
+            ]
+          : [];
+        return [
+          ...clear,
+          ...all
+            .filter((c) => fuzzyMatch(q, c.name))
+            .map<PaletteItem>((c) => ({
+              id: c.id,
+              label: c.name,
+              hint: c.id === current ? "current" : undefined,
+              run: () =>
+                void patchMeta(t, { cycle_id: c.id }, `Cycle → ${c.name} ✓`),
+            })),
+        ];
       }
       case "archive": {
         const t = mode.task;
@@ -428,6 +472,7 @@ export default function CommandPalette({
               <span className="shrink-0">· set {mode.field}</span>
             )}
             {mode.kind === "label" && <span className="shrink-0">· add label</span>}
+            {mode.kind === "cycle" && <span className="shrink-0">· set cycle</span>}
             {mode.kind === "comment" && <span className="shrink-0">· comment</span>}
             {mode.kind === "archive" && <span className="shrink-0">· archive?</span>}
             {mode.kind === "task" && (

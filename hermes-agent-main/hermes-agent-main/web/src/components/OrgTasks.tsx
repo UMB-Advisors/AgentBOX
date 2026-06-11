@@ -11,7 +11,11 @@ import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { Link } from "react-router-dom";
 import { PluginPage } from "@/plugins";
 import CommandPalette, { type PaletteCommand } from "@/components/CommandPalette";
-import KanbanFilterBar, { EMPTY_FILTER, makeLabel } from "@/components/KanbanFilterBar";
+import KanbanFilterBar, {
+  EMPTY_FILTER,
+  makeLabel,
+  type KanbanCycleProgress,
+} from "@/components/KanbanFilterBar";
 import KanbanListView, {
   type GroupBy,
   type TaskContextAction,
@@ -20,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { parseQuickAdd } from "@/lib/quickAdd";
 import {
   api,
+  type KanbanCycle,
   type KanbanFilterState,
   type KanbanLabel,
   type KanbanMeta,
@@ -249,8 +254,12 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
     [showToast],
   );
 
+  // Live board tasks as last reported by the list (statuses + estimates
+  // feed the per-cycle progress rollup, PRD §3.3).
+  const [boardTasks, setBoardTasks] = useState<KanbanTask[]>([]);
+
   // Lazy sidecar GC (PRD §2.2): after each board fetch the list reports the
-  // live task ids; when the sidecar still holds entries for ids gone from
+  // live tasks; when the sidecar still holds entries for ids gone from
   // the board (deleted or archived — archived tasks shedding their meta is
   // accepted, see the server docstring), one PUT with prune_missing drops
   // them server-side. Refs keep the callback referentially stable (the
@@ -261,9 +270,11 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
     metaRef.current = meta;
   }, [meta]);
   const pruneInFlight = useRef(false);
-  const handleBoardLoaded = useCallback((liveIds: string[]) => {
+  const handleBoardLoaded = useCallback((tasks: KanbanTask[]) => {
+    setBoardTasks(tasks);
     const m = metaRef.current;
     if (!m || pruneInFlight.current) return;
+    const liveIds = tasks.map((t) => t.id);
     const live = new Set(liveIds);
     if (!Object.keys(m.tasks).some((id) => !live.has(id))) return;
     pruneInFlight.current = true;
@@ -277,6 +288,30 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
         pruneInFlight.current = false;
       });
   }, []);
+
+  // Per-cycle progress (PRD §3.3): done = status "done"; unestimated tasks
+  // count 0 points. The board payload excludes archived tasks, so archived
+  // work drops out of the rollup (consistent with the prune above).
+  const cycleProgress = useMemo<Record<string, KanbanCycleProgress>>(() => {
+    const out: Record<string, KanbanCycleProgress> = {};
+    if (!meta) return out;
+    for (const c of meta.cycles) {
+      out[c.id] = { doneTasks: 0, totalTasks: 0, donePoints: 0, totalPoints: 0 };
+    }
+    for (const t of boardTasks) {
+      const tm = meta.tasks[t.id];
+      const cid = tm?.cycle_id;
+      if (cid == null || !(cid in out)) continue;
+      const pts = tm?.estimate ?? 0;
+      out[cid].totalTasks += 1;
+      out[cid].totalPoints += pts;
+      if (t.status === "done") {
+        out[cid].doneTasks += 1;
+        out[cid].donePoints += pts;
+      }
+    }
+    return out;
+  }, [boardTasks, meta]);
 
   const selectView = useCallback((id: string, filters: KanbanFilterState) => {
     setActiveViewId(id);
@@ -398,6 +433,32 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
         );
         return null;
       }
+    },
+    [showToast],
+  );
+
+  // Cycle CRUD (PRD §3.3): full-array replace via PUT. The server scrubs a
+  // deleted cycle off task entries; mirror that on the active filter.
+  const saveCycles = useCallback(
+    (cycles: KanbanCycle[]) => {
+      void (async () => {
+        try {
+          const updated = await api.putKanbanMeta({ cycles });
+          setMeta(updated);
+          const ids = new Set(updated.cycles.map((c) => c.id));
+          setFilter((f) =>
+            f.cycleId != null && !ids.has(f.cycleId)
+              ? { ...f, cycleId: null }
+              : f,
+          );
+          showToast("Cycles saved ✓", "success");
+        } catch (e: unknown) {
+          showToast(
+            `Saving cycles failed: ${e instanceof Error ? e.message : String(e)}`,
+            "error",
+          );
+        }
+      })();
     },
     [showToast],
   );
@@ -567,6 +628,9 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
             )}
             labels={meta?.labels ?? []}
             onSaveLabels={saveLabels}
+            cycles={meta?.cycles ?? []}
+            cycleProgress={cycleProgress}
+            onSaveCycles={saveCycles}
           />
           <KanbanListView
             onOpenBoard={() => selectSubView("board")}
