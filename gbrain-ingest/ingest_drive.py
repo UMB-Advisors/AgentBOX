@@ -179,7 +179,6 @@ def main() -> int:
             frontmatter = {
                 "title": name[:140],
                 "type": "drive-doc",
-                "visibility": "world",
                 "account": email,
                 "entity": entity.entity,
                 "drive_id": fid,

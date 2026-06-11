@@ -3,9 +3,11 @@
 
 One page per contact, written into the contact's entity source
 (company -> entity via entity_map companies; unresolved -> unsorted).
-Pages carry visibility: world frontmatter and world-visible fact sentences
-("<name> works at <company>", "Email <e> belongs to <name>") so gbrain's
-extraction makes them recallable over HTTP.
+Page bodies lead with plain fact sentences ("<name> works at <company>",
+"Email <e> belongs to <name>") so gbrain's fact extraction has clean
+input. NOTE: no visibility frontmatter is written — gbrain (<= 0.41.x)
+ignores page-frontmatter visibility and facts extracted from pages
+default to 'private' (only the extract_facts op param can set 'world').
 
 Idempotent: stable slug contacts/<id>-<name>; gbrain capture routes to
 put_page which upserts by slug.
@@ -88,7 +90,6 @@ def build_page(contact: dict, entity: str) -> tuple[str, str]:
     frontmatter = {
         "title": name,
         "type": "contact",
-        "visibility": "world",
         "entity": entity,
         "company": company or None,
         "emails": emails or None,

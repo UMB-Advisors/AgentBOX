@@ -60,10 +60,12 @@ def _build_capture_markdown(text: str, tags: Optional[List[str]] = None,
                             *, visibility: Optional[str] = None) -> str:
     """Full markdown page (YAML frontmatter + body) for put_page/capture.
 
-    ``visibility`` lands in the frontmatter (e.g. ``visibility: world``)
-    so anything derived from the page (facts) is recallable by remote
-    HTTP callers — gbrain's recall surface filters non-local callers to
-    ``visibility='world'``.
+    ``visibility`` lands in the frontmatter as-is, but is ADVISORY ONLY:
+    gbrain (<= 0.41.x) never reads frontmatter visibility — pages have no
+    visibility column, and facts later extracted from a page default to
+    'private' regardless of the frontmatter (only the ``extract_facts``
+    op's own param can set 'world'). Do not rely on it for any
+    access-control effect.
     """
     lines = ["---"]
     if tags:
@@ -390,8 +392,11 @@ class GbrainClient:
         'capture' op — the gbrain thin client itself routes capture through
         put_page); falls back to ``gbrain capture --stdin`` when refused.
 
-        ``visibility`` is written into the page frontmatter (use "world"
-        so the write is recallable by remote HTTP callers).
+        ``visibility`` is written into the page frontmatter verbatim but
+        is ADVISORY ONLY — gbrain (<= 0.41.x) ignores page-frontmatter
+        visibility entirely (facts extracted later default to 'private';
+        the ``query`` op has no world/private filter at all). It exists
+        for forward compatibility, not access control.
 
         ``source`` (entity slug): the daemon's ``put_page`` has NO per-call
         source parameter — remote writes always land in the OAuth token's

@@ -27,10 +27,13 @@ it as the query op's per-call ``source_id`` and captures are routed to it
 token's registered source — register the client with ``--source`` to
 match). Unset means no per-call filter (combined view).
 
-Writes are world-visible: every capture (session-end, pre-compress,
-gbrain_capture) carries ``visibility: world`` frontmatter so pages and
-the facts derived from them stay recallable over HTTP (gbrain filters
-remote recall to ``visibility='world'``).
+Visibility: provider writes carry NO visibility frontmatter. gbrain
+(<= 0.41.x) ignores page-frontmatter visibility entirely — facts later
+extracted from a page default to 'private' no matter what the page says,
+and the ``query`` op this provider recalls through has no world/private
+filter at all. The earlier "world-visible writes" frontmatter was a
+verified no-op and was removed rather than left as a false promise (and
+as a latent exposure if a future gbrain starts honoring it).
 
 Secrets (.env): GBRAIN_API_TOKEN (static) or GBRAIN_CLIENT_ID +
 GBRAIN_CLIENT_SECRET (OAuth client_credentials, ~1h TTL, auto-refreshed).
@@ -68,7 +71,6 @@ PREFETCH_TIMEOUT = 3.0          # recall must never block a turn longer
 PREFETCH_CACHE_TTL = 600.0      # seconds a queued prefetch result stays fresh
 SESSION_SUMMARY_CHARS = 500
 MIN_SNIPPET_CHARS = 80          # per-result floor when splitting the budget
-CAPTURE_VISIBILITY = "world"    # provider writes must stay HTTP-recallable
 
 # Per-context credential env prefixes (PRD D7): selected by agent_context
 # (or platform) at initialize time. Pure env-NAME selection — an absent or
@@ -615,8 +617,7 @@ class GbrainMemoryProvider(MemoryProvider):
             )
             self._client.capture(
                 summary, tags=self._capture_tags(), slug=slug,
-                source=self._source or None,
-                visibility=CAPTURE_VISIBILITY, timeout=10.0,
+                source=self._source or None, timeout=10.0,
             )
         except Exception as e:
             logger.debug("gbrain session-end capture failed: %s", e)
@@ -632,7 +633,6 @@ class GbrainMemoryProvider(MemoryProvider):
                     summary,
                     tags=self._capture_tags(["hermes-pre-compress"]),
                     source=self._source or None,
-                    visibility=CAPTURE_VISIBILITY,
                     timeout=10.0,
                 )
         except Exception as e:
@@ -672,7 +672,6 @@ class GbrainMemoryProvider(MemoryProvider):
                 slug = self._client.capture(
                     text, tags=self._capture_tags(args.get("tags")),
                     source=self._source or None,
-                    visibility=CAPTURE_VISIBILITY,
                     timeout=10.0,
                 )
                 return json.dumps({"result": "Captured to gbrain.", "slug": slug})

@@ -110,7 +110,6 @@ def build_thread_page(msgs: list[dict], entity, emap: dict, no_llm: bool) -> tup
     frontmatter = {
         "title": subject[:140],
         "type": "email-thread",
-        "visibility": "world",
         "account": account_email,
         "from": latest.get("from_addr"),
         "to": latest.get("to_addr"),

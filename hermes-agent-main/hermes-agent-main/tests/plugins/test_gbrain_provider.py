@@ -12,7 +12,9 @@ Phase 2 additions:
      (query-op hits carry chunk_text — never bare paths again)
   7. Entity-source scoping via memory.gbrain.source (query source_id,
      capture routing; unset = combined / no filter)
-  8. World-visible writes (visibility: world frontmatter on every capture)
+  8. Visibility: provider writes carry NO visibility frontmatter (gbrain
+     <= 0.41.x ignores page-frontmatter visibility — it was a no-op and a
+     latent exposure; the client kwarg remains advisory/explicit-only)
   9. Per-context credential env-name selection (cron/dashboard prefixes)
 """
 
@@ -636,10 +638,14 @@ def test_client_cli_capture_fallback_passes_source(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 8. Phase 2 — world-visible writes
+# 8. Phase 2 — visibility frontmatter (advisory only; never forced)
 # ---------------------------------------------------------------------------
 
-def test_all_write_paths_are_world_visible(monkeypatch, tmp_path):
+def test_provider_writes_carry_no_visibility(monkeypatch, tmp_path):
+    """gbrain <= 0.41.x ignores page-frontmatter visibility (facts default
+    to private regardless), so the provider must not stamp a meaningless —
+    and, if a future gbrain honors it, data-exposing — `visibility: world`
+    on its writes."""
     client = FakeClient()
     p = _make_provider(monkeypatch, tmp_path, agent_context="primary",
                        config={"readOnly": False}, client=client)
@@ -647,10 +653,13 @@ def test_all_write_paths_are_world_visible(monkeypatch, tmp_path):
     p.on_session_end([{"role": "user", "content": "hi"}])
     p.on_pre_compress([{"role": "user", "content": "hi"}])
     assert len(client.capture_calls) == 3
-    assert all(c["visibility"] == "world" for c in client.capture_calls)
+    assert all(c["visibility"] is None for c in client.capture_calls)
 
 
-def test_client_capture_writes_world_visibility_frontmatter(monkeypatch):
+def test_client_capture_renders_explicit_visibility_frontmatter(monkeypatch):
+    """The client kwarg is advisory/forward-compat: an explicitly passed
+    visibility renders into the frontmatter verbatim (the current daemon
+    ignores it — no access-control effect)."""
     sent = []
 
     def fake_request(self, url, *, data=None, headers=None, method="POST",

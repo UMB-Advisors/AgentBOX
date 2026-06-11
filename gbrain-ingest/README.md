@@ -18,7 +18,7 @@ which upserts via put_page), LLM calls hit the local ollama.
 | `entity_map.yaml` | Canonical 11 entity slugs, account map, CRM company map, domain heuristics, classifier + summarizer config |
 | `attribution.py` | 5-rung attribution ladder, pure function, no I/O |
 | `common.py` | Shared I/O: entity-map loader, psql-via-docker, gbrain capture, ollama, watermarks |
-| `ingest_contacts.py` | crm_contacts -> one contact page per contact, world-visible facts |
+| `ingest_contacts.py` | crm_contacts -> one contact page per contact, plain fact sentences |
 | `ingest_email.py` | inbox_messages -> one page PER THREAD, qwen3 summary, watermark-incremental |
 | `ingest_drive.py` | recent Google Docs per connected account -> distilled pages |
 | `systemd/` | user units: email 15min, contacts daily, drive daily, dream nightly |
@@ -38,8 +38,11 @@ which upserts via put_page), LLM calls hit the local ollama.
    else unresolved -> `unsorted`.
 
 Sources are the recall boundary; tags (`entity:<slug>`, `account:<x>`) are
-decoration only. All pages carry `visibility: world` frontmatter so facts
-stay recallable over HTTP MCP.
+decoration only. No `visibility` frontmatter is written: gbrain (≤0.41.x)
+ignores page-frontmatter visibility — facts extracted from pages default
+to `private` regardless, and the `query` op (hermes recall path) has no
+world/private filter — so the earlier `visibility: world` stamp was a
+no-op, and a latent exposure if a future gbrain starts honoring it.
 
 ## Deploy to the box
 
