@@ -235,6 +235,24 @@ export const api = {
   },
   /** Kanban board (digest Tasks module). */
   getKanbanBoard: () => fetchJSON<KanbanBoard>("/api/plugins/kanban/board"),
+  /** Org Chart Tasks: which task provider to show (native kanban vs Linear). */
+  getTasksPrefs: () => fetchJSON<TasksPrefs>("/api/tasks/prefs"),
+  setTasksPrefs: (body: { provider?: TaskProviderId; linear_team_id?: string }) =>
+    fetchJSON<TasksPrefs>("/api/tasks/prefs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  /** Linear teams for the Org Chart Tasks team picker. */
+  getLinearTeams: () => fetchJSON<LinearTeamsResponse>("/api/tasks/linear/teams"),
+  /** Read-only Linear board, grouped by workflow-state type. */
+  getLinearBoard: (team?: string | null, refresh = false) => {
+    const qs = new URLSearchParams();
+    if (team) qs.set("team", team);
+    if (refresh) qs.set("refresh", "1");
+    const s = qs.toString();
+    return fetchJSON<LinearBoard>(`/api/tasks/linear/board${s ? `?${s}` : ""}`);
+  },
   /** Today's calendar events for the digest (placeholder until calendar wired). */
   getDigestCalendar: () => fetchJSON<DigestCalendar>("/api/digest/calendar"),
   getDigestBrief: (account?: string) =>
@@ -1706,6 +1724,45 @@ export interface KanbanTask {
 }
 export interface KanbanBoard {
   columns: Array<{ name: string; tasks: KanbanTask[] }>;
+}
+
+/** Org Chart Tasks provider selection (persisted server-side). */
+export type TaskProviderId = "native" | "linear";
+export interface TasksPrefs {
+  provider: TaskProviderId;
+  linear_team_id: string | null;
+  /** Whether LINEAR_API_KEY is set on the box (Settings -> Keys). */
+  linear_configured: boolean;
+}
+
+export interface LinearTeam {
+  id: string;
+  key: string;
+  name: string;
+}
+export interface LinearTeamsResponse {
+  connected: boolean;
+  teams: LinearTeam[];
+  reason?: string;
+}
+
+export interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  url: string;
+  /** Linear priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low. */
+  priority: number;
+  updated_at: string;
+  state: string;
+  assignee: string | null;
+  project: string | null;
+}
+export interface LinearBoard {
+  connected: boolean;
+  reason?: string;
+  team?: string | null;
+  columns: Array<{ name: string; issues: LinearIssue[] }>;
 }
 
 export interface CalendarEvent {

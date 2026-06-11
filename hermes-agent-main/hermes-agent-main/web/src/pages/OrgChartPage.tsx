@@ -2,19 +2,21 @@ import { useEffect, useMemo, type ComponentType, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Clock, LayoutDashboard, Network, Users } from "lucide-react";
 import { usePageHeader } from "@/contexts/usePageHeader";
-import { usePlugins, PluginPage } from "@/plugins";
+import { usePlugins } from "@/plugins";
 import { cn } from "@/lib/utils";
 import TeamPage from "@/pages/TeamPage";
 import CronPage from "@/pages/CronPage";
 import TeamGraph from "@/components/TeamGraph";
+import OrgTasks from "@/components/OrgTasks";
 
 // Org Chart — the consolidated org-facing workspace. Team, a reporting-hierarchy
 // graph, Tasks, and Agent Jobs live here as sub-views (replacing what used to be
 // four separate left-nav tabs). The graph is native (TeamGraph); Team and Agent
-// Jobs reuse their existing full-page components; Tasks embeds the /kanban plugin
-// when present. Only one sub-view mounts at a time, so each child's
-// usePageHeader() calls don't collide — and this page sets the title last
-// (effect runs parent-after-children), so the header stays "Org Chart".
+// Jobs reuse their existing full-page components; Tasks switches between the
+// /kanban plugin (native) and a read-only Linear board (OrgTasks). Only one
+// sub-view mounts at a time, so each child's usePageHeader() calls don't
+// collide — and this page sets the title last (effect runs
+// parent-after-children), so the header stays "Org Chart".
 
 type SubTabId = "team" | "graph" | "tasks" | "jobs";
 
@@ -44,14 +46,14 @@ export default function OrgChartPage() {
       { id: "team", label: "Team", icon: Users, render: () => <TeamPage /> },
       { id: "graph", label: "Graph", icon: Network, render: () => <TeamGraph /> },
     ];
-    if (kanban) {
-      list.push({
-        id: "tasks",
-        label: "Tasks",
-        icon: LayoutDashboard,
-        render: () => <PluginPage name={kanban.name} />,
-      });
-    }
+    // Always present: even without the kanban plugin, the Linear provider can
+    // carry the Tasks view (OrgTasks explains the missing-plugin case).
+    list.push({
+      id: "tasks",
+      label: "Tasks",
+      icon: LayoutDashboard,
+      render: () => <OrgTasks kanbanName={kanban?.name ?? null} />,
+    });
     list.push({ id: "jobs", label: "Agent Jobs", icon: Clock, render: () => <CronPage /> });
     return list;
   }, [kanban]);

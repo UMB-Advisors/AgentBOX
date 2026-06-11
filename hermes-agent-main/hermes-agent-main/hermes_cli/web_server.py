@@ -1406,6 +1406,160 @@ def _write_digest_prefs(prefs: Dict[str, Any]) -> None:
     _DIGEST_PREFS_FILE.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
 
 
+# ---------------------------------------------------------------------------
+# Org Chart Tasks — selectable provider (native kanban plugin vs Linear).
+# Preference persists like digest prefs (JSON in ~/.hermes). The Linear board
+# is read-only in v1; see docs/orgchart-tasks-provider.v0.1.0.md.
+# ---------------------------------------------------------------------------
+
+_TASKS_PREFS_FILE = get_hermes_home() / "tasks-prefs.json"
+_TASK_PROVIDERS = ("native", "linear")
+_DEFAULT_TASKS_PREFS: Dict[str, Any] = {
+    "provider": "native",
+    "linear_team_id": None,
+}
+
+_LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
+_LINEAR_CACHE: Dict[str, Dict[str, Any]] = {}  # team id (or "_all") -> {ts, data}
+_LINEAR_TTL_SECONDS = 60.0
+# Columns group by Linear workflow-state *type* (stable across teams with
+# custom state names). Canceled is omitted; completed is age-capped below.
+_LINEAR_COLUMNS: List[tuple] = [
+    ("triage", "Triage"),
+    ("backlog", "Backlog"),
+    ("unstarted", "Todo"),
+    ("started", "In Progress"),
+    ("completed", "Done"),
+]
+_LINEAR_DONE_MAX_AGE_DAYS = 14
+
+
+def _read_tasks_prefs() -> Dict[str, Any]:
+    prefs = dict(_DEFAULT_TASKS_PREFS)
+    try:
+        if _TASKS_PREFS_FILE.exists():
+            data = json.loads(_TASKS_PREFS_FILE.read_text("utf-8"))
+            if isinstance(data, dict):
+                if data.get("provider") in _TASK_PROVIDERS:
+                    prefs["provider"] = data["provider"]
+                team = data.get("linear_team_id")
+                if isinstance(team, str) and team.strip():
+                    prefs["linear_team_id"] = team.strip()
+    except Exception:
+        _log.warning("failed to read tasks prefs; using defaults", exc_info=True)
+    return prefs
+
+
+def _write_tasks_prefs(prefs: Dict[str, Any]) -> None:
+    _TASKS_PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _TASKS_PREFS_FILE.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
+
+
+def _linear_api_key() -> Optional[str]:
+    """LINEAR_API_KEY from the process env, falling back to ~/.hermes/.env.
+
+    The fallback matters because the dashboard daemon may have started before
+    the operator pasted the key in Settings -> Keys (which writes .env without
+    restarting us).
+    """
+    key = (os.getenv("LINEAR_API_KEY") or "").strip()
+    if key:
+        return key
+    try:
+        key = str(load_env().get("LINEAR_API_KEY") or "").strip()
+    except Exception:
+        key = ""
+    return key or None
+
+
+def _linear_graphql(
+    key: str, query: str, variables: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """One GraphQL request to Linear. Blocking — run via ``run_in_executor``."""
+    import requests
+
+    resp = requests.post(
+        _LINEAR_GRAPHQL_URL,
+        json={"query": query, "variables": variables or {}},
+        headers={"Authorization": key, "Content-Type": "application/json"},
+        timeout=15,
+    )
+    try:
+        payload = resp.json()
+    except ValueError:
+        payload = {}
+    if resp.status_code != 200 or payload.get("errors"):
+        errs = payload.get("errors") or []
+        msg = errs[0].get("message") if errs and isinstance(errs[0], dict) else None
+        raise RuntimeError(msg or f"Linear API HTTP {resp.status_code}")
+    return payload.get("data") or {}
+
+
+def _linear_board_payload(key: str, team_id: Optional[str]) -> Dict[str, Any]:
+    """Fetch + shape the Linear board. Blocking — run via ``run_in_executor``."""
+    from datetime import datetime, timedelta, timezone
+
+    issue_filter: Dict[str, Any] = {"state": {"type": {"neq": "canceled"}}}
+    if team_id:
+        issue_filter["team"] = {"id": {"eq": team_id}}
+    data = _linear_graphql(
+        key,
+        """
+        query Board($filter: IssueFilter) {
+          issues(filter: $filter, first: 100, orderBy: updatedAt) {
+            nodes {
+              id identifier title url priority updatedAt
+              state { name type }
+              assignee { displayName }
+              project { name }
+            }
+          }
+        }
+        """,
+        {"filter": issue_filter},
+    )
+    nodes = ((data.get("issues") or {}).get("nodes")) or []
+    done_cutoff = datetime.now(timezone.utc) - timedelta(
+        days=_LINEAR_DONE_MAX_AGE_DAYS
+    )
+    by_type: Dict[str, List[Dict[str, Any]]] = {t: [] for t, _ in _LINEAR_COLUMNS}
+    for n in nodes:
+        state = n.get("state") or {}
+        stype = state.get("type")
+        if stype not in by_type:
+            continue
+        updated = str(n.get("updatedAt") or "")
+        if stype == "completed":
+            try:
+                if datetime.fromisoformat(updated.replace("Z", "+00:00")) < done_cutoff:
+                    continue
+            except ValueError:
+                pass
+        assignee = n.get("assignee") or {}
+        project = n.get("project") or {}
+        by_type[stype].append(
+            {
+                "id": str(n.get("id") or ""),
+                "identifier": str(n.get("identifier") or ""),
+                "title": str(n.get("title") or ""),
+                "url": str(n.get("url") or ""),
+                "priority": int(n.get("priority") or 0),
+                "updated_at": updated,
+                "state": str(state.get("name") or ""),
+                "assignee": assignee.get("displayName") or None,
+                "project": project.get("name") or None,
+            }
+        )
+    return {
+        "connected": True,
+        "team": team_id,
+        "columns": [
+            {"name": label, "issues": by_type[stype]}
+            for stype, label in _LINEAR_COLUMNS
+        ],
+    }
+
+
 def _parse_feed(xml_text: str, label: str, sid: str) -> List[Dict[str, Any]]:
     """Parse an RSS 2.0 or Atom feed into normalized items. Best-effort."""
     import html as _html
@@ -1737,6 +1891,94 @@ async def put_digest_prefs(body: DigestPrefsBody):
         prefs["news_sources"] = [s for s in prefs["news_sources"] if s in valid_ids]
     _write_digest_prefs(prefs)
     return prefs
+
+
+@app.get("/api/tasks/prefs")
+async def get_tasks_prefs():
+    prefs = _read_tasks_prefs()
+    prefs["linear_configured"] = _linear_api_key() is not None
+    return prefs
+
+
+class TasksPrefsBody(BaseModel):
+    provider: Optional[str] = None
+    linear_team_id: Optional[str] = None
+
+
+@app.put("/api/tasks/prefs")
+async def put_tasks_prefs(body: TasksPrefsBody):
+    prefs = _read_tasks_prefs()
+    if body.provider is not None:
+        if body.provider not in _TASK_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"provider must be one of {list(_TASK_PROVIDERS)}",
+            )
+        prefs["provider"] = body.provider
+    if body.linear_team_id is not None:
+        # Empty string clears the team filter (back to "all teams").
+        prefs["linear_team_id"] = body.linear_team_id.strip() or None
+    _write_tasks_prefs(prefs)
+    prefs["linear_configured"] = _linear_api_key() is not None
+    return prefs
+
+
+@app.get("/api/tasks/linear/teams")
+async def get_linear_teams():
+    key = _linear_api_key()
+    if not key:
+        return {"connected": False, "teams": []}
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(
+            None,
+            _linear_graphql,
+            key,
+            "query { teams(first: 100) { nodes { id key name } } }",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("Linear teams fetch failed: %s", exc)
+        return {"connected": False, "teams": [], "reason": str(exc)}
+    nodes = ((data.get("teams") or {}).get("nodes")) or []
+    return {
+        "connected": True,
+        "teams": [
+            {
+                "id": str(t.get("id") or ""),
+                "key": str(t.get("key") or ""),
+                "name": str(t.get("name") or ""),
+            }
+            for t in nodes
+        ],
+    }
+
+
+@app.get("/api/tasks/linear/board")
+async def get_linear_board(team: Optional[str] = None, refresh: bool = False):
+    key = _linear_api_key()
+    if not key:
+        return {
+            "connected": False,
+            "reason": "LINEAR_API_KEY not set",
+            "columns": [],
+        }
+    cache_key = team or "_all"
+    mono = time.monotonic()
+    cached = _LINEAR_CACHE.get(cache_key)
+    if cached and not refresh and mono - cached["ts"] < _LINEAR_TTL_SECONDS:
+        return cached["data"]
+    loop = asyncio.get_running_loop()
+    try:
+        payload = await loop.run_in_executor(
+            None, _linear_board_payload, key, team
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("Linear board fetch failed: %s", exc)
+        if cached:  # serve stale rather than blanking the board
+            return cached["data"]
+        return {"connected": False, "reason": str(exc), "columns": []}
+    _LINEAR_CACHE[cache_key] = {"ts": mono, "data": payload}
+    return payload
 
 
 @app.get("/api/digest/calendar")
