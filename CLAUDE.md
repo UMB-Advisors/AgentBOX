@@ -3,6 +3,8 @@
 Project-level instructions for Claude Code in this repo. Auto-loaded each session.
 Extends the global `~/.claude/CLAUDE.md`.
 
+> **⚠️ Two "dashboards" — don't confuse them (MBOX-469).** The **operator UI** is the **Hermes dashboard** (`hermes-agent-main/.../web`, served on `:9119`/tunnel `:9120`) — build new features there. The vendored **`mailbox/dashboard/`** (Next.js `mailbox-dashboard` container, `:3001`) is now the **headless MailBox pipeline backend** behind the hermes proxy (`/dashboard/*` → `:3001`): it serves n8n's ~33 `/api/internal/*` routes + proxied JSON, but its UI is retired/ported to Hermes. "Retiring mailbox-dashboard" = retiring its UI, **not** deleting the service. Don't rename the docker service (load-bearing DNS in 8 n8n workflows). See the `[STATE]` on MBOX-469.
+
 **What this is:** the source-of-truth monorepo for **AgentBOX** — a unified edge-AI
 appliance on a Jetson Orin Nano Super (8GB) co-residing the **MailBOX** email pipeline,
 the **Hermes** agent, and the **gBrain** memory layer, served as one dashboard on `:9119`.
