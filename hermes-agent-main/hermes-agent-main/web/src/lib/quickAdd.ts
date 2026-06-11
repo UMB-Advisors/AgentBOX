@@ -16,6 +16,20 @@ import type { KanbanCreateTaskBody } from "@/lib/api";
 //   due:YYYY-MM-DD                      -> dueAt (sidecar field; Phase 1
 //                                          callers toast + ignore, Phase 2
 //                                          persists — PRD §2.2)
+//   *label                              -> labels[] (repeatable; label NAMES —
+//                                          the CALLER resolves them against
+//                                          the sidecar label list; unknown
+//                                          name = inline error with a create
+//                                          shortcut, PRD §3.1)
+//   est:N                               -> estimate (points, int 0–100 —
+//                                          PRD §3.2)
+//   cycle:<name>                        -> cycleName (resolved by the CALLER
+//                                          against sidecar cycles, PRD §3.3.
+//                                          Tokens split on whitespace, so
+//                                          cycles whose names contain spaces
+//                                          aren't addressable here — use the
+//                                          detail panel / palette for those;
+//                                          accepted limitation)
 //
 // Priority direction — VERIFIED against hermes_cli/kanban_db.py: higher int
 // = more urgent (canonical sort `priority DESC`; dispatcher claims work
@@ -27,6 +41,13 @@ export interface QuickAddParseResult {
   body: KanbanCreateTaskBody;
   /** `due:` value, ISO date. Parsed from Phase 1, persisted from Phase 2. */
   dueAt?: string;
+  /** `*label` values — label NAMES, not ids (deduped, original case). The
+   *  caller maps them to sidecar label ids (PRD §3.1). */
+  labels?: string[];
+  /** `est:N` value — points, int 0–100 (PRD §3.2). */
+  estimate?: number;
+  /** `cycle:<name>` value — a cycle NAME the caller resolves (PRD §3.3). */
+  cycleName?: string;
   /** Non-empty = don't create; surface inline. */
   errors: string[];
 }
@@ -101,10 +122,13 @@ export function parseQuickAdd(input: string): QuickAddParseResult {
 
   const titleParts: string[] = [];
   const parents: string[] = [];
+  const labels: string[] = [];
   let priority: number | undefined;
   let assignee: string | undefined;
   let tenant: string | undefined;
   let dueAt: string | undefined;
+  let estimate: number | undefined;
+  let cycleName: string | undefined;
 
   // Single-valued tokens: a repeat with the SAME value is tolerated, a
   // conflicting repeat is an error rather than last-one-wins — explicit
@@ -151,6 +175,31 @@ export function parseQuickAdd(input: string): QuickAddParseResult {
       } else if (!parents.includes(id)) {
         parents.push(id);
       }
+    } else if (t.startsWith("*")) {
+      const name = t.slice(1);
+      if (!name) {
+        errors.push("Missing label name after *");
+      } else if (!labels.some((l) => l.toLowerCase() === name.toLowerCase())) {
+        labels.push(name);
+      }
+    } else if (/^est:/i.test(t)) {
+      const value = t.slice(4);
+      if (!/^\d{1,3}$/.test(value) || Number(value) > 100) {
+        errors.push(`Invalid estimate "${t}" — use est:N with N 0–100`);
+      } else if (estimate !== undefined && estimate !== Number(value)) {
+        errors.push("Conflicting est: tokens");
+      } else {
+        estimate = Number(value);
+      }
+    } else if (/^cycle:/i.test(t)) {
+      const name = t.slice(6);
+      if (!name) {
+        errors.push("Missing cycle name after cycle:");
+      } else if (cycleName !== undefined && cycleName !== name) {
+        errors.push("Conflicting cycle: tokens");
+      } else {
+        cycleName = name;
+      }
     } else if (/^due:/i.test(t)) {
       const value = t.slice(4);
       if (!isRealIsoDate(value)) {
@@ -177,5 +226,8 @@ export function parseQuickAdd(input: string): QuickAddParseResult {
 
   const result: QuickAddParseResult = { body, errors };
   if (dueAt !== undefined) result.dueAt = dueAt;
+  if (labels.length) result.labels = labels;
+  if (estimate !== undefined) result.estimate = estimate;
+  if (cycleName !== undefined) result.cycleName = cycleName;
   return result;
 }
