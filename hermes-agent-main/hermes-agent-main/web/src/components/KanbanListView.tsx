@@ -691,29 +691,43 @@ export default function KanbanListView({
         </Card>
       ) : (
         <div className="flex flex-col gap-4">
-          {groups.map((g) => (
-            <section key={g.key} aria-label={`${g.label} tasks`}>
-              <header className="flex items-center gap-2 px-1 pb-1">
-                <span className="text-sm font-medium capitalize">{g.label}</span>
-                <span className="text-xs text-muted-foreground">{g.tasks.length}</span>
-              </header>
-              <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-                {g.tasks.map((t) => (
-                  <TaskRow
-                    key={t.id}
-                    task={t}
-                    dueAt={meta?.tasks[t.id]?.due_at ?? null}
-                    labels={taskLabels(t.id)}
-                    groupBy={groupBy}
-                    selected={selected.has(t.id)}
-                    focused={focusedId === t.id}
-                    onToggleSelect={toggleSelect}
-                    onOpen={openTask}
-                  />
-                ))}
-              </ul>
-            </section>
-          ))}
+          {groups.map((g) => {
+            // Summed estimate points in the group header (PRD §3.2 — total
+            // only; unestimated tasks count 0, a zero sum renders nothing).
+            const points = g.tasks.reduce(
+              (sum, t) => sum + (meta?.tasks[t.id]?.estimate ?? 0),
+              0,
+            );
+            return (
+              <section key={g.key} aria-label={`${g.label} tasks`}>
+                <header className="flex items-center gap-2 px-1 pb-1">
+                  <span className="text-sm font-medium capitalize">{g.label}</span>
+                  <span className="text-xs text-muted-foreground">{g.tasks.length}</span>
+                  {points > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      · {points} pts
+                    </span>
+                  )}
+                </header>
+                <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+                  {g.tasks.map((t) => (
+                    <TaskRow
+                      key={t.id}
+                      task={t}
+                      dueAt={meta?.tasks[t.id]?.due_at ?? null}
+                      labels={taskLabels(t.id)}
+                      estimate={meta?.tasks[t.id]?.estimate ?? null}
+                      groupBy={groupBy}
+                      selected={selected.has(t.id)}
+                      focused={focusedId === t.id}
+                      onToggleSelect={toggleSelect}
+                      onOpen={openTask}
+                    />
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
         </div>
       )}
 
@@ -803,6 +817,7 @@ function TaskRow({
   task,
   dueAt,
   labels,
+  estimate,
   groupBy,
   selected,
   focused,
@@ -814,6 +829,8 @@ function TaskRow({
   dueAt: string | null;
   /** Resolved sidecar labels for the row chips (PRD §3.1). */
   labels: KanbanLabel[];
+  /** Sidecar estimate points — null when unset (PRD §3.2). */
+  estimate: number | null;
   groupBy: GroupBy;
   selected: boolean;
   /** Keyboard row focus (↑/↓) — visual ring only, separate from selection. */
@@ -871,11 +888,67 @@ function TaskRow({
             {task.comment_count}
           </span>
         )}
+        {estimate != null && (
+          <span
+            className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground"
+            title={`${estimate} point${estimate === 1 ? "" : "s"}`}
+          >
+            {estimate}
+          </span>
+        )}
         <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
           {fmtAge(taskAgeSeconds(task))}
         </span>
       </div>
     </li>
+  );
+}
+
+// Estimate points editor (PRD §3.2): local draft committed on blur/Enter so
+// every keystroke isn't a PATCH. Empty clears; non-int or out-of-range
+// (0–100, the server's bounds) snaps back to the stored value.
+function EstimateInput({
+  value,
+  onCommit,
+}: {
+  value: number | null;
+  onCommit: (value: number | null) => void;
+}) {
+  const [draft, setDraft] = useState(value == null ? "" : String(value));
+  useEffect(() => {
+    setDraft(value == null ? "" : String(value));
+  }, [value]);
+  const commit = () => {
+    const t = draft.trim();
+    if (!t) {
+      if (value != null) onCommit(null);
+      return;
+    }
+    const n = Number(t);
+    if (!Number.isInteger(n) || n < 0 || n > 100) {
+      setDraft(value == null ? "" : String(value));
+      return;
+    }
+    if (n !== value) onCommit(n);
+  };
+  return (
+    <Input
+      id="kanban-detail-estimate"
+      type="number"
+      min={0}
+      max={100}
+      step={1}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      aria-label="Estimate points"
+    />
   );
 }
 
@@ -1055,6 +1128,13 @@ function DetailPanel({
                   </Button>
                 )}
               </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="kanban-detail-estimate">Estimate (points)</Label>
+              <EstimateInput
+                value={taskMeta?.estimate ?? null}
+                onCommit={(v) => onPatchMeta(task.id, { estimate: v })}
+              />
             </div>
           </div>
 
