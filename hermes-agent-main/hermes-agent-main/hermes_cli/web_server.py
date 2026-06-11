@@ -2372,6 +2372,22 @@ async def _proxy_mailbox_dashboard(path: str, request: Request):
     # Session-gate proxied API surface. ``path`` is the segment AFTER
     # ``/dashboard/`` (FastAPI strips the prefix), so the upstream
     # ``/dashboard/api/*`` namespace appears here as ``api/*``.
+    #
+    # MBOX-482 — defense-in-depth for ``/dashboard/api/internal/*`` (the n8n-
+    # facing minters/bridges) in EACH auth mode:
+    #   - Loopback bind (auth_required False): this token check below gates the
+    #     proxied API surface, AND the upstream internal routes additionally
+    #     enforce their own ``HERMES_INTERNAL_TOKEN`` shared-secret
+    #     (lib/internal-auth.ts). Two independent gates; either alone rejects an
+    #     unauthenticated caller.
+    #   - OAuth mode (auth_required True): this token check is SKIPPED here —
+    #     ``gated_auth_middleware`` (registered above) is authoritative for the
+    #     whole origin — and the upstream ``HERMES_INTERNAL_TOKEN`` still gates the
+    #     internal routes underneath. So the internal namespace is never reachable
+    #     without BOTH the cookie/OAuth gate and the upstream token.
+    # In both modes the upstream ``HERMES_INTERNAL_TOKEN`` is the last line of
+    # defense; n8n calls those routes over the docker network carrying it directly,
+    # NOT through this proxy.
     if path.startswith("api/") and not getattr(
         request.app.state, "auth_required", False
     ):

@@ -31,6 +31,11 @@
 #   SSH_HOST          target box ssh alias (default mailbox1; 'local' = on-box)
 #   N8N_CONTAINER     n8n container name (default mailbox-n8n-1)
 #   DASHBOARD_URL     dashboard internal base (default http://127.0.0.1:3001)
+#                     WARNING: keep this a LOOPBACK (127.0.0.1 / on-box) address.
+#                     The fetched payload carries the DECRYPTED IMAP/SMTP
+#                     app-password in plaintext; pointing DASHBOARD_URL at a
+#                     non-loopback host sends that credential over the wire in the
+#                     clear (the internal route speaks plain http, no TLS).
 #   HERMES_INTERNAL_TOKEN  shared secret for the internal route (required)
 #
 # AFTER: restart n8n so the new credential is live —
@@ -41,6 +46,22 @@ set -euo pipefail
 SSH_HOST="${SSH_HOST:-mailbox1}"
 N8N_CONTAINER="${N8N_CONTAINER:-mailbox-n8n-1}"
 DASHBOARD_URL="${DASHBOARD_URL:-http://127.0.0.1:3001}"
+
+# Shell-injection guard (MBOX-482 security review). SSH_HOST and N8N_CONTAINER are
+# both interpolated UNQUOTED-at-the-remote into `run()` / `ssh` command strings
+# and `docker exec '<N8N_CONTAINER>'` below, so a value carrying shell metacharacters
+# would execute on the box. Constrain both to a safe charset BEFORE first use:
+# letters, digits, and `_ . @ -` only (the `@` and `.` allow an ssh `user@host`
+# alias and dotted hostnames; `local` for the on-box path). Reject anything else.
+SAFE_RE='^[a-zA-Z0-9_.@-]+$'
+if [[ ! "${SSH_HOST}" =~ ${SAFE_RE} ]]; then
+  echo "  [error] SSH_HOST '${SSH_HOST}' contains illegal characters (allowed: A-Z a-z 0-9 _ . @ -)" >&2
+  exit 1
+fi
+if [[ ! "${N8N_CONTAINER}" =~ ${SAFE_RE} ]]; then
+  echo "  [error] N8N_CONTAINER '${N8N_CONTAINER}' contains illegal characters (allowed: A-Z a-z 0-9 _ . @ -)" >&2
+  exit 1
+fi
 
 DELETE=0
 if [[ "${1:-}" == "--delete" ]]; then

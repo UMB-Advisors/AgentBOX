@@ -33,25 +33,15 @@
 //     → 404 not a connected IMAP account
 //     → 500 decrypt / config error
 
-import { timingSafeEqual } from 'node:crypto';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
+import { authorized } from '@/lib/internal-auth';
 import { decryptToken } from '@/lib/oauth/google';
 import { resolveIngestAccountId } from '@/lib/queries-accounts';
 
 export const dynamic = 'force-dynamic';
 
 const EMAIL_RE = /^[^@\s/]+@[^@\s/]+\.[^@\s/]+$/;
-
-function authorized(req: NextRequest): boolean {
-  const expected = process.env.HERMES_INTERNAL_TOKEN;
-  if (!expected) return false;
-  const presented = req.headers.get('x-hermes-internal-token') ?? '';
-  const a = Buffer.from(presented);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
 
 interface ImapConfig {
   imap_host?: string;

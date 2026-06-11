@@ -31,9 +31,9 @@
 // Per-account isolation: resolves the email to exactly one account_id and reads
 // only that account's provider_config + provider_secret_enc.
 
-import { timingSafeEqual } from 'node:crypto';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
+import { authorized } from '@/lib/internal-auth';
 import { decryptToken } from '@/lib/oauth/google';
 import { resolveIngestAccountId } from '@/lib/queries-accounts';
 
@@ -49,18 +49,6 @@ const DEFAULT_TTL_SECONDS = 3600;
 // Same email shape the Gmail minter enforces (one '@', a dotted domain, no
 // whitespace/slashes) so a crafted value can never escape resolution.
 const EMAIL_RE = /^[^@\s/]+@[^@\s/]+\.[^@\s/]+$/;
-
-// Constant-time shared-secret check; fail closed when the env is unset (verbatim
-// with the Gmail minter / the registration bridge).
-function authorized(req: NextRequest): boolean {
-  const expected = process.env.HERMES_INTERNAL_TOKEN;
-  if (!expected) return false;
-  const presented = req.headers.get('x-hermes-internal-token') ?? '';
-  const a = Buffer.from(presented);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
 
 interface MicrosoftAccountCreds {
   tenant_id: string;

@@ -22,9 +22,9 @@
 //
 // Auth: identical shared-secret gate to the Google access-token minter —
 // X-Hermes-Internal-Token must equal env HERMES_INTERNAL_TOKEN, constant-time
-// compared, FAIL CLOSED when the env is unset. Not Caddy-gated; reached only
-// over the docker network (the Caddyfile 403s /api/internal/* on every public
-// site block, same as the minter).
+// compared via the shared lib/internal-auth.ts helper, FAIL CLOSED when the env
+// is unset OR empty. Not Caddy-gated; reached only over the docker network (the
+// Caddyfile 403s /api/internal/* on every public site block, same as the minter).
 //
 // Contract:
 //   POST  ?  body { provider:'imap'|'microsoft', email, display_label?,
@@ -35,27 +35,14 @@
 //             → 500 encryption key unset/malformed, or DB failure
 //   DELETE handled by the sibling ../deregister route.
 
-import { timingSafeEqual } from 'node:crypto';
 import { type NextRequest, NextResponse } from 'next/server';
+import { authorized } from '@/lib/internal-auth';
 import { encryptToken } from '@/lib/oauth/google';
 import { registerTransportAccount } from '@/lib/queries-accounts';
 import { accountRegisterBodySchema } from '@/lib/schemas/internal';
 import { parseJson } from '@/lib/middleware/validate';
 
 export const dynamic = 'force-dynamic';
-
-// Constant-time shared-secret check. Fail closed when the env is unset so a box
-// provisioned without HERMES_INTERNAL_TOKEN rejects every request rather than
-// projecting accounts unauthenticated. (Verbatim with the access-token minter.)
-function authorized(req: NextRequest): boolean {
-  const expected = process.env.HERMES_INTERNAL_TOKEN;
-  if (!expected) return false; // fail closed
-  const presented = req.headers.get('x-hermes-internal-token') ?? '';
-  const a = Buffer.from(presented);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!authorized(req)) {

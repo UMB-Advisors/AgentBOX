@@ -23,23 +23,13 @@
 // the deploy tooling's job (bin/mbox-imap-cred-sync.sh --delete) — this route is
 // the DB projection only.
 
-import { timingSafeEqual } from 'node:crypto';
 import { type NextRequest, NextResponse } from 'next/server';
+import { authorized } from '@/lib/internal-auth';
 import { deregisterTransportAccount } from '@/lib/queries-accounts';
 import { accountDeregisterBodySchema } from '@/lib/schemas/internal';
 import { parseJson } from '@/lib/middleware/validate';
 
 export const dynamic = 'force-dynamic';
-
-function authorized(req: NextRequest): boolean {
-  const expected = process.env.HERMES_INTERNAL_TOKEN;
-  if (!expected) return false; // fail closed
-  const presented = req.headers.get('x-hermes-internal-token') ?? '';
-  const a = Buffer.from(presented);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!authorized(req)) {
