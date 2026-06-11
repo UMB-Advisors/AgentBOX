@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Brain, Loader2, Sparkles } from "lucide-react";
+import { AlertTriangle, Brain, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useTheme } from "@/themes/context";
@@ -331,14 +331,49 @@ export default function GraphPage() {
   }
 
   return (
-    <div className="h-[calc(100dvh-7rem)] w-full overflow-hidden border border-border bg-background/40">
+    <div className="flex h-[calc(100dvh-7rem)] w-full flex-col overflow-hidden border border-border bg-background/40">
+      {/* Snapshot meta + a persistent Regenerate control. The graph is a static
+          snapshot, so this is the only way to refresh it once one exists —
+          including picking up the Learn-mode tour, which is baked into the
+          snapshot (UA's in-panel "Generate a tour" needs an LLM the static demo
+          bundle has no backend for). */}
+      <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-1.5">
+        <span className="truncate text-xs text-muted-foreground">
+          {status?.nodes != null
+            ? `${status.nodes} nodes · ${status.edges ?? 0} edges`
+            : "Brain graph"}
+          {status?.generatedAt
+            ? ` · generated ${new Date(status.generatedAt).toLocaleString()}`
+            : ""}
+          {generating && " · regenerating…"}
+          {error && <span className="ml-2 text-red-500">· {error.split("\n")[0]}</span>}
+        </span>
+        <button
+          type="button"
+          onClick={generate}
+          disabled={generating}
+          title="Rebuild the snapshot from gbrain — refreshes nodes, edges, and the Learn-mode tour"
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1",
+            "text-xs font-medium text-foreground transition-colors hover:bg-muted",
+            "disabled:cursor-not-allowed disabled:opacity-60",
+          )}
+        >
+          {generating ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          {generating ? "Regenerating…" : "Regenerate"}
+        </button>
+      </div>
       <iframe
         key={reloadKey}
         ref={iframeRef}
         src={GRAPH_APP_SRC}
         title="gbrain knowledge graph"
         onLoad={onLoad}
-        className="h-full w-full border-0"
+        className="min-h-0 w-full flex-1 border-0"
         // The bundle is same-origin and trusted (we build it); scripts must run
         // for the React/canvas graph to render.
         sandbox="allow-scripts allow-same-origin allow-popups"
