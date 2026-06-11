@@ -896,6 +896,7 @@
   ],
   "pinData": {},
   "settings": {
+    "errorWorkflow": "MlbxErrHandler01",
     "executionOrder": "v1"
   },
   "staticData": null,
