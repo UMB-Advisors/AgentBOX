@@ -16,6 +16,11 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    # 8GB Jetson: bound every non-inference service so a runaway here gets
+    # itself killed/restarted instead of triggering a kernel OOM that can
+    # take down ollama/llama-cpp. Values are generous first cuts — validate
+    # against `docker stats` baselines on agentbox1 and revisit. (plans/007)
+    mem_limit: 1.5g
     restart: unless-stopped
   qdrant:
     image: qdrant/qdrant:v1.17.1
@@ -36,6 +41,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    mem_limit: 768m
     restart: unless-stopped
   ollama:
     image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
@@ -162,6 +168,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    mem_limit: 1g
     restart: unless-stopped
   caddy:
     build: ./caddy
@@ -191,6 +198,7 @@ services:
     depends_on:
       n8n:
         condition: service_healthy
+    mem_limit: 256m
     restart: unless-stopped
   mailbox-dashboard:
     build:
@@ -424,6 +432,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    mem_limit: 1g
   mailbox-migrate:
     profiles: ["migrate"]
     image: node:20-alpine
