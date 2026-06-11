@@ -4,6 +4,7 @@ import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Card, CardContent } from "@nous-research/ui/ui/components/card";
 import { Checkbox } from "@nous-research/ui/ui/components/checkbox";
+import { Input } from "@nous-research/ui/ui/components/input";
 import { Label } from "@nous-research/ui/ui/components/label";
 import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
@@ -134,6 +135,36 @@ export function daysUntilDue(dueAt: string): number | null {
 export function isOverdue(dueAt: string): boolean {
   const days = daysUntilDue(dueAt);
   return days != null && days < 0;
+}
+
+/** "Jun 14" in the local tz (the ISO string is already date-only). */
+function fmtDueDate(dueAt: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dueAt);
+  if (!m) return dueAt;
+  return new Date(
+    Number(m[1]),
+    Number(m[2]) - 1,
+    Number(m[3]),
+  ).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Due badge per PRD §2.2: red + "Overdue" when past, amber when due within
+// 48h (date-only: today/tomorrow/day-after), neutral outline further out.
+function DueBadge({ dueAt }: { dueAt: string }) {
+  const days = daysUntilDue(dueAt);
+  if (days == null) return null;
+  if (days < 0) {
+    return (
+      <Badge tone="destructive" className="shrink-0">
+        Overdue · {fmtDueDate(dueAt)}
+      </Badge>
+    );
+  }
+  return (
+    <Badge tone={days <= 2 ? "warning" : "outline"} className="shrink-0">
+      Due {fmtDueDate(dueAt)}
+    </Badge>
+  );
 }
 
 // Client-side FilterState application (PRD §2.1). Runs over the whole
@@ -297,6 +328,8 @@ export default function KanbanListView({
   hotkeysEnabled,
   filter,
   meta,
+  onSetDue,
+  onBoardLoaded,
 }: {
   onOpenBoard: () => void;
   /** Bumped by the parent after out-of-view mutations (quick-add, palette)
@@ -319,6 +352,12 @@ export default function KanbanListView({
   /** Sidecar meta (due dates etc.); null while loading — the list still
    *  renders, sidecar-driven filters/badges just stay inert. */
   meta: KanbanMeta | null;
+  /** Detail-panel due-date edits — parent owns the sidecar PATCH + toast. */
+  onSetDue: (taskId: string, dueAt: string | null) => void;
+  /** Live board task ids after every fetch (drives the parent's lazy
+   *  sidecar prune, PRD §2.2). MUST be referentially stable or the list
+   *  refetches whenever the parent re-renders. */
+  onBoardLoaded: (liveIds: string[]) => void;
 }) {
   const { toast, showToast } = useToast();
   const [board, setBoard] = useState<KanbanBoard | null>(null);
@@ -329,17 +368,22 @@ export default function KanbanListView({
   const [detailId, setDetailId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async (manual = false) => {
-    if (manual) setRefreshing(true);
-    try {
-      setBoard(await api.getKanbanBoard());
-      setError(null);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (manual) setRefreshing(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (manual = false) => {
+      if (manual) setRefreshing(true);
+      try {
+        const b = await api.getKanbanBoard();
+        setBoard(b);
+        setError(null);
+        onBoardLoaded(b.columns.flatMap((c) => c.tasks.map((t) => t.id)));
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (manual) setRefreshing(false);
+      }
+    },
+    [onBoardLoaded],
+  );
 
   // Initial fetch + 30s polling; every mutation below also refetches. The
   // plugin's WS /events live-refresh channel is deliberately skipped in v1
@@ -641,6 +685,7 @@ export default function KanbanListView({
                   <TaskRow
                     key={t.id}
                     task={t}
+                    dueAt={meta?.tasks[t.id]?.due_at ?? null}
                     groupBy={groupBy}
                     selected={selected.has(t.id)}
                     focused={focusedId === t.id}
@@ -657,10 +702,12 @@ export default function KanbanListView({
       {detail && (
         <DetailPanel
           task={detail}
+          dueAt={meta?.tasks[detail.id]?.due_at ?? null}
           assignees={assignees}
           panelRef={panelRef}
           onClose={closeDetail}
           onPatch={(id, body) => void patchTask(id, body)}
+          onSetDue={onSetDue}
           onOpenBoard={onOpenBoard}
         />
       )}
@@ -735,6 +782,7 @@ function BulkBar({
 
 function TaskRow({
   task,
+  dueAt,
   groupBy,
   selected,
   focused,
@@ -742,6 +790,8 @@ function TaskRow({
   onOpen,
 }: {
   task: KanbanTask;
+  /** Sidecar due date (ISO date) — null when unset or meta not loaded. */
+  dueAt: string | null;
   groupBy: GroupBy;
   selected: boolean;
   /** Keyboard row focus (↑/↓) — visual ring only, separate from selection. */
@@ -779,6 +829,7 @@ function TaskRow({
           {shortId(task.id)}
         </span>
         <span className="min-w-0 flex-1 truncate text-sm">{task.title}</span>
+        {dueAt && <DueBadge dueAt={dueAt} />}
         {groupBy !== "status" && (
           <Badge tone="outline" className="shrink-0">
             {task.status}
@@ -805,17 +856,21 @@ function TaskRow({
 
 function DetailPanel({
   task,
+  dueAt,
   assignees,
   panelRef,
   onClose,
   onPatch,
+  onSetDue,
   onOpenBoard,
 }: {
   task: KanbanTask;
+  dueAt: string | null;
   assignees: string[];
   panelRef: ReturnType<typeof useModalBehavior>;
   onClose: () => void;
   onPatch: (id: string, body: KanbanUpdateTaskBody) => void;
+  onSetDue: (taskId: string, dueAt: string | null) => void;
   onOpenBoard: () => void;
 }) {
   // Prepend the current status / priority / assignee when they fall outside
@@ -874,6 +929,7 @@ function DetailPanel({
               {priorityLabel(task.priority)}
             </Badge>
             {task.tenant && <Badge tone="secondary">{task.tenant}</Badge>}
+            {dueAt && <DueBadge dueAt={dueAt} />}
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -930,6 +986,29 @@ function DetailPanel({
                   </SelectOption>
                 ))}
               </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="kanban-detail-due">Due date</Label>
+              <div className="flex items-center gap-1">
+                <Input
+                  id="kanban-detail-due"
+                  type="date"
+                  value={dueAt ?? ""}
+                  onChange={(e) => onSetDue(task.id, e.target.value || null)}
+                  aria-label="Due date"
+                />
+                {dueAt && (
+                  <Button
+                    type="button"
+                    ghost
+                    size="icon"
+                    aria-label="Clear due date"
+                    onClick={() => onSetDue(task.id, null)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 

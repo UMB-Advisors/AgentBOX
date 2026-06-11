@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, KeyRound, RefreshCw } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -219,6 +219,61 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
       alive = false;
     };
   }, [refreshNonce]);
+
+  // Detail-panel due-date edits (PRD §2.2): PATCH the task's sidecar entry,
+  // then fold the server's canonical entry back into local meta so badges
+  // and the Overdue chip update without waiting for the next refetch.
+  const setDue = useCallback(
+    (taskId: string, dueAt: string | null) => {
+      void api
+        .patchKanbanTaskMeta(taskId, { due_at: dueAt })
+        .then((entry) => {
+          setMeta((m) => {
+            if (!m) return m;
+            const tasks = { ...m.tasks };
+            if (Object.keys(entry).length) tasks[taskId] = entry;
+            else delete tasks[taskId];
+            return { ...m, tasks };
+          });
+        })
+        .catch((e: unknown) => {
+          showToast(
+            `Saving due date failed: ${e instanceof Error ? e.message : String(e)}`,
+            "error",
+          );
+        });
+    },
+    [showToast],
+  );
+
+  // Lazy sidecar GC (PRD §2.2): after each board fetch the list reports the
+  // live task ids; when the sidecar still holds entries for ids gone from
+  // the board (deleted or archived — archived tasks shedding their meta is
+  // accepted, see the server docstring), one PUT with prune_missing drops
+  // them server-side. Refs keep the callback referentially stable (the
+  // list's fetch effect depends on it) and gate to one prune in flight.
+  // Best-effort: a failed or raced prune just retries on the next fetch.
+  const metaRef = useRef<KanbanMeta | null>(null);
+  useEffect(() => {
+    metaRef.current = meta;
+  }, [meta]);
+  const pruneInFlight = useRef(false);
+  const handleBoardLoaded = useCallback((liveIds: string[]) => {
+    const m = metaRef.current;
+    if (!m || pruneInFlight.current) return;
+    const live = new Set(liveIds);
+    if (!Object.keys(m.tasks).some((id) => !live.has(id))) return;
+    pruneInFlight.current = true;
+    api
+      .putKanbanMeta({ prune_missing: true, live_task_ids: liveIds })
+      .then((updated) => setMeta(updated))
+      .catch(() => {
+        // Stale entries are harmless; the next board fetch retries.
+      })
+      .finally(() => {
+        pruneInFlight.current = false;
+      });
+  }, []);
 
   const selectView = useCallback((id: string, filters: KanbanFilterState) => {
     setActiveViewId(id);
@@ -456,6 +511,8 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
             hotkeysEnabled={!palette.open}
             filter={filter}
             meta={meta}
+            onSetDue={setDue}
+            onBoardLoaded={handleBoardLoaded}
           />
         </>
       )}
@@ -511,10 +568,29 @@ function QuickAddBar({
     setError(null);
     try {
       const res = await api.createKanbanTask(parsed.body);
-      if (parsed.dueAt) {
-        // Parsed but intentionally NOT persisted: the due-date sidecar
-        // store ships in Phase 2 (PRD §1.3 / §2.2).
-        showToast("Task created — due dates land in Phase 2", "success");
+      if (parsed.dueAt && res.task) {
+        // due: persists via the sidecar (PRD §2.2). onCreated below bumps
+        // the refresh nonce, which refetches meta — badges/filters pick the
+        // date up from there. Failure keeps the task (already created) and
+        // says so instead of pretending the date stuck.
+        try {
+          await api.patchKanbanTaskMeta(res.task.id, { due_at: parsed.dueAt });
+          showToast("Task created ✓", "success");
+        } catch (e: unknown) {
+          showToast(
+            `Task created — saving due date failed: ${e instanceof Error ? e.message : String(e)}`,
+            "error",
+          );
+        }
+      } else if (parsed.dueAt) {
+        // No task in the response (idempotency-key dedupe) — nothing to
+        // attach the date to; surface that rather than silently dropping it.
+        showToast(
+          res.warning
+            ? `Task created — ${res.warning}; due date not set`
+            : "Task created — due date not set (no task id returned)",
+          "error",
+        );
       } else if (res.warning) {
         showToast(`Task created — ${res.warning}`, "success");
       } else {
