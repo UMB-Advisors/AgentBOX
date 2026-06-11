@@ -1340,8 +1340,61 @@ _NEWS_SOURCES: List[Dict[str, str]] = [
     {"id": "wsj", "label": "WSJ — World", "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml"},
     {"id": "espn", "label": "ESPN", "url": "https://www.espn.com/espn/rss/news"},
 ]
-_NEWS_SOURCE_BY_ID: Dict[str, Dict[str, str]] = {s["id"]: s for s in _NEWS_SOURCES}
+# Discovery catalog: additional curated feeds the daily source-discovery
+# picker can surface (and the settings picker can select). Same posture as
+# _NEWS_SOURCES — a server-side whitelist, never client-supplied URLs.
+_NEWS_CATALOG: List[Dict[str, str]] = [
+    {"id": "wired", "label": "WIRED", "url": "https://www.wired.com/feed/rss"},
+    {"id": "mittr", "label": "MIT Technology Review", "url": "https://www.technologyreview.com/feed/"},
+    {"id": "venturebeat", "label": "VentureBeat", "url": "https://venturebeat.com/feed/"},
+    {"id": "theregister", "label": "The Register", "url": "https://www.theregister.com/headlines.atom"},
+    {"id": "krebs", "label": "Krebs on Security", "url": "https://krebsonsecurity.com/feed/"},
+    {"id": "schneier", "label": "Schneier on Security", "url": "https://www.schneier.com/feed/atom/"},
+    {"id": "engadget", "label": "Engadget", "url": "https://www.engadget.com/rss.xml"},
+    {"id": "cnbc", "label": "CNBC Top News", "url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"},
+    {"id": "fooddive", "label": "Food Dive", "url": "https://www.fooddive.com/feeds/news/"},
+    {"id": "grocerydive", "label": "Grocery Dive", "url": "https://www.grocerydive.com/feeds/news/"},
+    {"id": "sciam", "label": "Scientific American", "url": "http://rss.sciam.com/ScientificAmerican-Global"},
+    {"id": "nature", "label": "Nature News", "url": "https://www.nature.com/nature.rss"},
+    {"id": "npr", "label": "NPR News", "url": "https://feeds.npr.org/1001/rss.xml"},
+    {"id": "aljazeera", "label": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml"},
+    {"id": "politico", "label": "Politico", "url": "https://rss.politico.com/politics-news.xml"},
+    {"id": "axios", "label": "Axios", "url": "https://api.axios.com/feed/"},
+]
+_NEWS_SOURCE_BY_ID: Dict[str, Dict[str, str]] = {
+    s["id"]: s for s in [*_NEWS_SOURCES, *_NEWS_CATALOG]
+}
 _DEFAULT_NEWS_IDS: List[str] = ["hn", "ars", "verge", "bbc"]
+
+# Topic tags per source — drive the discovery picker's relevance scoring
+# (votes on a source's articles speak for the source's tags).
+_NEWS_SOURCE_TAGS: Dict[str, Tuple[str, ...]] = {
+    "hn": ("tech", "programming", "startups"),
+    "ars": ("tech", "science"),
+    "verge": ("tech", "gadgets", "culture"),
+    "techcrunch": ("tech", "startups", "business"),
+    "bbc": ("world",),
+    "nyt": ("world", "us"),
+    "guardian": ("world", "culture"),
+    "wsj": ("world", "business", "finance"),
+    "espn": ("sports",),
+    "wired": ("tech", "culture"),
+    "mittr": ("tech", "ai", "science"),
+    "venturebeat": ("tech", "ai", "business"),
+    "theregister": ("tech", "security"),
+    "krebs": ("security",),
+    "schneier": ("security",),
+    "engadget": ("tech", "gadgets"),
+    "cnbc": ("business", "finance"),
+    "fooddive": ("cpg", "food", "business"),
+    "grocerydive": ("cpg", "retail", "business"),
+    "sciam": ("science",),
+    "nature": ("science",),
+    "npr": ("world", "us"),
+    "aljazeera": ("world",),
+    "politico": ("politics", "us"),
+    "axios": ("news", "business", "politics"),
+}
 
 _NEWS_CACHE: Dict[str, Dict[str, Any]] = {}  # source id -> {ts, items}
 _NEWS_TTL_SECONDS = 600.0
@@ -1419,8 +1472,10 @@ def _custom_source_label(url: str) -> str:
 
 
 def _resolve_sources(prefs: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
-    """Combined id -> {id,label,url} map of built-in + the prefs' custom feeds."""
-    resolved: Dict[str, Dict[str, str]] = {s["id"]: dict(s) for s in _NEWS_SOURCES}
+    """Combined id -> {id,label,url} map of built-in + catalog + custom feeds."""
+    resolved: Dict[str, Dict[str, str]] = {
+        s["id"]: dict(s) for s in [*_NEWS_SOURCES, *_NEWS_CATALOG]
+    }
     for c in prefs.get("custom_sources", []):
         if isinstance(c, dict) and c.get("id") and c.get("url"):
             resolved[c["id"]] = {
@@ -1466,6 +1521,272 @@ def _read_digest_prefs() -> Dict[str, Any]:
 def _write_digest_prefs(prefs: Dict[str, Any]) -> None:
     _DIGEST_PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
     _DIGEST_PREFS_FILE.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
+
+
+# ── News feedback: per-article thumbs + learned reranking ────────────────
+#
+# Votes land in a small JSON ledger under HERMES_HOME: ``votes`` is the
+# current per-article state (link-keyed) that reranks the feed; ``events``
+# is an append-only id-stamped log consumed by
+# gbrain-ingest/ingest_news_feedback.py (integer watermark), which turns
+# votes into recallable gbrain taste pages.
+
+_NEWS_FEEDBACK_FILE = get_hermes_home() / "news-feedback.json"
+_NEWS_FEEDBACK_LOCK = threading.Lock()
+_NEWS_FEEDBACK_MAX_EVENTS = 2000
+_NEWS_DOWN_REASONS = ("not_interested", "source", "seen", "low_quality", "other")
+
+# Rerank weights, expressed in seconds of feed recency: the feed stays a
+# recency feed, feedback just warps article timestamps up/down the page.
+_NEWS_W_SOURCE = 1800.0      # per net source vote (clamped ±4 → ±2h)
+_NEWS_W_DOWN_TOKEN = 2700.0  # per disliked-topic token hit (≤3 → ≤2.25h down)
+_NEWS_W_UP_TOKEN = 1200.0    # per liked-topic token hit (≤2 → ≤40min up)
+_NEWS_SOURCE_MUTE_DOWNS = 3  # "don't like this source" downvotes to mute it
+
+
+def _read_news_feedback() -> Dict[str, Any]:
+    data: Dict[str, Any] = {"next_id": 1, "events": [], "votes": {}}
+    try:
+        if _NEWS_FEEDBACK_FILE.exists():
+            raw = json.loads(_NEWS_FEEDBACK_FILE.read_text("utf-8"))
+            if isinstance(raw, dict):
+                if isinstance(raw.get("next_id"), int) and raw["next_id"] >= 1:
+                    data["next_id"] = raw["next_id"]
+                if isinstance(raw.get("events"), list):
+                    data["events"] = [e for e in raw["events"] if isinstance(e, dict)]
+                if isinstance(raw.get("votes"), dict):
+                    data["votes"] = {
+                        str(k): v
+                        for k, v in raw["votes"].items()
+                        if isinstance(v, dict)
+                    }
+    except Exception:
+        _log.warning("failed to read news feedback; starting fresh", exc_info=True)
+    return data
+
+
+def _write_news_feedback(data: Dict[str, Any]) -> None:
+    _NEWS_FEEDBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _NEWS_FEEDBACK_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(_NEWS_FEEDBACK_FILE)
+
+
+def _record_news_feedback(
+    link: str, vote: Optional[str], reason: Optional[str], meta: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Upsert an article's current vote + append an event for gbrain ingest.
+
+    ``vote=None`` clears a prior vote (the Undo path); the clear is still
+    logged as an event so the brain can unlearn it.
+    """
+    keys = ("title", "source_id", "source", "published")
+    with _NEWS_FEEDBACK_LOCK:
+        data = _read_news_feedback()
+        event = {
+            "id": data["next_id"],
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "link": link,
+            "vote": vote or "none",
+            "reason": reason,
+            **{k: meta.get(k) for k in keys},
+        }
+        data["next_id"] += 1
+        data["events"].append(event)
+        # Cap the ledger; the ingest watermark only moves forward, so dropping
+        # old (already-ingested) events is safe.
+        if len(data["events"]) > _NEWS_FEEDBACK_MAX_EVENTS:
+            data["events"] = data["events"][-_NEWS_FEEDBACK_MAX_EVENTS:]
+        if vote is None:
+            data["votes"].pop(link, None)
+        else:
+            data["votes"][link] = {
+                "vote": vote,
+                "reason": reason,
+                "ts": event["ts"],
+                **{k: meta.get(k) for k in keys},
+            }
+        _write_news_feedback(data)
+    return event
+
+
+_NEWS_TOKEN_RE = re.compile(r"[a-z0-9]{4,}")
+_NEWS_STOPWORDS = frozenset(
+    "this that with from have will your according report reports says said "
+    "could would should about after before because being other their there "
+    "these those what when where which while world today year years week "
+    "month every still more most some just over under into onto than then "
+    "them they were going first last next best worst really only also been "
+    "between against during make makes made take takes news show shows here "
+    "want wants amid says".split()
+)
+
+
+def _news_title_tokens(title: str) -> set:
+    return {
+        t
+        for t in _NEWS_TOKEN_RE.findall((title or "").lower())
+        if t not in _NEWS_STOPWORDS
+    }
+
+
+def _news_feedback_stats() -> Dict[str, Any]:
+    """Aggregate the vote ledger into rerank inputs (cheap; runs per request)."""
+    votes = _read_news_feedback()["votes"]
+    hidden: set = set()
+    source_net: Dict[str, int] = {}
+    source_strikes: Dict[str, int] = {}
+    down_tokens: Dict[str, int] = {}
+    up_tokens: Dict[str, int] = {}
+    for link, v in votes.items():
+        sid = str(v.get("source_id") or "")
+        vote = v.get("vote")
+        reason = v.get("reason")
+        tokens = _news_title_tokens(str(v.get("title") or ""))
+        if vote == "up":
+            if sid:
+                source_net[sid] = source_net.get(sid, 0) + 1
+            for t in tokens:
+                up_tokens[t] = up_tokens.get(t, 0) + 1
+        elif vote == "down":
+            hidden.add(link)
+            if sid:
+                # "Don't like this source" weighs harder than a generic down.
+                source_net[sid] = source_net.get(sid, 0) - (
+                    3 if reason == "source" else 1
+                )
+                if reason == "source":
+                    source_strikes[sid] = source_strikes.get(sid, 0) + 1
+            # "source"/"seen" downvotes say nothing about the topic itself.
+            if reason not in ("source", "seen"):
+                for t in tokens:
+                    down_tokens[t] = down_tokens.get(t, 0) + 1
+    muted = {s for s, n in source_strikes.items() if n >= _NEWS_SOURCE_MUTE_DOWNS}
+    return {
+        "votes": votes,
+        "hidden": hidden,
+        "source_net": source_net,
+        "muted": muted,
+        "down_tokens": down_tokens,
+        "up_tokens": up_tokens,
+    }
+
+
+def _news_rank_adjust(item: Dict[str, Any], stats: Dict[str, Any]) -> float:
+    """Seconds to add to an article's published_ts when sorting the feed."""
+    net = max(-4, min(4, stats["source_net"].get(item.get("source_id") or "", 0)))
+    adjust = net * _NEWS_W_SOURCE
+    tokens = _news_title_tokens(item.get("title") or "")
+    down_hits = sum(1 for t in tokens if t in stats["down_tokens"])
+    up_hits = sum(1 for t in tokens if t in stats["up_tokens"])
+    adjust -= min(down_hits, 3) * _NEWS_W_DOWN_TOKEN
+    adjust += min(up_hits, 2) * _NEWS_W_UP_TOKEN
+    return adjust
+
+
+# ── Daily source discovery ────────────────────────────────────────────────
+#
+# Each day the digest surfaces two catalog sources the operator hasn't
+# selected, ranked by tag affinity learned from their votes. Suggestions ride
+# along in the feed (badged client-side) until kept (joins news_sources) or
+# dismissed (never re-suggested).
+
+_NEWS_DISCOVERY_FILE = get_hermes_home() / "news-discovery.json"
+_NEWS_DISCOVERY_LOCK = threading.Lock()
+_NEWS_DISCOVERY_COUNT = 2
+_NEWS_DISCOVERY_COOLDOWN_DAYS = 14
+
+
+def _read_news_discovery() -> Dict[str, Any]:
+    data: Dict[str, Any] = {
+        "date": "",
+        "suggestions": [],
+        "history": {},
+        "dismissed": [],
+        "kept": [],
+    }
+    try:
+        if _NEWS_DISCOVERY_FILE.exists():
+            raw = json.loads(_NEWS_DISCOVERY_FILE.read_text("utf-8"))
+            if isinstance(raw, dict):
+                for k, default in data.items():
+                    if isinstance(raw.get(k), type(default)):
+                        data[k] = raw[k]
+    except Exception:
+        _log.warning("failed to read news discovery state; resetting", exc_info=True)
+    return data
+
+
+def _write_news_discovery(data: Dict[str, Any]) -> None:
+    _NEWS_DISCOVERY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _NEWS_DISCOVERY_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(_NEWS_DISCOVERY_FILE)
+
+
+def _todays_news_discovery(prefs: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The day's suggested sources — computed once per day, then persisted.
+
+    Candidates: whitelist + catalog sources the operator hasn't selected,
+    dismissed, muted, or been shown within the cooldown window. Ranked by
+    tag affinity from votes; a deterministic date-hash tiebreak rotates the
+    picks day-to-day while there's no feedback signal yet.
+    """
+    import datetime as _dt
+    import hashlib
+
+    today = time.strftime("%Y-%m-%d")
+    selected = set(prefs.get("news_sources") or [])
+    with _NEWS_DISCOVERY_LOCK:
+        state = _read_news_discovery()
+        if state["date"] != today:
+            stats = _news_feedback_stats()
+            tag_score: Dict[str, float] = {}
+            for sid, net in stats["source_net"].items():
+                for tag in _NEWS_SOURCE_TAGS.get(sid, ()):
+                    tag_score[tag] = tag_score.get(tag, 0.0) + net
+            cutoff = (
+                _dt.date.today()
+                - _dt.timedelta(days=_NEWS_DISCOVERY_COOLDOWN_DAYS)
+            ).isoformat()
+            dismissed = set(state["dismissed"])
+            candidates: List[Tuple[float, int, str]] = []
+            for sid in _NEWS_SOURCE_BY_ID:
+                if sid in selected or sid in dismissed or sid in stats["muted"]:
+                    continue
+                if str(state["history"].get(sid, "")) > cutoff:
+                    continue
+                affinity = sum(
+                    tag_score.get(t, 0.0) for t in _NEWS_SOURCE_TAGS.get(sid, ())
+                )
+                tiebreak = int(
+                    hashlib.sha1(f"{today}:{sid}".encode()).hexdigest()[:8], 16
+                )
+                candidates.append((-affinity, tiebreak, sid))
+            candidates.sort()
+            state["date"] = today
+            state["suggestions"] = [
+                sid for _, _, sid in candidates[:_NEWS_DISCOVERY_COUNT]
+            ]
+            for sid in state["suggestions"]:
+                state["history"][sid] = today
+            _write_news_discovery(state)
+        suggestions = list(state["suggestions"])
+    out: List[Dict[str, Any]] = []
+    for sid in suggestions:
+        src = _NEWS_SOURCE_BY_ID.get(sid)
+        # A kept suggestion is in news_sources now — it's a regular source,
+        # so it drops out of the banner/badging.
+        if not src or sid in selected:
+            continue
+        out.append(
+            {
+                "id": sid,
+                "label": src["label"],
+                "tags": list(_NEWS_SOURCE_TAGS.get(sid, ())),
+            }
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -2001,10 +2322,11 @@ def _enrich_images(items: List[Dict[str, Any]]) -> None:
 
 @app.get("/api/digest/news/sources")
 async def get_news_sources():
-    """Selectable news feeds: built-in whitelist + operator custom feeds."""
+    """Selectable news feeds: built-in whitelist + catalog + custom feeds."""
     prefs = _read_digest_prefs()
     builtin = [
-        {"id": s["id"], "label": s["label"], "custom": False} for s in _NEWS_SOURCES
+        {"id": s["id"], "label": s["label"], "custom": False}
+        for s in [*_NEWS_SOURCES, *_NEWS_CATALOG]
     ]
     custom = [
         {"id": c["id"], "label": c["label"], "url": c["url"], "custom": True}
@@ -2022,6 +2344,11 @@ async def get_news(
     ``sources`` is a CSV of source ids (unknown ids ignored); empty → the saved
     prefs' selection (or defaults). Drives the digest's infinite scroll.
     ``refresh`` bypasses the per-feed TTL cache (the "Refresh feed" button).
+
+    Feedback-aware: today's discovery suggestions ride along in the fetch
+    set, downvoted articles and muted sources are dropped, and the recency
+    sort is warped by learned source/topic affinity (_news_rank_adjust).
+    Each item is annotated with the operator's current ``vote``.
     """
     prefs = _read_digest_prefs()
     resolved = _resolve_sources(prefs)
@@ -2032,22 +2359,43 @@ async def get_news(
         ids = [i for i in ids if i in resolved]
     offset = max(0, offset)
     limit = max(1, min(limit, 50))
-    src_list = [resolved[i] for i in ids]
     loop = asyncio.get_running_loop()
+    discovery = await loop.run_in_executor(None, _todays_news_discovery, prefs)
+    discovery_ids = [
+        d["id"] for d in discovery if d["id"] not in ids and d["id"] in resolved
+    ]
+    src_list = [resolved[i] for i in [*ids, *discovery_ids]]
     all_items = await loop.run_in_executor(
         None, lambda: _collect_news(src_list, force=bool(refresh))
     )
-    # Copy each item without the internal sort key (don't mutate the cache).
-    page = [
-        {k: v for k, v in it.items() if k != "published_ts"}
-        for it in all_items[offset : offset + limit]
+    stats = await loop.run_in_executor(None, _news_feedback_stats)
+    visible = [
+        it
+        for it in all_items
+        if it.get("link") not in stats["hidden"]
+        and it.get("source_id") not in stats["muted"]
     ]
+    visible.sort(
+        key=lambda it: it.get("published_ts", 0.0) + _news_rank_adjust(it, stats),
+        reverse=True,
+    )
+    discovery_set = set(discovery_ids)
+    # Copy each item without the internal sort key (don't mutate the cache).
+    page = []
+    for it in visible[offset : offset + limit]:
+        out = {k: v for k, v in it.items() if k != "published_ts"}
+        cur = stats["votes"].get(it.get("link") or "")
+        out["vote"] = cur.get("vote") if cur else None
+        if it.get("source_id") in discovery_set:
+            out["discovery"] = True
+        page.append(out)
     # Backfill thumbnails from article og:image for feeds without inline images.
     await loop.run_in_executor(None, _enrich_images, page)
     return {
         "items": page,
-        "total": len(all_items),
-        "has_more": offset + limit < len(all_items),
+        "total": len(visible),
+        "has_more": offset + limit < len(visible),
+        "discovery": discovery,
     }
 
 
@@ -2094,6 +2442,85 @@ async def put_digest_prefs(body: DigestPrefsBody):
         prefs["news_sources"] = [s for s in prefs["news_sources"] if s in valid_ids]
     _write_digest_prefs(prefs)
     return prefs
+
+
+class NewsFeedbackBody(BaseModel):
+    link: str
+    vote: Optional[str] = None  # "up" | "down" | None (clear a prior vote)
+    reason: Optional[str] = None
+    title: Optional[str] = None
+    source_id: Optional[str] = None
+    source: Optional[str] = None
+    published: Optional[str] = None
+
+
+@app.post("/api/digest/news/feedback")
+async def post_news_feedback(body: NewsFeedbackBody):
+    """Record a thumbs up/down on a news article (vote=null clears it).
+
+    The vote reranks the feed on the next fetch (see get_news) and is
+    ingested into gbrain as a taste page by ingest_news_feedback.py.
+    """
+    link = (body.link or "").strip()[:2048]
+    if not link.lower().startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="link must be an http(s) URL")
+    if body.vote not in ("up", "down", None):
+        raise HTTPException(
+            status_code=400, detail="vote must be 'up', 'down' or null"
+        )
+    reason = (body.reason or "").strip() or None
+    if body.vote != "down":
+        reason = None
+    elif reason is not None and reason not in _NEWS_DOWN_REASONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"reason must be one of {list(_NEWS_DOWN_REASONS)}",
+        )
+    meta = {
+        "title": (body.title or "")[:300],
+        "source_id": (body.source_id or "")[:64],
+        "source": (body.source or "")[:100],
+        "published": (body.published or "")[:64],
+    }
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(
+        None, lambda: _record_news_feedback(link, body.vote, reason, meta)
+    )
+    return {"ok": True, "vote": body.vote}
+
+
+class NewsDiscoveryActBody(BaseModel):
+    id: str
+    action: str  # "keep" | "dismiss"
+
+
+@app.post("/api/digest/news/discovery")
+async def act_news_discovery(body: NewsDiscoveryActBody):
+    """Keep (add to news_sources) or dismiss (never re-suggest) a suggestion."""
+    sid = (body.id or "").strip()
+    if sid not in _NEWS_SOURCE_BY_ID:
+        raise HTTPException(status_code=400, detail="unknown source id")
+    if body.action not in ("keep", "dismiss"):
+        raise HTTPException(
+            status_code=400, detail="action must be 'keep' or 'dismiss'"
+        )
+    with _NEWS_DISCOVERY_LOCK:
+        state = _read_news_discovery()
+        if body.action == "keep":
+            if sid not in state["kept"]:
+                state["kept"].append(sid)
+            if sid in state["dismissed"]:
+                state["dismissed"].remove(sid)
+        else:
+            if sid not in state["dismissed"]:
+                state["dismissed"].append(sid)
+            state["suggestions"] = [s for s in state["suggestions"] if s != sid]
+        _write_news_discovery(state)
+    prefs = _read_digest_prefs()
+    if body.action == "keep" and sid not in prefs["news_sources"]:
+        prefs["news_sources"].append(sid)
+        _write_digest_prefs(prefs)
+    return {"ok": True, "news_sources": prefs["news_sources"]}
 
 
 @app.get("/api/tasks/prefs")
