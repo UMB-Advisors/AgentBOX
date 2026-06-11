@@ -273,11 +273,19 @@ log "STAGE 7 — Hermes + gbrain"
 HH="$HOME/.hermes"; HBIN="$HOME/.local/bin/hermes"
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 
-# 7.1 install hermes-agent if absent
-if [ ! -x "$HBIN" ]; then
+# 7.1 install hermes-agent if absent or if a previous run left it half-installed
+if [ ! -x "$HBIN" ] || [ ! -d "$HH/hermes-agent/.git" ]; then
+  [ -x "$HBIN" ] && ! [ -d "$HH/hermes-agent/.git" ] \
+    && log "  hermes binary present but repo .git missing — re-installing to repair half-install"
   log "  installing hermes-agent (non-interactive)"
-  curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
-    | bash -s -- --skip-setup || log "  WARN: hermes install returned non-zero"
+  for attempt in 1 2; do
+    curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
+      | bash -s -- --skip-setup && break
+    log "  WARN: hermes install attempt $attempt returned non-zero"
+    [ "$attempt" -lt 2 ] && sleep 5
+  done
+  [ -x "$HBIN" ] && [ -d "$HH/hermes-agent/.git" ] \
+    || die "hermes-agent install failed after 2 attempts (HBIN=$HBIN exists: $([ -x "$HBIN" ] && echo yes || echo no); repo .git exists: $([ -d "$HH/hermes-agent/.git" ] && echo yes || echo no))"
 fi
 # 7.2 pin to HERMES_REF (0.15.1) — 0.16's >=64K ctx floor rejects the local Qwen3-4B
 if [ -d "$HH/hermes-agent/.git" ]; then
@@ -286,7 +294,8 @@ if [ -d "$HH/hermes-agent/.git" ]; then
     log "  pinning Hermes to $HERMES_REF (was $CUR)"
     git -C "$HH/hermes-agent" fetch --tags origin >/dev/null 2>&1
     git -C "$HH/hermes-agent" checkout -f "$HERMES_REF" >/dev/null 2>&1 \
-      && ( cd "$HH/hermes-agent" && uv sync >/dev/null 2>&1 ) || log "  WARN: Hermes pin/sync failed"
+      && ( cd "$HH/hermes-agent" && uv sync >/dev/null 2>&1 ) \
+      || die "Hermes pin/sync to $HERMES_REF failed"
   fi
 fi
 # 7.3 config.yaml from the AgentBOX template (local Qwen3-4B @ :11435 + gbrain MCP + cloud fallback)
