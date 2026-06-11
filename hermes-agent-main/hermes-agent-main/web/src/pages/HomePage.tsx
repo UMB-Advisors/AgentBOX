@@ -10,7 +10,10 @@ import {
   Mail,
   Newspaper,
   RefreshCw,
+  Sparkles,
   SquareKanban,
+  ThumbsDown,
+  ThumbsUp,
 } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -37,6 +40,7 @@ import type {
   InboxRankGroup,
   InboxRankItem,
   KanbanBoard,
+  NewsDiscoverySource,
   NewsItem,
 } from "@/lib/api";
 import { isoTimeAgo } from "@/lib/utils";
@@ -76,6 +80,7 @@ export default function HomePage() {
 
   // News module
   const [news, setNews] = useState<NewsItem[]>([]);
+  const [discovery, setDiscovery] = useState<NewsDiscoverySource[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -189,11 +194,14 @@ export default function HomePage() {
     setNewsLoading(true);
     setNewsError(null);
     try {
-      const res = await api.getNews(p.news_sources, loadedRef.current, NEWS_PAGE);
+      const offset = loadedRef.current;
+      const res = await api.getNews(p.news_sources, offset, NEWS_PAGE);
       loadedRef.current += res.items.length;
       hasMoreRef.current = res.has_more;
       setNews((prev) => [...prev, ...res.items]);
       setHasMore(res.has_more);
+      // Today's suggested-new-source picks ride on the first page.
+      if (offset === 0) setDiscovery(res.discovery ?? []);
     } catch (err) {
       setNewsError(err instanceof Error ? err.message : "Failed to load news.");
     } finally {
@@ -211,6 +219,55 @@ export default function HomePage() {
     setHasMore(false);
     void loadMoreNews();
   }, [loadMoreNews]);
+
+  // Thumbs on a story: optimistic update, then persist. The server folds the
+  // vote into future feed ranking (and gbrain ingests it as a taste page).
+  const voteNews = useCallback(
+    (item: NewsItem, vote: "up" | "down" | null, reason?: string) => {
+      setNews((prev) =>
+        prev.map((n) => (n.link === item.link ? { ...n, vote } : n)),
+      );
+      api
+        .voteNews({
+          link: item.link,
+          vote,
+          reason,
+          title: item.title,
+          source_id: item.source_id,
+          source: item.source,
+          published: item.published,
+        })
+        .catch(() => {
+          // Roll back the optimistic update if the server rejected the vote.
+          setNews((prev) =>
+            prev.map((n) =>
+              n.link === item.link ? { ...n, vote: item.vote ?? null } : n,
+            ),
+          );
+        });
+    },
+    [],
+  );
+
+  // Keep/Dismiss one of today's suggested sources.
+  const actDiscovery = useCallback(
+    (id: string, action: "keep" | "dismiss") => {
+      setDiscovery((prev) => prev.filter((s) => s.id !== id));
+      api
+        .actNewsDiscovery(id, action)
+        .then((r) => {
+          if (action === "keep") {
+            // Adopt the server's source list; the prefs change re-fetches the
+            // feed with the kept source as a regular (un-badged) one.
+            setPrefs((p) => (p ? { ...p, news_sources: r.news_sources } : p));
+          } else {
+            refreshNews();
+          }
+        })
+        .catch(() => undefined);
+    },
+    [refreshNews],
+  );
 
   // Reset + load the first page whenever the news selection changes.
   useEffect(() => {
@@ -330,11 +387,14 @@ export default function HomePage() {
       {newsOn && (
         <GoogleNews
           news={news}
+          discovery={discovery}
           loading={newsLoading}
           error={newsError}
           hasMore={hasMore}
           onRetry={() => void loadMoreNews()}
           onRefresh={refreshNews}
+          onVote={voteNews}
+          onDiscoveryAct={actDiscovery}
           sentinelRef={sentinelRef}
         />
       )}
@@ -685,21 +745,39 @@ function SectionNote({
 
 /* ── Google News ───────────────────────────────────────────────────────── */
 
+type VoteFn = (item: NewsItem, vote: "up" | "down" | null, reason?: string) => void;
+
+/** Downvote reason picker options ("why didn't you like this?"). Codes must
+ *  match the server's _NEWS_DOWN_REASONS. */
+const DOWN_REASONS: Array<{ code: string; label: string }> = [
+  { code: "not_interested", label: "Not interested in this topic" },
+  { code: "source", label: "Don't like this source" },
+  { code: "seen", label: "Already seen it" },
+  { code: "low_quality", label: "Sensational or low quality" },
+  { code: "other", label: "Something else" },
+];
+
 function GoogleNews({
   news,
+  discovery,
   loading,
   error,
   hasMore,
   onRetry,
   onRefresh,
+  onVote,
+  onDiscoveryAct,
   sentinelRef,
 }: {
   news: NewsItem[];
+  discovery: NewsDiscoverySource[];
   loading: boolean;
   error: string | null;
   hasMore: boolean;
   onRetry: () => void;
   onRefresh: () => void;
+  onVote: VoteFn;
+  onDiscoveryAct: (id: string, action: "keep" | "dismiss") => void;
   sentinelRef: React.RefObject<HTMLDivElement | null>;
 }) {
   // Lead = first story with an image (falls back to the first story).
@@ -715,6 +793,7 @@ function GoogleNews({
     const seen = new Set<string>();
     const out: NewsItem[] = [];
     for (const n of news) {
+      if (n.vote === "down") continue;
       if (seen.has(n.source_id)) continue;
       seen.add(n.source_id);
       out.push(n);
@@ -755,9 +834,17 @@ function GoogleNews({
             </Button>
           </div>
 
-          {lead && <LeadStory item={lead} />}
+          {discovery.length > 0 && (
+            <DiscoveryBanner sources={discovery} onAct={onDiscoveryAct} />
+          )}
+
+          {lead && <LeadStory item={lead} onVote={onVote} />}
           {rest.map((item, i) => (
-            <StoryRow key={`${item.source_id}-${i}-${item.link}`} item={item} />
+            <StoryRow
+              key={`${item.source_id}-${i}-${item.link}`}
+              item={item}
+              onVote={onVote}
+            />
           ))}
 
           {error && (
@@ -831,52 +918,187 @@ function GoogleNews({
   );
 }
 
-/** Big featured card — large image, headline, source/time. */
-function LeadStory({ item }: { item: NewsItem }) {
+/** "New sources in your feed today" — the daily discovery picks, with
+ *  Keep (joins the operator's sources) / Dismiss (never re-suggested). */
+function DiscoveryBanner({
+  sources,
+  onAct,
+}: {
+  sources: NewsDiscoverySource[];
+  onAct: (id: string, action: "keep" | "dismiss") => void;
+}) {
   return (
-    <a
-      href={item.link || undefined}
-      target="_blank"
-      rel="noreferrer"
-      className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-brand/40"
-    >
-      <StoryThumb image={item.image} className="aspect-[16/9] w-full" iconClassName="h-10 w-10" />
-      <div className="flex flex-col gap-1.5 p-4">
-        <StorySource item={item} />
-        <h4 className="text-lg font-semibold leading-snug group-hover:text-brand">
-          {item.title || "(untitled)"}
-        </h4>
-        {item.summary && (
-          <p className="line-clamp-2 text-sm text-muted-foreground">{item.summary}</p>
-        )}
+    <div className="flex flex-col gap-2 rounded-xl border border-brand/30 bg-brand/5 p-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <Sparkles className="h-4 w-4 text-brand" />
+        New sources in your feed today
       </div>
-    </a>
+      {sources.map((s) => (
+        <div key={s.id} className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <span className="text-sm font-medium">{s.label}</span>
+            {s.tags && s.tags.length > 0 && (
+              <span className="ml-2 text-xs text-text-secondary">
+                {s.tags.join(" · ")}
+              </span>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button type="button" size="sm" onClick={() => onAct(s.id, "keep")}>
+              Keep
+            </Button>
+            <Button
+              type="button"
+              ghost
+              size="sm"
+              onClick={() => onAct(s.id, "dismiss")}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      ))}
+      <p className="text-xs text-text-secondary">
+        Their stories are mixed into today's feed. Thumbs on any story teach
+        tomorrow's picks.
+      </p>
+    </div>
+  );
+}
+
+/** What a story collapses to right after a downvote. */
+function DownvotedNote({ item, onVote }: { item: NewsItem; onVote: VoteFn }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-muted/20 px-4 py-2.5">
+      <span className="min-w-0 truncate text-sm text-text-secondary">
+        Got it — you'll see less like this.
+      </span>
+      <Button type="button" ghost size="sm" onClick={() => onVote(item, null)}>
+        Undo
+      </Button>
+    </div>
+  );
+}
+
+/** Thumbs up/down. The down thumb opens the "why didn't you like this?"
+ *  reason picker; the chosen reason rides with the vote so the ranker (and
+ *  gbrain) can learn the right lesson (topic vs source vs quality). */
+function VoteControls({ item, onVote }: { item: NewsItem; onVote: VoteFn }) {
+  const [reasonsOpen, setReasonsOpen] = useState(false);
+  const up = item.vote === "up";
+  return (
+    <div className="relative flex items-center gap-0.5">
+      <button
+        type="button"
+        aria-label="More like this"
+        title="More like this"
+        aria-pressed={up}
+        onClick={() => onVote(item, up ? null : "up")}
+        className={`rounded-full p-1.5 transition-colors hover:bg-muted ${
+          up ? "text-brand" : "text-text-secondary"
+        }`}
+      >
+        <ThumbsUp className="h-4 w-4" fill={up ? "currentColor" : "none"} />
+      </button>
+      <button
+        type="button"
+        aria-label="Less like this"
+        title="Less like this"
+        aria-expanded={reasonsOpen}
+        onClick={() => setReasonsOpen((v) => !v)}
+        className="rounded-full p-1.5 text-text-secondary transition-colors hover:bg-muted"
+      >
+        <ThumbsDown className="h-4 w-4" />
+      </button>
+      {reasonsOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-10"
+            aria-hidden
+            onClick={() => setReasonsOpen(false)}
+          />
+          <div className="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-border bg-card p-1 shadow-lg">
+            <p className="px-2 py-1.5 text-xs font-medium text-text-secondary">
+              Why didn't you like this?
+            </p>
+            {DOWN_REASONS.map((r) => (
+              <button
+                key={r.code}
+                type="button"
+                className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                onClick={() => {
+                  setReasonsOpen(false);
+                  onVote(item, "down", r.code);
+                }}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Big featured card — large image, headline, source/time. */
+function LeadStory({ item, onVote }: { item: NewsItem; onVote: VoteFn }) {
+  if (item.vote === "down") return <DownvotedNote item={item} onVote={onVote} />;
+  return (
+    <div className="group flex flex-col rounded-xl border border-border bg-card transition-colors hover:border-brand/40">
+      <a
+        href={item.link || undefined}
+        target="_blank"
+        rel="noreferrer"
+        className="flex flex-col overflow-hidden rounded-t-xl"
+      >
+        <StoryThumb image={item.image} className="aspect-[16/9] w-full" iconClassName="h-10 w-10" />
+        <div className="flex flex-col gap-1.5 p-4 pb-1">
+          <StorySource item={item} />
+          <h4 className="text-lg font-semibold leading-snug group-hover:text-brand">
+            {item.title || "(untitled)"}
+          </h4>
+          {item.summary && (
+            <p className="line-clamp-2 text-sm text-muted-foreground">{item.summary}</p>
+          )}
+        </div>
+      </a>
+      <div className="flex items-center justify-end px-2 pb-1.5">
+        <VoteControls item={item} onVote={onVote} />
+      </div>
+    </div>
   );
 }
 
 /** Compact story row — thumbnail left, headline right (Google News list item). */
-function StoryRow({ item }: { item: NewsItem }) {
+function StoryRow({ item, onVote }: { item: NewsItem; onVote: VoteFn }) {
+  if (item.vote === "down") return <DownvotedNote item={item} onVote={onVote} />;
   return (
-    <a
-      href={item.link || undefined}
-      target="_blank"
-      rel="noreferrer"
-      className="group flex items-start gap-4 rounded-xl border border-border bg-card p-3 transition-colors hover:border-brand/40"
-    >
-      <div className="min-w-0 flex-1">
-        <StorySource item={item} />
-        <h4 className="mt-1 line-clamp-2 text-sm font-semibold leading-snug group-hover:text-brand">
-          {item.title || "(untitled)"}
-        </h4>
-        {item.summary && (
-          <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{item.summary}</p>
-        )}
+    <div className="group flex items-start gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:border-brand/40">
+      <a
+        href={item.link || undefined}
+        target="_blank"
+        rel="noreferrer"
+        className="flex min-w-0 flex-1 items-start gap-4"
+      >
+        <div className="min-w-0 flex-1">
+          <StorySource item={item} />
+          <h4 className="mt-1 line-clamp-2 text-sm font-semibold leading-snug group-hover:text-brand">
+            {item.title || "(untitled)"}
+          </h4>
+          {item.summary && (
+            <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{item.summary}</p>
+          )}
+        </div>
+        <StoryThumb
+          image={item.image}
+          className="h-20 w-28 rounded-lg sm:h-24 sm:w-36"
+        />
+      </a>
+      <div className="shrink-0 self-start">
+        <VoteControls item={item} onVote={onVote} />
       </div>
-      <StoryThumb
-        image={item.image}
-        className="h-20 w-28 rounded-lg sm:h-24 sm:w-36"
-      />
-    </a>
+    </div>
   );
 }
 
@@ -891,6 +1113,7 @@ function StorySource({ item }: { item: NewsItem }) {
           <span>{when}</span>
         </>
       )}
+      {item.discovery && <Badge tone="secondary">New source</Badge>}
     </div>
   );
 }

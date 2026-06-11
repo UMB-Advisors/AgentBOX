@@ -1,0 +1,23 @@
+# systemd USER unit (install: ~/.config/systemd/user/, systemctl --user)
+# flock serializes all gbrain-ingest jobs + dream: max one LLM consumer
+# at a time on the shared 8GB box (this job makes no LLM calls but shares
+# the lock so gbrain access stays serial).
+[Unit]
+Description=gbrain ingest: news article thumbs feedback -> taste pages
+# After= only, matching the sibling units: in a systemd USER session
+# network-online.target may never activate, so a Requires= here would
+# permanently wedge the service. This job reads a local JSON ledger; if
+# the gbrain daemon isn't up yet the capture fails, the watermark holds,
+# and the next timer run retries.
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.hermes/.env
+WorkingDirectory=%h/gbrain-ingest
+ExecStart=/usr/bin/flock -w 600 /tmp/gbrain-ingest.lock /usr/bin/python3 %h/gbrain-ingest/ingest_news_feedback.py
+Nice=10
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=default.target
