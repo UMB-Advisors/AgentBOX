@@ -50,9 +50,9 @@
       "main": [
         [
           {
-            "index": 0,
-            "node": "Pack Draft Id",
-            "type": "main"
+            "node": "Mark Processed",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -72,9 +72,9 @@
       "main": [
         [
           {
-            "index": 0,
-            "node": "Build Prompt",
-            "type": "main"
+            "node": "Dedup Gate",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -154,6 +154,28 @@
             "index": 0,
             "node": "Load Inbox Row",
             "type": "main"
+          }
+        ]
+      ]
+    },
+    "Dedup Gate": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Processed": {
+      "main": [
+        [
+          {
+            "node": "Pack Draft Id",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -813,6 +835,69 @@
       ],
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2
+    },
+    {
+      "id": "629ffe15-4f8c-41e5-9fcc-9933b03547ad",
+      "name": "Dedup Gate",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        280,
+        160
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "rowNotExists",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "eRpSG4hI2Ac6WpxI"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "account_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.account_id }}"
+            },
+            {
+              "keyName": "provider_message_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.message_id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "62bb7cd4-a753-4009-ad22-31646f7cbd7b",
+      "name": "Mark Processed",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2480,
+        60
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "eRpSG4hI2Ac6WpxI"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "account_id": "={{ $('Load Inbox Row').item.json.account_id }}",
+            "provider_message_id": "={{ $('Load Inbox Row').item.json.message_id }}",
+            "ingested_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        }
+      }
     }
   ],
   "pinData": {},
