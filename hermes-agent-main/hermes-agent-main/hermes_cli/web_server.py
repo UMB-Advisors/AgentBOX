@@ -790,6 +790,27 @@ _GRAPH_GEN: Dict[str, Any] = {
 _GRAPH_ADAPTER_SRC = Path(__file__).resolve().parent.parent / "tools" / "gbrain-graph-export.ts"
 
 
+def _resolve_gbrain_home() -> Optional[str]:
+    """Resolve ``GBRAIN_HOME`` (the PARENT dir under which gbrain keeps ``.gbrain/``).
+
+    gbrain's ``loadConfig()`` reads ``$GBRAIN_HOME/.gbrain/config.json`` (default
+    ``~/.gbrain``) and returns null when it's absent — which is exactly why the
+    export failed on the appliance: the dashboard service spawns the adapter with
+    no ``GBRAIN_HOME``, while the box keeps its brain under ``~/.hermesbox/.gbrain``.
+    Honor an explicit env var, else probe the known appliance layouts for an
+    existing ``config.json``. Returns None if none is found (caller surfaces a
+    clear error).
+    """
+    env_home = os.environ.get("GBRAIN_HOME")
+    if env_home and env_home.strip():
+        return env_home.strip()
+    home = Path.home()
+    for parent in (home / ".hermesbox", home):
+        if (parent / ".gbrain" / "config.json").is_file():
+            return str(parent)
+    return None
+
+
 def _run_graph_export() -> None:
     """Generate ``knowledge-graph.json`` into ``GRAPH_APP_DIST`` via the adapter.
 
@@ -821,6 +842,17 @@ def _run_graph_export() -> None:
                 f"gbrain graph adapter missing at {adapter} and no shipped copy at "
                 f"{_GRAPH_ADAPTER_SRC} — deploy tools/gbrain-graph-export.ts"
             )
+        # The dashboard service has no GBRAIN_HOME in its env, so the adapter's
+        # loadConfig() can't locate the brain (the appliance keeps it under
+        # ~/.hermesbox/.gbrain, not ~/.gbrain). Resolve + inject it; inherit the
+        # rest of the env so any daemon/OAuth creds (GBRAIN_*_CLIENT_*) carry too.
+        gbrain_home = _resolve_gbrain_home()
+        if not gbrain_home:
+            raise FileNotFoundError(
+                "gbrain config not found (no $GBRAIN_HOME/.gbrain/config.json under "
+                "~/.hermesbox or ~) — set GBRAIN_HOME for the dashboard service"
+            )
+        sub_env = {**os.environ, "GBRAIN_HOME": gbrain_home}
         out_path.parent.mkdir(parents=True, exist_ok=True)
         proc = subprocess.run(
             [bun, "run", str(adapter), "--out", str(out_path)],
@@ -828,6 +860,7 @@ def _run_graph_export() -> None:
             capture_output=True,
             text=True,
             timeout=600,
+            env=sub_env,
         )
         # The adapter prints its result summary ("pages=N … → path") to stderr.
         tail = [ln for ln in (proc.stderr or "").strip().splitlines() if ln.strip()]
