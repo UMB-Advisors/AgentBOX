@@ -1,31 +1,28 @@
 'use client';
 
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { apiUrl } from '@/lib/api';
 import type { Category } from '@/lib/classification/prompt';
 import { type AccountRef, type DraftWithMessage, REJECT_REASON_LABELS } from '@/lib/types';
 import type { ActionKind } from './ActionButtons';
 import { AppShell } from './AppShell';
-import { DraftCard } from './DraftCard';
-import { DraftDetail } from './DraftDetail';
-import { EmptyState } from './EmptyState';
 import { type CooldownState, GmailCooldownBanner } from './GmailCooldownBanner';
-import { NewDraftsBanner } from './NewDraftsBanner';
 import {
   PANES_AUTOSAVE_ID,
   RESIZE_HANDLE_CLASS,
   STUCK_APPROVED_THRESHOLD_MS,
 } from './queue/constants';
+import { QueueDetail } from './queue/QueueDetail';
+import { QueueList } from './queue/QueueList';
 import { useKeyboardNav } from './queue/useKeyboardNav';
 import { useQueuePolling } from './queue/useQueuePolling';
 import { useRightPane } from './queue/useRightPane';
-import { type FolderKey, type Mode, modeForFolder, type ToastMsg } from './queue/utils';
+import { type FolderKey, modeForFolder, type ToastMsg } from './queue/utils';
 import type { RejectPayload } from './RejectPopover';
 import { RightPane } from './RightPane';
 import { ShortcutsHelp } from './ShortcutsHelp';
-import { StuckApproved } from './StuckApproved';
 import { Toast } from './Toast';
 
 type Busy = { draftId: number; kind: ActionKind | 'retry' } | null;
@@ -602,155 +599,58 @@ export function QueueClient({
     }
   })();
 
-  // P1b (MBOX-162) — list + detail bodies extracted as shared fragments so the
-  // desktop PanelGroup and the mobile single-pane layout render identical
-  // children (no duplicated DraftCard / DraftDetail wiring). Each is dropped
-  // into a `flex h-full flex-col` container by both layouts.
+  // P1b (MBOX-162) — list + detail rendered as components so the desktop
+  // PanelGroup and the mobile single-pane layout share identical children.
   const listContent = (
-    <>
-      {/* MBOX-360 (MBOX-162 V3) — account filter. Only rendered when the box
-          serves more than one inbox; single-account boxes never see it. "All
-          inboxes" clears the filter (cross-account unified view). */}
-      {accounts.length > 1 && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-bg-panel px-3 py-1.5 font-mono text-[11px] text-ink-dim">
-          <label htmlFor="account-filter" className="shrink-0">
-            Inbox
-          </label>
-          <select
-            id="account-filter"
-            value={accountFilter ?? ''}
-            onChange={(e) =>
-              handleAccountFilterChange(e.target.value ? Number(e.target.value) : undefined)
-            }
-            className="min-w-0 flex-1 rounded-sm border border-border bg-bg-deep px-1.5 py-0.5 text-ink"
-          >
-            <option value="">All inboxes</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.display_label || a.email_address}
-              </option>
-            ))}
-          </select>
-          {/* MBOX-366 (MBOX-162 V5) — in-context link to the registry. */}
-          <a
-            href={apiUrl('/settings/accounts')}
-            className="shrink-0 text-ink-muted underline underline-offset-2 hover:text-ink"
-          >
-            Manage
-          </a>
-        </div>
-      )}
-
-      {/* STAQPRO-331 #8 — sort selector (active folder only). Lets the
-          operator flip to oldest-first so overdue rows surface at the top of
-          the list. Hidden in archive folders. */}
-      {mode === 'active' && visibleList.length > 1 && (
-        <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border-subtle bg-bg-panel px-3 py-1.5 font-mono text-[11px] text-ink-dim">
-          <span>Sort</span>
-          <button
-            type="button"
-            onClick={() => setSortOrder('newest')}
-            className={
-              sortOrder === 'newest'
-                ? 'text-ink underline underline-offset-2'
-                : 'text-ink-muted hover:text-ink'
-            }
-          >
-            newest
-          </button>
-          <span aria-hidden>·</span>
-          <button
-            type="button"
-            onClick={() => setSortOrder('oldest')}
-            className={
-              sortOrder === 'oldest'
-                ? 'text-ink underline underline-offset-2'
-                : 'text-ink-muted hover:text-ink'
-            }
-          >
-            oldest
-          </button>
-        </div>
-      )}
-
-      {mode === 'active' && (stuckApprovedFiltered.length > 0 || newCount > 0) && (
-        <div className="space-y-2 border-b border-border-subtle p-2">
-          <StuckApproved
-            drafts={stuckApprovedFiltered}
-            busyId={busyRetryId}
-            onRetry={fireRetry}
-            onClearLock={fireClearLock}
-            cooldownActive={cooldown.is_active}
-            cooldownSafeAt={cooldown.recommended_safe_at}
-          />
-          <NewDraftsBanner count={newCount} onDismiss={dismissNewDrafts} />
-        </div>
-      )}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {visibleList.length === 0 ? (
-          mode === 'active' ? (
-            <EmptyState />
-          ) : (
-            <div className="flex h-40 items-center justify-center text-sm text-ink-dim">
-              No {folder} drafts yet
-            </div>
-          )
-        ) : (
-          <ul className="divide-y divide-border-subtle">
-            {visibleList.map((draft) => (
-              <li key={draft.id}>
-                <DraftCard
-                  draft={draft}
-                  isSelected={draft.id === selected?.id}
-                  mode={mode === 'active' ? 'pending' : 'sent'}
-                  showAccount={showAccount}
-                  onSelect={() => {
-                    setSelectedId(draft.id);
-                    setMobileDetailOpen(true);
-                  }}
-                  {...(mode === 'active'
-                    ? {
-                        actionsBusy: rowBusyId === draft.id,
-                        onArchive: () => fireInboxAction('archive', draft),
-                        onDelete: () => fireInboxAction('delete', draft),
-                        onMarkRead: () => fireInboxAction('mark-read', draft),
-                        onSnooze: (untilISO: string) =>
-                          fireInboxAction('snooze', draft, { until: untilISO }),
-                      }
-                    : {})}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </>
+    <QueueList
+      mode={mode}
+      folder={folder}
+      visibleList={visibleList}
+      stuckApprovedFiltered={stuckApprovedFiltered}
+      newCount={newCount}
+      sortOrder={sortOrder}
+      accountFilter={accountFilter}
+      accounts={accounts}
+      showAccount={showAccount}
+      selected={selected}
+      rowBusyId={rowBusyId}
+      cooldown={cooldown}
+      busyRetryId={busyRetryId}
+      onSortNewest={() => setSortOrder('newest')}
+      onSortOldest={() => setSortOrder('oldest')}
+      onSelect={(id) => {
+        setSelectedId(id);
+        setMobileDetailOpen(true);
+      }}
+      onDismissNewDrafts={dismissNewDrafts}
+      onAccountFilterChange={handleAccountFilterChange}
+      onRetry={fireRetry}
+      onClearLock={fireClearLock}
+      onArchive={(draft) => fireInboxAction('archive', draft)}
+      onDelete={(draft) => fireInboxAction('delete', draft)}
+      onMarkRead={(draft) => fireInboxAction('mark-read', draft)}
+      onSnooze={(draft, untilISO) => fireInboxAction('snooze', draft, { until: untilISO })}
+    />
   );
 
-  const detailScrollBody = selected ? (
-    <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
-      <DraftDetail
-        draft={selected}
-        busy={busyKindFor(selected.id)}
-        readOnly={mode === 'archive'}
-        onApprove={() => fireAction('approve', selected)}
-        isEditing={isEditing}
-        seedBody={redraftSeedBody ?? undefined}
-        onEditStart={() => setIsEditing(true)}
-        onEditCancel={exitEdit}
-        onEditSave={onEditSave}
-        redraftEnabled={redraftEnabled}
-        onRedraftApply={onRedraftApply}
-        onReject={(payload) => fireReject(payload, selected)}
-        onReclassify={(category) => fireReclassify(selected, category)}
-        rejectPopoverOpen={rejectPopoverOpen}
-        onRejectPopoverChange={setRejectPopoverOpen}
-      />
-    </div>
-  ) : (
-    <div className="flex flex-1 items-center justify-center text-sm text-ink-dim">
-      No draft selected
-    </div>
+  const detailScrollBody = (
+    <QueueDetail
+      mode={mode}
+      selected={selected}
+      busy={selected ? busyKindFor(selected.id) : null}
+      isEditing={isEditing}
+      redraftSeedBody={redraftSeedBody}
+      redraftEnabled={redraftEnabled}
+      rejectPopoverOpen={rejectPopoverOpen}
+      onApprove={() => selected && fireAction('approve', selected)}
+      onEditStart={() => setIsEditing(true)}
+      onEditCancel={exitEdit}
+      onEditSave={onEditSave}
+      onRedraftApply={onRedraftApply}
+      onReject={(payload) => selected && fireReject(payload, selected)}
+      onReclassify={(category) => selected && fireReclassify(selected, category)}
+      onRejectPopoverChange={setRejectPopoverOpen}
+    />
   );
 
   return (
