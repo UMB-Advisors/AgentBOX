@@ -1,0 +1,131 @@
+# Canonical entity map for gbrain ingestion attribution.
+# One gbrain SOURCE per entity. Sources are the boundary; tags are decoration.
+# Consumed by gbrain-ingest/common.py (load_entity_map) and attribution.py.
+
+entities:
+  heron:
+    name: Heron Labs
+    description: Gummy CMO (contract manufacturing)
+  state:
+    name: STATE
+    description: 8-SKU functional gummy brand
+  cde:
+    name: CDE Ingredients
+    description: Fermented fruit puree B2B
+  krunchy:
+    name: Krunchy Kids
+    description: Organic kids' gummy vitamins, Amazon-native
+  "yes":
+    name: Yes Cacao
+    description: Botanical functional chocolate (YES!), yescacao.com
+  future:
+    name: Future Compounds
+    description: High-dose CBD
+  umb:
+    name: UMB / Umbrella Crew
+    description: Ops & AI advisory firm
+  glue:
+    name: Glue Co
+    description: Cross-entity coordination
+  myco:
+    name: MycoSymbiotics
+    description: Mushroom extraction + Mycofest festival
+  personal:
+    name: Personal
+    description: Dustin personal
+  unsorted:
+    name: Unsorted
+    description: Triage bucket for unresolved attribution
+
+# Rung 1: account provenance. Mail/Drive pulled from these accounts is
+# attributed directly, no further laddering.
+accounts:
+  dustin@heronlabsinc.com: heron
+  dustin@umbadvisors.com: umb
+
+# Rung 5: per-account default when rungs 1-4 do not resolve.
+# consultingfutures is the personal catch-all account; anything else
+# unresolved falls to unsorted (handled in attribution.py).
+account_defaults:
+  consultingfutures@gmail.com: personal
+
+# Rung 2: CRM company name -> entity. Keys are normalized (lowercase,
+# punctuation stripped) before lookup; see attribution.normalize_company.
+companies:
+  heron labs: heron
+  heron labs inc: heron
+  state: state
+  state wellness: state
+  cde ingredients: cde
+  cde: cde
+  krunchy kids: krunchy
+  yes cacao: "yes"
+  yes! cacao: "yes"
+  "yes": "yes"
+  future compounds: future
+  umb advisors: umb
+  umb: umb
+  umbrella crew: umb
+  glue co: glue
+  glue: glue
+  mycosymbiotics: myco
+  mycofest: myco
+
+# Rung 3: email-domain heuristics. Applied to sender first, then other
+# participants. Generic mail providers are never matched (see
+# generic_domains below).
+domains:
+  heronlabsinc.com: heron
+  yescacao.com: "yes"
+  umbadvisors.com: umb
+  umbrellacrew.com: umb
+  futurecompounds.com: future
+  krunchykids.com: krunchy
+  cdeingredients.com: cde
+  mycosymbiotics.com: myco
+  mycofest.com: myco
+  consultingfutures.com: personal
+
+# Domains that carry no entity signal.
+generic_domains:
+  - gmail.com
+  - googlemail.com
+  - yahoo.com
+  - hotmail.com
+  - outlook.com
+  - icloud.com
+  - me.com
+  - aol.com
+  - proton.me
+  - protonmail.com
+  - msn.com
+  - live.com
+  - comcast.net
+
+# Rung 4: local LLM classifier (qwen3 on the box's second ollama).
+classifier:
+  ollama_url: http://127.0.0.1:11435
+  model: qwen3:4b-instruct
+  timeout_seconds: 20
+  confidence_threshold: 0.6
+  # {entities} is filled with "slug: name - description" lines,
+  # {subject} / {snippet} with the message being classified.
+  prompt: |
+    You are an email router for a multi-entity business portfolio.
+    Assign the message below to exactly one entity.
+
+    Entities:
+    {entities}
+
+    Message subject: {subject}
+    Message snippet: {snippet}
+
+    Reply with ONLY a JSON object, no prose:
+    {{"entity": "<slug>", "confidence": <0.0-1.0>}}
+    If nothing fits, use {{"entity": "unsorted", "confidence": 0.0}}.
+
+# Shared LLM settings for summarization (email threads, drive docs).
+summarizer:
+  ollama_url: http://127.0.0.1:11435
+  model: qwen3:4b-instruct
+  timeout_seconds: 20
