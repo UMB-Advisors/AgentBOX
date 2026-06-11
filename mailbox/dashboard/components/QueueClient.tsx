@@ -1,7 +1,7 @@
 'use client';
 
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { apiUrl } from '@/lib/api';
 import type { Category } from '@/lib/classification/prompt';
@@ -15,11 +15,12 @@ import { type CooldownState, GmailCooldownBanner } from './GmailCooldownBanner';
 import { NewDraftsBanner } from './NewDraftsBanner';
 import {
   PANES_AUTOSAVE_ID,
-  POLL_INTERVAL_MS,
   RESIZE_HANDLE_CLASS,
-  RIGHT_PANE_PREF_KEY,
   STUCK_APPROVED_THRESHOLD_MS,
 } from './queue/constants';
+import { useKeyboardNav } from './queue/useKeyboardNav';
+import { useQueuePolling } from './queue/useQueuePolling';
+import { useRightPane } from './queue/useRightPane';
 import { type FolderKey, type Mode, modeForFolder, type ToastMsg } from './queue/utils';
 import type { RejectPayload } from './RejectPopover';
 import { RightPane } from './RightPane';
@@ -97,36 +98,14 @@ export function QueueClient({
   // (matches the listDrafts ORDER BY created_at DESC server-side sort);
   // 'oldest' surfaces stale/overdue drafts at the top.
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
-  // P1b (MBOX-162) — collapsible right pane (Calendar/Drive in P4; stub now).
-  // Default closed; hydrated from localStorage on mount so the operator's
-  // choice survives reload without an SSR/client markup mismatch.
-  const [rightPaneOpen, setRightPaneOpen] = useState(false);
   // MBOX-360 (MBOX-162 V3) — account filter for the unified queue. undefined =
   // all inboxes; a number narrows to one connected account. SSR-seeded from the
   // ?account= param so a deep-linked/reloaded filter survives.
   const [accountFilter, setAccountFilter] = useState<number | undefined>(initialAccountId);
 
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(RIGHT_PANE_PREF_KEY) === '1') setRightPaneOpen(true);
-    } catch {
-      // localStorage unavailable (private mode / SSR edge) — keep default.
-    }
-  }, []);
-
-  const toggleRightPane = useCallback(() => {
-    setRightPaneOpen((open) => {
-      const next = !open;
-      try {
-        localStorage.setItem(RIGHT_PANE_PREF_KEY, next ? '1' : '0');
-      } catch {
-        // best-effort persistence
-      }
-      return next;
-    });
-  }, []);
-
-  const knownIds = useRef<Set<number>>(new Set(initialList.map((d) => d.id)));
+  // P1b (MBOX-162) — collapsible right pane. State + localStorage persistence
+  // extracted to useRightPane.
+  const { rightPaneOpen, toggleRightPane } = useRightPane();
 
   // Status slice per folder — mirrors the server's statusesForFolder() in
   // app/queue/page.tsx. Kept in sync by hand; the wire shape is the same.
@@ -159,93 +138,21 @@ export function QueueClient({
 
   const wantsStuck = folder === 'queue';
 
-  const fetchData = useCallback(
-    async (silent: boolean) => {
-      try {
-        const [listRes, stuckRes, cooldownRes] = await Promise.all([
-          fetch(apiUrl(`/api/drafts?status=${statusQuery}&limit=50${urgentParam}${accountParam}`), {
-            cache: 'no-store',
-          }),
-          // Stuck-approved banner only needs refreshing on the queue folder;
-          // skip the round trip otherwise.
-          wantsStuck
-            ? fetch(apiUrl('/api/drafts?status=approved&limit=50'), { cache: 'no-store' })
-            : Promise.resolve(null),
-          // STAQPRO-331 #5 — Gmail cooldown refresh. Don't gate the whole
-          // fetchData on it; if the cooldown route errors, drafts still
-          // update. Cooldown is best-effort UI signal.
-          fetch(apiUrl('/api/system/gmail-cooldown'), { cache: 'no-store' }),
-        ]);
-        if (!listRes.ok) return;
-        const listJson = await listRes.json();
-        const nextList: DraftWithMessage[] = listJson.drafts ?? [];
-
-        if (silent) {
-          for (const d of nextList) knownIds.current.add(d.id);
-        } else if (mode === 'active') {
-          const fresh = nextList.map((d) => d.id).filter((id) => !knownIds.current.has(id));
-          if (fresh.length > 0) {
-            setNewCount((c) => c + fresh.length);
-            for (const id of fresh) knownIds.current.add(id);
-          }
-        }
-
-        setDrafts(nextList);
-
-        if (wantsStuck && stuckRes?.ok) {
-          const stuckJson = await stuckRes.json();
-          setStuckApproved(stuckJson.drafts ?? []);
-        }
-
-        if (cooldownRes.ok) {
-          const cooldownJson = (await cooldownRes.json()) as CooldownState;
-          setCooldown(cooldownJson);
-        }
-      } catch {
-        // Background poll — swallow transient errors.
-      }
-    },
-    [statusQuery, urgentParam, accountParam, wantsStuck, mode],
-  );
-
-  // STAQPRO-331 #11 — visibility-aware polling. Skip ticks when the tab is
-  // hidden (no point spending battery + n8n CPU when nobody is watching) and
-  // fire an immediate refetch on visibility return so an operator coming
-  // back from another tab sees the queue caught up without waiting for the
-  // next 30s tick. AbortController per-fetch is intentionally deferred —
-  // fetchData uses two parallel cache:'no-store' fetches without
-  // cancellation, and the last-write-wins setActive/setSent pattern is
-  // already idempotent under in-flight overlap.
-  useEffect(() => {
-    function tick() {
-      if (document.visibilityState !== 'visible') return;
-      fetchData(false);
-    }
-    const interval = setInterval(tick, POLL_INTERVAL_MS);
-    function onVisibility() {
-      if (document.visibilityState === 'visible') fetchData(false);
-    }
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [fetchData]);
-
-  // MBOX-360 (MBOX-162 V3) — refetch immediately when the account filter
-  // changes. The polling effect above only re-arms its interval on a fetchData
-  // change; it doesn't fire a tick. Silent so switching inboxes doesn't trip
-  // the "new drafts" banner. Skip the initial mount — the SSR list already
-  // reflects initialAccountId.
-  const accountFilterMounted = useRef(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: fetchData is recreated when accountFilter changes; accountFilter is the intended sole trigger.
-  useEffect(() => {
-    if (!accountFilterMounted.current) {
-      accountFilterMounted.current = true;
-      return;
-    }
-    fetchData(true);
-  }, [accountFilter]);
+  // Polling + visibility-aware refetch extracted to useQueuePolling.
+  const { fetchData } = useQueuePolling({
+    folder,
+    mode,
+    statusQuery,
+    urgentParam,
+    accountParam,
+    accountFilter,
+    wantsStuck,
+    initialList,
+    setDrafts,
+    setStuckApproved,
+    setCooldown,
+    setNewCount,
+  });
 
   // MBOX-360 — apply a new account filter: client state + URL sync (deep-link /
   // reload preserves it) via replaceState, avoiding a full SSR navigation. The
@@ -659,91 +566,21 @@ export function QueueClient({
     busy?.draftId === id && busy.kind !== 'retry' ? (busy.kind as ActionKind) : null;
   const busyRetryId = busy?.kind === 'retry' ? busy.draftId : null;
 
-  // STAQPRO-148-followup (Delphi UX pass) — keyboard nav for desktop
-  // operators. j/k or arrow keys move between drafts; a approves; e edits;
-  // x rejects. NOT 'r' (Cmd+R refresh muscle-memory creates accidental-
-  // reject risk per Eric's call-out). Modifier-key check bails on
-  // Cmd/Ctrl/Alt so genuine Cmd+letter browser shortcuts pass through.
-  // Guards: skip when typing in input/textarea/select OR when the edit
-  // modal is open OR when an action is already in flight.
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      // While inline-editing, suppress nav/action keys — the operator saves or
-      // cancels the edit first (InlineDraftEditor owns Escape-to-cancel).
-      if (isEditing) return;
-      // STAQPRO-331 #7 — Escape closes the help overlay even when the
-      // popover is also open; let the help close first so the operator
-      // can re-orient before the popover steals focus.
-      if (e.key === 'Escape' && shortcutsHelpOpen) {
-        e.preventDefault();
-        setShortcutsHelpOpen(false);
-        return;
-      }
-      // When the reject popover is open, swallow nav/action keys —
-      // RejectPopover owns Escape itself.
-      if (rejectPopoverOpen) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-      // STAQPRO-331 #7 — '?' (Shift+/) toggles the shortcuts cheatsheet.
-      // No selection / view guard — the overlay should always be available.
-      if (e.key === '?') {
-        e.preventDefault();
-        setShortcutsHelpOpen((o) => !o);
-        return;
-      }
-
-      const currentIndex =
-        selectedId == null ? -1 : visibleList.findIndex((d) => d.id === selectedId);
-
-      switch (e.key) {
-        case 'j':
-        case 'ArrowDown': {
-          e.preventDefault();
-          const nextDraft = visibleList[currentIndex + 1];
-          if (nextDraft) setSelectedId(nextDraft.id);
-          return;
-        }
-        case 'k':
-        case 'ArrowUp': {
-          e.preventDefault();
-          const prevDraft = visibleList[currentIndex - 1];
-          if (prevDraft) setSelectedId(prevDraft.id);
-          return;
-        }
-        // STAQPRO-331 #7 — Enter is now an explicit approve alias per
-        // the sandbox action-bar hint. The popover swallows Enter when
-        // open (we guard above on rejectPopoverOpen).
-        case 'Enter':
-        case 'a': {
-          if (!selected || mode === 'archive' || busy) return;
-          e.preventDefault();
-          fireAction('approve', selected);
-          return;
-        }
-        case 'e': {
-          if (!selected || mode === 'archive' || busy) return;
-          e.preventDefault();
-          setIsEditing(true);
-          return;
-        }
-        // STAQPRO-331 #7 — `r` is an alias for `x` (reject-popover open).
-        // The original 'NOT r' constraint targeted Cmd+R refresh muscle-
-        // memory; the modifier-key bail above means a plain `r` is a
-        // deliberate keystroke, and the popover still requires the
-        // operator to pick a reason and click Reject (no auto-fire).
-        case 'r':
-        case 'x': {
-          if (!selected || mode === 'archive' || busy) return;
-          e.preventDefault();
-          setRejectPopoverOpen(true);
-          return;
-        }
-      }
-    }
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
+  // Keyboard navigation extracted to useKeyboardNav.
+  useKeyboardNav({
+    mode,
+    isEditing,
+    shortcutsHelpOpen,
+    rejectPopoverOpen,
+    selectedId,
+    visibleList,
+    selected,
+    busy,
+    setSelectedId,
+    setIsEditing,
+    setShortcutsHelpOpen,
+    setRejectPopoverOpen,
+    fireAction,
   });
 
   // Folder-specific count label for the header chip. Each folder name
