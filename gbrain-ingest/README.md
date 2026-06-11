@@ -1,9 +1,11 @@
 # gbrain-ingest
 
 Phase-2 ingestion pipelines for the agentbox2 gbrain memory layer. Pulls
-mailbox email threads, CRM contacts, recent Google Drive docs, and
-rejected-draft feedback into per-entity gbrain sources so hermes memory
-recall has real knowledge to draw on.
+mailbox email threads, CRM contacts, recent Google Drive docs,
+rejected-draft feedback, Google Calendar events, hermes kanban tasks, and
+agent job outcomes into per-entity gbrain sources so hermes memory recall
+has real knowledge to draw on — what's in the mail, what's on the
+calendar, what the agents did, and what the operator corrected.
 
 Runs ON the box (`UMB@agentbox2`) with stock python3 (stdlib + PyYAML,
 which is already installed). No psycopg2, no pip installs: DB reads go
@@ -22,10 +24,14 @@ which upserts via put_page), LLM calls hit the local ollama.
 | `ingest_email.py` | inbox_messages -> one page PER THREAD, qwen3 summary, watermark-incremental |
 | `ingest_drive.py` | recent Google Docs per connected account -> distilled pages |
 | `ingest_feedback.py` | draft_feedback -> one rejected-draft lesson page per rejection, fully deterministic (no LLM), id-watermark incremental |
-| `systemd/` | user units: email 15min, feedback 30min, contacts daily, drive daily, dream nightly |
+| `ingest_calendar.py` | Google Calendar primary-calendar events per connected account (7d back / 30d forward window) -> one page per occurrence, deterministic, full ladder via organizer/attendees |
+| `ingest_tasks.py` | hermes kanban boards (read-only sqlite) -> one page per task incl. latest run summary, deterministic, label-based entity (run profile/tenant) |
+| `ingest_agents.py` | mailbox.job_outcomes (agent-job results ledger, migration 049) -> one page per outcome, deterministic, id-watermark incremental, label-based entity (business/profile) |
+| `systemd/` | user units: email 15min, feedback 30min, contacts daily, drive daily, calendar/tasks/agents 6-hourly, dream nightly |
 | `tests/test_attribution.py` | ladder unit tests (`uv run --with pytest --with pyyaml -- pytest tests/`) |
 | `tests/test_redact.py` | secret-redaction unit tests |
 | `tests/test_ingest_feedback.py` | feedback page-builder + SQL-shape unit tests |
+| `tests/test_ingest_expansion.py` | calendar/tasks/agents page-builders + label-based entity resolution unit tests |
 
 ## Secret redaction
 
@@ -68,7 +74,9 @@ cp ~/gbrain-ingest/systemd/* ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now gbrain-ingest-email.timer \
     gbrain-ingest-contacts.timer gbrain-ingest-drive.timer \
-    gbrain-ingest-feedback.timer gbrain-dream.timer
+    gbrain-ingest-feedback.timer gbrain-ingest-calendar.timer \
+    gbrain-ingest-tasks.timer gbrain-ingest-agents.timer \
+    gbrain-dream.timer
 ```
 
 All jobs share `flock /tmp/gbrain-ingest.lock` so at most ONE LLM consumer

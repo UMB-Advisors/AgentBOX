@@ -63,6 +63,25 @@ def ladder_kwargs(emap: dict) -> dict:
     }
 
 
+def entity_for_label(label: Optional[str], emap: dict) -> Optional[str]:
+    """Map a free-form label (hermes profile name, CRM business name) to an
+    entity slug, or None when it doesn't resolve.
+
+    Used by the tasks/agents pipelines where the source row carries a
+    profile/business string rather than email addresses, so the 5-rung
+    ladder in attribution.py doesn't apply: exact entity-slug match first,
+    then the entity_map ``companies`` map (keys are stored lowercase).
+    """
+    if not label:
+        return None
+    s = str(label).strip().lower()
+    if not s:
+        return None
+    if s in emap["entities"]:
+        return s
+    return emap["companies"].get(s)
+
+
 # ------------------------------------------------------------------ mailbox
 
 def psql_json(sql: str) -> list[dict]:
