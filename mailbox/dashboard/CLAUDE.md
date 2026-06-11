@@ -1,7 +1,9 @@
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-**MailBox One Dashboard**
+> **⚠️ Status (2026-06-11, MBOX-469): this is the headless MailBox pipeline BACKEND, not "the dashboard."** The operator UI is the **Hermes dashboard** (`hermes-agent-main/.../web`, served on `:9119`). Under MBOX-469 every operator-facing page here has been ported to Hermes; this Next.js service persists **only** as the backend behind the hermes reverse-proxy (`/dashboard/*` → `:3001`), serving n8n's ~33 `/api/internal/**` routes (token mint, inbox-messages, classify/draft, gmail bootstrap/cooldown, digest, imap-credentials, …) + proxied JSON. **Do not build new operator UI here** — build it in `hermes-agent-main/.../web`. The `mailbox-dashboard` docker service name is a load-bearing DNS name hardcoded in 8 n8n workflows; do not rename it. See the `[STATE]` comment on MBOX-469.
+
+**MailBox One Dashboard** (now the headless pipeline backend — see status note above)
 
 Standalone Next.js 14 dashboard for the MailBox One T2 appliance. Exposes a human-in-the-loop approval queue for LLM-generated email drafts; on approve, triggers a real Gmail send via an n8n webhook.
 
