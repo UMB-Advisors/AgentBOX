@@ -6,6 +6,7 @@
 **Status:** Draft for review
 **Issues:** MBOX-466 (Gmail unification) + MBOX-482 (M365/IMAP) — designed together here. Parent epic MBOX-469.
 **Decisions locked (2026-06-09):** credential model **A — push-to-n8n-credential**; **unified** across providers (one model, not per-provider one-offs).
+**See also:** `n8n-credential-unification-prd.addendum-01.md` (2026-06-10) — resolves open questions #1 (multi-account binding) and #3 (token-store reconciliation) against the code on `main`, and re-scopes Model A to IMAP/SMTP only (Gmail/M365 are token-as-data). Read the addendum before planning P0.
 
 ## TL;DR
 
