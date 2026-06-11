@@ -207,8 +207,15 @@ export const api = {
    * Always 200, even when no digest exists yet — an empty digest carries
    * ``markdown: null`` so the Home page renders a clean empty state. The
    * endpoint must never 401 (that would trip the loopback stale-token
-   * reload in {@link fetchJSON}). */
-  getDigest: () => fetchJSON<DigestResponse>("/api/digest/latest"),
+   * reload in {@link fetchJSON}).
+   *
+   * Phase 5: optional ``entity`` slug scopes the digest to one gbrain
+   * entity source (server-validated; unknown slugs answer 400). */
+  getDigest: (entity?: string) =>
+    fetchJSON<DigestResponse>(
+      "/api/digest/latest" +
+        (entity ? `?entity=${encodeURIComponent(entity)}` : ""),
+    ),
   /** Daily Digest: which modules + news sources to surface (persisted). */
   getDigestPrefs: () => fetchJSON<DigestPrefs>("/api/digest/prefs"),
   setDigestPrefs: (body: {
@@ -1671,6 +1678,8 @@ export interface DigestResponse {
   title: string | null;
   markdown: string | null;
   source: string;
+  /** Entity-source slug the digest was scoped to (Phase 5); null/absent = combined. */
+  entity?: string | null;
   generated_at: string | null;
 }
 

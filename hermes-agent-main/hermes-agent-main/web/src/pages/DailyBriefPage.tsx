@@ -43,6 +43,23 @@ const EMPTY_BRIEF: DailyBriefResponse = {
 
 const URGENT_BODY_LIMIT = 8;
 
+/** Entity-source filter options (Phase 5). Slugs mirror the server's
+ * ENTITY_SLUGS whitelist (gbrain-ingest/entity_map.yaml); "" = combined. */
+const ENTITY_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "All entities" },
+  { value: "heron", label: "Heron Labs" },
+  { value: "state", label: "STATE" },
+  { value: "cde", label: "CDE Ingredients" },
+  { value: "krunchy", label: "Krunchy Kids" },
+  { value: "yes", label: "Yes Cacao" },
+  { value: "future", label: "Future Compounds" },
+  { value: "umb", label: "UMB / Umbrella Crew" },
+  { value: "glue", label: "Glue Co" },
+  { value: "myco", label: "MycoSymbiotics" },
+  { value: "personal", label: "Personal" },
+  { value: "unsorted", label: "Unsorted" },
+];
+
 /** Hours → a compact age label (e.g. ``45m`` / ``3.2h`` / ``2d``). */
 function formatAgeHours(h: number): string {
   if (!Number.isFinite(h) || h < 0) return "";
@@ -61,6 +78,9 @@ export default function DailyBriefPage() {
   const [brief, setBrief] = useState<DailyBriefResponse | null>(null);
   const [briefError, setBriefError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Entity filter for the gbrain digest (Phase 5); "" = combined view.
+  const [entity, setEntity] = useState("");
+  const [digestLoading, setDigestLoading] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -91,6 +111,21 @@ export default function DailyBriefPage() {
       alive = false;
     };
   }, []);
+
+  // Refetch ONLY the digest when the entity filter changes (the proxied
+  // mailbox widgets are not entity-scoped). Mount fetch is handled above;
+  // this runs from the select's onChange, not an effect.
+  const changeEntity = (slug: string) => {
+    setEntity(slug);
+    setDigestLoading(true);
+    api
+      .getDigest(slug || undefined)
+      .then(setDigest)
+      .catch(() => {
+        /* keep the previous digest on a failed scoped fetch */
+      })
+      .finally(() => setDigestLoading(false));
+  };
 
   const pendingTotal = useMemo(
     () =>
@@ -165,19 +200,44 @@ export default function DailyBriefPage() {
       {/* Native gbrain digest narrative. */}
       <Card>
         <CardHeader>
-          <CardTitle>Today’s digest</CardTitle>
-          <CardDescription>
-            {digest?.generated_at
-              ? `Generated ${new Date(digest.generated_at).toLocaleString()}`
-              : "Live summary from your knowledge graph."}
-          </CardDescription>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Today’s digest</CardTitle>
+              <CardDescription>
+                {digest?.generated_at
+                  ? `Generated ${new Date(digest.generated_at).toLocaleString()}`
+                  : "Live summary from your knowledge graph."}
+              </CardDescription>
+            </div>
+            {/* Entity filter (Phase 5) — scopes the digest to one entity source. */}
+            <select
+              value={entity}
+              onChange={(e) => changeEntity(e.target.value)}
+              disabled={digestLoading}
+              aria-label="Filter digest by entity"
+              className="rounded border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+            >
+              {ENTITY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </CardHeader>
         <CardContent>
-          {digest?.markdown ? (
+          {digestLoading ? (
+            <div className="flex items-center gap-2 text-sm text-text-secondary">
+              <Spinner />
+              <span>Loading digest…</span>
+            </div>
+          ) : digest?.markdown ? (
             <Markdown content={digest.markdown} />
           ) : (
             <p className="text-sm text-text-secondary">
-              No digest summary yet — it builds as the box processes your inbox.
+              {entity
+                ? "Nothing in this entity's source yet."
+                : "No digest summary yet — it builds as the box processes your inbox."}
             </p>
           )}
         </CardContent>

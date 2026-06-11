@@ -700,9 +700,19 @@ async def get_status():
 
 
 # Brief in-process cache so Home loads don't hit the gbrain daemon on every
-# request. Forward-only; refreshed once past the TTL.
-_DIGEST_CACHE: Dict[str, Any] = {"ts": 0.0, "data": None}
+# request. Keyed by entity filter ("" = combined view); forward-only,
+# refreshed once past the TTL.
+_DIGEST_CACHE: Dict[str, Any] = {}
 _DIGEST_TTL_SECONDS = 300.0
+
+# Entity-source slugs accepted by the dashboard ?entity= filter (Phase 5).
+# Mirrors the canonical per-entity gbrain sources in
+# gbrain-ingest/entity_map.yaml (entities:) — anything else is a 400, so a
+# typo'd or probing slug can never be forwarded to the daemon.
+ENTITY_SLUGS = frozenset({
+    "heron", "state", "cde", "krunchy", "yes", "future",
+    "umb", "glue", "myco", "personal", "unsorted",
+})
 
 
 # ── gbrain data access ──────────────────────────────────────────────────────
@@ -1211,7 +1221,7 @@ def _format_gbrain_digest(
     return "\n".join(lines) if lines else None
 
 
-def _read_latest_digest() -> dict:
+def _read_latest_digest(entity: Optional[str] = None) -> dict:
     """Build the Home digest live from gbrain: recent salience + anomalies.
 
     Calls the long-running ``gbrain serve`` daemon — ``get_recent_salience``
@@ -1223,28 +1233,40 @@ def _read_latest_digest() -> dict:
     the empty shape (``markdown: None``) so :func:`get_latest_digest`
     always answers 200.
 
+    Entity filter (Phase 5): a validated *entity* slug scopes the digest to
+    that gbrain entity source. The ``query`` op takes it as the per-call
+    ``source_id``; ``get_recent_salience`` / ``find_anomalies`` have NO
+    source param (gbrain <= 0.41.x), so rather than leak cross-entity rows
+    under an entity filter they are simply omitted from scoped digests.
+
     Blocking — run via ``run_in_executor`` from async code.
     """
     from datetime import datetime, timezone
 
     now = datetime.now(tz=timezone.utc)
     mono = time.monotonic()
-    cached = _DIGEST_CACHE.get("data")
-    if cached is not None and (mono - _DIGEST_CACHE.get("ts", 0.0)) < _DIGEST_TTL_SECONDS:
-        return cached
+    cache_key = entity or ""
+    cached = _DIGEST_CACHE.get(cache_key)
+    if cached is not None and (mono - cached[1]) < _DIGEST_TTL_SECONDS:
+        return cached[0]
 
-    salience = _gbrain_op("get_recent_salience", {"days": 14, "limit": 10})
-    anomalies = _gbrain_op("find_anomalies", {})
-    salience = salience if isinstance(salience, list) else []
-    anomalies = anomalies if isinstance(anomalies, list) else []
+    salience: list = []
+    anomalies: list = []
+    if not entity:
+        salience = _gbrain_op("get_recent_salience", {"days": 14, "limit": 10})
+        anomalies = _gbrain_op("find_anomalies", {})
+        salience = salience if isinstance(salience, list) else []
+        anomalies = anomalies if isinstance(anomalies, list) else []
 
     query_prompt = _gbrain_env_value(
         "GBRAIN_DIGEST_QUERY",
         "most important open items, decisions, risks, and follow-ups",
     )
+    query_args: Dict[str, Any] = {"query": query_prompt, "limit": 5, "detail": "low"}
+    if entity:
+        query_args["source_id"] = entity
     highlights = _gbrain_highlights_from_query(
-        _gbrain_op("query", {"query": query_prompt, "limit": 5, "detail": "low"}),
-        limit=5,
+        _gbrain_op("query", query_args), limit=5,
     )
 
     markdown = _format_gbrain_digest(salience, anomalies, highlights)
@@ -1253,25 +1275,47 @@ def _read_latest_digest() -> dict:
         "title": "Daily Digest",
         "markdown": markdown,
         "source": "gbrain",
+        "entity": entity or None,
         "generated_at": now.isoformat() if markdown else None,
     }
-    _DIGEST_CACHE["ts"] = mono
-    _DIGEST_CACHE["data"] = data
+    _DIGEST_CACHE[cache_key] = (data, mono)
     return data
 
 
+def _validated_entity_param(entity: Optional[str]) -> Optional[str]:
+    """Normalize+validate an ?entity= query value against the known slugs.
+
+    Returns the normalized slug, None when absent/blank, or raises
+    HTTPException(400) for anything not in ENTITY_SLUGS — unknown slugs
+    must never reach the gbrain daemon.
+    """
+    if entity is None or not entity.strip():
+        return None
+    slug = entity.strip().lower()
+    if slug not in ENTITY_SLUGS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown entity {slug!r} — expected one of: "
+                   + ", ".join(sorted(ENTITY_SLUGS)),
+        )
+    return slug
+
+
 @app.get("/api/digest/latest")
-async def get_latest_digest():
+async def get_latest_digest(entity: Optional[str] = None):
     """Return the most-recent daily digest for the Home landing pane.
 
     Built live from gbrain — salience + anomalies (see :func:`_read_latest_digest`).
-    Always answers 200 — when no digest exists yet the response carries
-    ``markdown: None`` so the SPA can render a clean empty state rather than
-    treating it as an error (and a 401 here would wrongly trigger the
-    loopback stale-token page reload in ``fetchJSON``).
+    Optional ``?entity=<slug>`` (Phase 5) scopes the digest to one entity
+    source; unknown slugs answer 400. Otherwise always answers 200 — when
+    no digest exists yet the response carries ``markdown: None`` so the SPA
+    can render a clean empty state rather than treating it as an error (and
+    a 401 here would wrongly trigger the loopback stale-token page reload
+    in ``fetchJSON``).
     """
+    entity_slug = _validated_entity_param(entity)
     loop = asyncio.get_running_loop()
-    digest = await loop.run_in_executor(None, _read_latest_digest)
+    digest = await loop.run_in_executor(None, _read_latest_digest, entity_slug)
     return JSONResponse(digest)
 
 

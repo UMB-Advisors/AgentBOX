@@ -39,9 +39,7 @@ def _isolate_gbrain_state(monkeypatch):
     monkeypatch.setattr(
         web_server, "_GBRAIN_CLIENT", {"key": None, "client": None}
     )
-    monkeypatch.setattr(
-        web_server, "_DIGEST_CACHE", {"ts": 0.0, "data": None}
-    )
+    monkeypatch.setattr(web_server, "_DIGEST_CACHE", {})
     yield
 
 
@@ -419,6 +417,69 @@ class TestReadLatestDigest:
         calls = _fake_ops(monkeypatch, {})
         web_server._read_latest_digest()
         n = len(calls)
-        web_server._DIGEST_CACHE["ts"] -= web_server._DIGEST_TTL_SECONDS + 1
+        data, ts = web_server._DIGEST_CACHE[""]
+        web_server._DIGEST_CACHE[""] = (
+            data, ts - web_server._DIGEST_TTL_SECONDS - 1,
+        )
         web_server._read_latest_digest()
         assert len(calls) > n
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — entity filter (?entity=<slug> → query source_id)
+# ---------------------------------------------------------------------------
+
+
+class TestDigestEntityFilter:
+    def test_entity_scopes_query_and_skips_unscopable_ops(self, monkeypatch):
+        """A scoped digest passes source_id to the query op and must NOT call
+        get_recent_salience / find_anomalies — those ops have no source param
+        and would leak cross-entity rows under an entity filter."""
+        calls = _fake_ops(monkeypatch, {
+            "query": [{"slug": "contacts/1-jo", "chunk_text": "Jo at Heron."}],
+        })
+        digest = web_server._read_latest_digest("heron")
+        assert digest["entity"] == "heron"
+        assert "Jo at Heron." in digest["markdown"]
+        names = [n for n, _ in calls]
+        assert names == ["query"]
+        assert calls[0][1]["source_id"] == "heron"
+
+    def test_unscoped_digest_has_no_source_id(self, monkeypatch):
+        calls = _fake_ops(monkeypatch, {})
+        digest = web_server._read_latest_digest()
+        assert digest["entity"] is None
+        query_args = next(a for n, a in calls if n == "query")
+        assert "source_id" not in query_args
+
+    def test_cache_isolated_per_entity(self, monkeypatch):
+        calls = _fake_ops(monkeypatch, {
+            "query": [{"slug": "p/x", "chunk_text": "t"}],
+        })
+        combined = web_server._read_latest_digest()
+        scoped = web_server._read_latest_digest("umb")
+        assert combined is not scoped
+        n = len(calls)
+        assert web_server._read_latest_digest("umb") is scoped
+        assert web_server._read_latest_digest() is combined
+        assert len(calls) == n  # both served from their own cache slots
+
+
+class TestValidatedEntityParam:
+    def test_known_slug_normalized(self):
+        assert web_server._validated_entity_param(" Heron ") == "heron"
+        for slug in sorted(web_server.ENTITY_SLUGS):
+            assert web_server._validated_entity_param(slug) == slug
+
+    def test_absent_or_blank_is_none(self):
+        assert web_server._validated_entity_param(None) is None
+        assert web_server._validated_entity_param("") is None
+        assert web_server._validated_entity_param("   ") is None
+
+    def test_unknown_slug_rejected_400(self):
+        from fastapi import HTTPException
+
+        for bad in ("nope", "default", "umb; drop", "__all__"):
+            with pytest.raises(HTTPException) as exc:
+                web_server._validated_entity_param(bad)
+            assert exc.value.status_code == 400
