@@ -48,7 +48,7 @@ dbDescribe('edit-snapshot + archive coupling — real Postgres', () => {
         fakeRequest({
           body: { draft_body: 'Operator v1: Hey, confirming the order.', draft_subject: null },
         }),
-        { params: { id: String(seeded.draftId) } },
+        { params: Promise.resolve({ id: String(seeded.draftId) }) },
       );
       expect(res1.status).toBe(200);
 
@@ -64,7 +64,7 @@ dbDescribe('edit-snapshot + archive coupling — real Postgres', () => {
         fakeRequest({
           body: { draft_body: 'Operator v2: Hey, confirming!', draft_subject: null },
         }),
-        { params: { id: String(seeded.draftId) } },
+        { params: Promise.resolve({ id: String(seeded.draftId) }) },
       );
       expect(res2.status).toBe(200);
 
@@ -90,7 +90,7 @@ dbDescribe('edit-snapshot + archive coupling — real Postgres', () => {
       const { POST: editPOST } = await import('@/app/api/drafts/[id]/edit/route');
       await editPOST(
         fakeRequest({ body: { draft_body: 'operator-tuned body', draft_subject: null } }),
-        { params: { id: String(seeded.draftId) } },
+        { params: Promise.resolve({ id: String(seeded.draftId) }) },
       );
 
       // Simulate the n8n send pipeline: status → sent. Triggers archive_draft_to_sent_history.
