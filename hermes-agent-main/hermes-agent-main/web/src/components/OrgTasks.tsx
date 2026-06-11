@@ -3,12 +3,16 @@ import { ExternalLink, KeyRound, RefreshCw } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Card, CardContent } from "@nous-research/ui/ui/components/card";
+import { Input } from "@nous-research/ui/ui/components/input";
 import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
+import { Toast } from "@nous-research/ui/ui/components/toast";
+import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { Link } from "react-router-dom";
 import { PluginPage } from "@/plugins";
 import KanbanListView from "@/components/KanbanListView";
 import { cn } from "@/lib/utils";
+import { parseQuickAdd } from "@/lib/quickAdd";
 import {
   api,
   type LinearBoard,
@@ -58,16 +62,6 @@ const PRIORITY_LABELS: Record<number, string> = {
 
 export default function OrgTasks({ kanbanName }: { kanbanName: string | null }) {
   const [prefs, setPrefs] = useState<TasksPrefs | null>(null);
-  const [subView, setSubView] = useState<NativeSubView>(readStoredSubView);
-
-  const selectSubView = useCallback((v: NativeSubView) => {
-    setSubView(v);
-    try {
-      localStorage.setItem(SUBVIEW_STORAGE_KEY, v);
-    } catch {
-      // Persistence is best-effort; the toggle still works for the session.
-    }
-  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -135,36 +129,7 @@ export default function OrgTasks({ kanbanName }: { kanbanName: string | null }) 
 
       {prefs.provider === "native" ? (
         kanbanName ? (
-          <div className="flex flex-col gap-3">
-            <div
-              className="inline-flex w-fit items-center gap-1 rounded-md border border-border p-1"
-              role="radiogroup"
-              aria-label="Native tasks view"
-            >
-              {SUBVIEWS.map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={subView === v.id}
-                  onClick={() => selectSubView(v.id)}
-                  className={cn(
-                    "rounded px-3 py-1 text-sm font-medium transition-colors",
-                    subView === v.id
-                      ? "bg-brand text-brand-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {v.label}
-                </button>
-              ))}
-            </div>
-            {subView === "board" ? (
-              <PluginPage name={kanbanName} />
-            ) : (
-              <KanbanListView onOpenBoard={() => selectSubView("board")} />
-            )}
-          </div>
+          <NativeTasks kanbanName={kanbanName} />
         ) : (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -181,6 +146,171 @@ export default function OrgTasks({ kanbanName }: { kanbanName: string | null }) 
           onTeamChange={setTeam}
         />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Native provider: sub-view toggle + quick-add bar (PRD §1.1/§1.3).
+// ---------------------------------------------------------------------------
+
+// The UI-kit Input doesn't forward refs, so quick-add focus requests go
+// through a stable DOM id instead.
+const QUICK_ADD_INPUT_ID = "kanban-quick-add-input";
+
+function NativeTasks({ kanbanName }: { kanbanName: string }) {
+  const { toast, showToast } = useToast();
+  const [subView, setSubView] = useState<NativeSubView>(readStoredSubView);
+  // Bumped after every mutation made outside KanbanListView (quick-add)
+  // so the list refetches without owning that plumbing itself.
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [assigneeNames, setAssigneeNames] = useState<string[]>([]);
+
+  const selectSubView = useCallback((v: NativeSubView) => {
+    setSubView(v);
+    try {
+      localStorage.setItem(SUBVIEW_STORAGE_KEY, v);
+    } catch {
+      // Persistence is best-effort; the toggle still works for the session.
+    }
+  }, []);
+
+  const bumpRefresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
+
+  // Known assignees for quick-add @validation (PRD §1.3). Re-fetched after
+  // mutations so freshly-used names show up.
+  useEffect(() => {
+    let alive = true;
+    api
+      .getKanbanAssignees()
+      .then((r) => alive && setAssigneeNames(r.assignees.map((a) => a.name)))
+      .catch(() => {
+        // Validation degrades gracefully — QuickAddBar skips the existence
+        // check when the list is empty and lets the server decide.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [refreshNonce]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Toast toast={toast} />
+      <div
+        className="inline-flex w-fit items-center gap-1 rounded-md border border-border p-1"
+        role="radiogroup"
+        aria-label="Native tasks view"
+      >
+        {SUBVIEWS.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            role="radio"
+            aria-checked={subView === v.id}
+            onClick={() => selectSubView(v.id)}
+            className={cn(
+              "rounded px-3 py-1 text-sm font-medium transition-colors",
+              subView === v.id
+                ? "bg-brand text-brand-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      <QuickAddBar
+        assignees={assigneeNames}
+        showToast={showToast}
+        onCreated={bumpRefresh}
+      />
+
+      {subView === "board" ? (
+        <PluginPage name={kanbanName} />
+      ) : (
+        <KanbanListView
+          onOpenBoard={() => selectSubView("board")}
+          refreshNonce={refreshNonce}
+        />
+      )}
+    </div>
+  );
+}
+
+function QuickAddBar({
+  assignees,
+  showToast,
+  onCreated,
+}: {
+  assignees: string[];
+  showToast: (message: string, type: "error" | "success") => void;
+  onCreated: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = useCallback(async () => {
+    const raw = value.trim();
+    if (!raw || busy) return;
+    const parsed = parseQuickAdd(raw);
+    const errors = [...parsed.errors];
+    // @assignee must exist (PRD §1.3) — but only when the list actually
+    // loaded; with no data the server stays the authority.
+    if (
+      parsed.body.assignee &&
+      assignees.length > 0 &&
+      !assignees.includes(parsed.body.assignee)
+    ) {
+      errors.push(`Unknown assignee "@${parsed.body.assignee}"`);
+    }
+    if (errors.length) {
+      setError(errors.join(" · "));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.createKanbanTask(parsed.body);
+      if (parsed.dueAt) {
+        // Parsed but intentionally NOT persisted: the due-date sidecar
+        // store ships in Phase 2 (PRD §1.3 / §2.2).
+        showToast("Task created — due dates land in Phase 2", "success");
+      } else if (res.warning) {
+        showToast(`Task created — ${res.warning}`, "success");
+      } else {
+        showToast("Task created ✓", "success");
+      }
+      setValue("");
+      onCreated();
+    } catch (e: unknown) {
+      setError(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [assignees, busy, onCreated, showToast, value]);
+
+  return (
+    <div className="flex flex-col gap-1">
+      <Input
+        id={QUICK_ADD_INPUT_ID}
+        value={value}
+        disabled={busy}
+        onChange={(e) => {
+          setValue(e.target.value);
+          if (error) setError(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void submit();
+          }
+        }}
+        placeholder='Add task — words !urgent @assignee #tenant >parent-id due:YYYY-MM-DD · leading ? = triage · "quotes" escape tokens'
+        aria-label="Quick add task"
+      />
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

@@ -177,7 +177,15 @@ function groupTasks(tasks: KanbanTask[], groupBy: GroupBy): TaskGroup[] {
   return groups;
 }
 
-export default function KanbanListView({ onOpenBoard }: { onOpenBoard: () => void }) {
+export default function KanbanListView({
+  onOpenBoard,
+  refreshNonce,
+}: {
+  onOpenBoard: () => void;
+  /** Bumped by the parent after out-of-view mutations (quick-add) to force
+   *  a refetch without the list owning that plumbing. */
+  refreshNonce: number;
+}) {
   const { toast, showToast } = useToast();
   const [board, setBoard] = useState<KanbanBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -205,7 +213,8 @@ export default function KanbanListView({ onOpenBoard }: { onOpenBoard: () => voi
     void load();
     const timer = window.setInterval(() => void load(), 30_000);
     return () => window.clearInterval(timer);
-  }, [load]);
+    // refreshNonce re-runs the fetch (and harmlessly resets the poll timer).
+  }, [load, refreshNonce]);
 
   const tasks = useMemo(
     () => (board ? board.columns.flatMap((c) => c.tasks) : []),
