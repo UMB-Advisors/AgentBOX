@@ -2771,12 +2771,18 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "LINEAR_API_KEY": {
-        "description": "Linear personal API key (used by the `linear` skill)",
+        "description": (
+            "Linear personal API key (Operations > Tasks Linear board, the "
+            "gbrain task miner, and the `linear` skill)"
+        ),
         "prompt": "Linear API key",
         "url": "https://linear.app/settings/account/security",
         "password": True,
-        "category": "skill",
-        "advanced": True,
+        # 'integration' (not 'skill'): the dashboard Settings -> Keys page only
+        # renders provider/tool/messaging/integration/setting categories, so a
+        # 'skill' key is invisible there and can't be set from the UI.
+        "category": "integration",
+        "advanced": False,
     },
     "AIRTABLE_API_KEY": {
         "description": "Airtable personal access token (used by the `airtable` skill)",

@@ -2422,6 +2422,67 @@ async def get_linear_board(team: Optional[str] = None, refresh: bool = False):
     return payload
 
 
+class LinearIssueBody(BaseModel):
+    team_id: str
+    title: str
+    description: Optional[str] = None
+    # Linear priority scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low.
+    priority: Optional[int] = None
+
+
+@app.post("/api/tasks/linear/issues")
+async def create_linear_issue(body: LinearIssueBody):
+    """Create a Linear issue (gbrain task miner v1 write path; also usable by
+    the dashboard). Issues land in the team's default (Triage) state on
+    purpose — the miner is propose-only; see docs/gbrain-task-miner.v0.1.0.md.
+    """
+    key = _linear_api_key()
+    if not key:
+        raise HTTPException(status_code=409, detail="LINEAR_API_KEY not set")
+    team_id = body.team_id.strip()
+    title = body.title.strip()
+    if not team_id or not title:
+        raise HTTPException(status_code=400, detail="team_id and title are required")
+    if body.priority is not None and body.priority not in range(0, 5):
+        raise HTTPException(status_code=400, detail="priority must be 0-4")
+    issue_input: Dict[str, Any] = {"teamId": team_id, "title": title}
+    if body.description:
+        issue_input["description"] = body.description
+    if body.priority is not None:
+        issue_input["priority"] = body.priority
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(
+            None,
+            _linear_graphql,
+            key,
+            """
+            mutation CreateIssue($input: IssueCreateInput!) {
+              issueCreate(input: $input) {
+                success
+                issue { id identifier url }
+              }
+            }
+            """,
+            {"input": issue_input},
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("Linear issue create failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+    result = (data.get("issueCreate") or {})
+    issue = result.get("issue") or {}
+    if not result.get("success") or not issue.get("id"):
+        raise HTTPException(status_code=502, detail="Linear rejected the issue")
+    # Bust the board cache so the Tasks tab shows the new issue immediately.
+    _LINEAR_CACHE.pop(team_id, None)
+    _LINEAR_CACHE.pop("_all", None)
+    return {
+        "id": str(issue.get("id")),
+        "identifier": str(issue.get("identifier") or ""),
+        "url": str(issue.get("url") or ""),
+    }
+
+
 # --- Operations > Conversations (Gemini meeting notes) -----------------------
 
 _CONVERSATIONS_SENDER = "gemini-notes@google.com"
