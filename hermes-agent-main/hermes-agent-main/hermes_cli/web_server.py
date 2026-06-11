@@ -16,6 +16,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import secrets
 import stat
 import subprocess
@@ -1550,10 +1551,9 @@ _KANBAN_FILTER_DEFAULTS: Dict[str, Any] = {
 
 def _valid_iso_date(value: Any) -> bool:
     """Strict YYYY-MM-DD naming a real calendar day (rejects 2026-02-31)."""
-    import re as _re
     from datetime import date as _date
 
-    if not isinstance(value, str) or not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
         return False
     try:
         _date.fromisoformat(value)
@@ -1563,9 +1563,7 @@ def _valid_iso_date(value: Any) -> bool:
 
 
 def _valid_hex_color(value: Any) -> bool:
-    import re as _re
-
-    return isinstance(value, str) and bool(_re.fullmatch(r"#[0-9a-fA-F]{6}", value))
+    return isinstance(value, str) and bool(re.fullmatch(r"#[0-9a-fA-F]{6}", value))
 
 
 def _str_list(value: Any) -> Optional[List[str]]:
@@ -2289,6 +2287,12 @@ async def patch_kanban_task_meta(task_id: str, body: Dict[str, Any]):
     (``{}`` when removed). Plain dict body instead of a pydantic model:
     absent-vs-null must be distinguishable and unknown keys must 400.
     """
+    # kanban_db ids are always "t_" + 4-byte hex (``_new_task_id``; callers
+    # can't supply their own), so anything else is garbage — reject it before
+    # it becomes a JSON dict key in the sidecar doc, where malformed keys
+    # (huge strings, control chars) could corrupt the file in subtle ways.
+    if not re.fullmatch(r"t_[0-9a-f]{8}", task_id):
+        raise HTTPException(status_code=400, detail="invalid task id")
     unknown = sorted(set(body) - set(_KANBAN_TASK_META_FIELDS))
     if unknown:
         raise HTTPException(status_code=400, detail=f"unknown keys: {unknown}")
