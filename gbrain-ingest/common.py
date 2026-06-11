@@ -87,8 +87,36 @@ def psql_json(sql: str) -> list[dict]:
 
 
 def sql_quote(value: str) -> str:
-    """Escape a string as a SQL literal (single quotes doubled)."""
+    """Escape a string as a SQL literal (single quotes doubled).
+
+    NOTE: this does NOT escape the LIKE/ILIKE metacharacters ``%`` and ``_``.
+    Never feed the result into a LIKE/ILIKE pattern — use ``sql_quote_like``.
+    """
     return "'" + value.replace("'", "''") + "'"
+
+
+def sql_quote_like(value: str, *, contains: bool = False) -> str:
+    """Escape a string as an ILIKE pattern literal.
+
+    Doubles single quotes AND escapes the LIKE metacharacters ``%`` / ``_``
+    (and the escape char itself) so attacker-influenced input — e.g. an email
+    local-part containing ``%`` or ``_`` — cannot widen the match. Returns a
+    quoted literal with an explicit ``ESCAPE '\\'`` clause.
+
+    With ``contains=True`` the result wraps the escaped value in unescaped
+    ``%`` wildcards (a substring match), keeping the value's OWN ``%`` / ``_``
+    literal. This is the correct way to find an address inside a multi-address
+    or display-name header (e.g. ``"Alice" <alice@corp.com>``).
+    """
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+        .replace("'", "''")
+    )
+    if contains:
+        escaped = "%" + escaped + "%"
+    return "'" + escaped + "' ESCAPE '\\'"
 
 
 # ---------------------------------------------------------------- redaction

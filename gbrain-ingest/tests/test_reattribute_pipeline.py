@@ -42,9 +42,10 @@ CONTACT_RESOLVED = {
 }
 
 
-def reattr_args(dry_run=False):
+def reattr_args(dry_run=False, confirm=True):
     return argparse.Namespace(
-        limit=None, dry_run=dry_run, entity_map=None, re_attribute=True
+        limit=None, dry_run=dry_run, entity_map=None, re_attribute=True,
+        confirm=confirm,
     )
 
 
@@ -100,14 +101,16 @@ class TestRouteEntity(unittest.TestCase):
 
 
 class TestReattributeDurability(StateDirMixin):
-    def run_reattr(self, capture, delete, dry_run=False):
+    def run_reattr(self, capture, delete, dry_run=False, confirm=True,
+                   had_recipient=True):
         with mock.patch.object(ingest_contacts, "fetch_contacts",
                                return_value=[CONTACT_UNRESOLVED]), \
              mock.patch.object(ingest_contacts, "correspondence_attributions",
-                               return_value=[("umb", 1.0)]), \
+                               return_value=([("umb", 1.0)], had_recipient)), \
              mock.patch.object(common, "gbrain_capture", capture), \
              mock.patch.object(common, "gbrain_delete", delete):
-            return ingest_contacts.run_reattribute(reattr_args(dry_run), EMAP)
+            return ingest_contacts.run_reattribute(
+                reattr_args(dry_run, confirm), EMAP)
 
     def test_move_recorded_then_skipped_on_rerun(self):
         capture, delete = mock.Mock(), mock.Mock()
@@ -142,6 +145,59 @@ class TestReattributeDurability(StateDirMixin):
         capture.assert_not_called()
         delete.assert_not_called()
         self.assertEqual(ingest_contacts.load_reattributed(), {})
+
+    def test_no_confirm_is_report_only(self):
+        # SECURITY: without --confirm, re-attribution must never mutate the
+        # brain — an unattended run can only report a plan. This is the guard
+        # against spoofed-From-header auto-moves.
+        capture, delete = mock.Mock(), mock.Mock()
+        self.run_reattr(capture, delete, confirm=False)
+        capture.assert_not_called()
+        delete.assert_not_called()
+        self.assertEqual(ingest_contacts.load_reattributed(), {})
+
+    def test_confirm_executes_move(self):
+        capture, delete = mock.Mock(), mock.Mock()
+        self.run_reattr(capture, delete, confirm=True)
+        self.assertEqual(capture.call_count, 1)
+        self.assertEqual(ingest_contacts.load_reattributed(), {"7": "umb"})
+
+    def test_sender_only_evidence_flagged_in_report(self):
+        # had_recipient False → the proposed move is annotated as spoofable so
+        # the human reviewer can see it before --confirm.
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            self.run_reattr(mock.Mock(), mock.Mock(),
+                            confirm=False, had_recipient=False)
+        out = buf.getvalue()
+        self.assertIn("PROPOSE move", out)
+        self.assertIn("sender-only", out)
+
+
+class TestLikeEscaping(unittest.TestCase):
+    def test_sql_quote_like_escapes_metacharacters(self):
+        # %, _ and the escape char must be neutralized so an attacker-shaped
+        # email local-part cannot widen an ILIKE scan.
+        out = common.sql_quote_like("a%b_c\\d")
+        self.assertIn("\\%", out)
+        self.assertIn("\\_", out)
+        self.assertIn("ESCAPE '\\'", out)
+        # the literal payload must not contain a BARE % or _ (only escaped)
+        body = out.split("ESCAPE")[0]
+        self.assertNotIn("a%b", body.replace("\\%", ""))
+
+    def test_sql_quote_like_contains_wraps_unescaped_wildcards(self):
+        out = common.sql_quote_like("alice@corp.com", contains=True)
+        # surrounding wildcards are bare (substring match); the value's own
+        # chars are escaped — here there are none to escape.
+        self.assertTrue(out.startswith("'%"))
+        self.assertIn("alice@corp.com", out)
+        self.assertTrue(out.rstrip().endswith("ESCAPE '\\'"))
+
+    def test_sql_quote_like_doubles_single_quotes(self):
+        self.assertIn("''", common.sql_quote_like("o'brien"))
 
 
 class TestDailyIngestHonorsLedger(StateDirMixin):

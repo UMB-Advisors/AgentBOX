@@ -96,6 +96,29 @@ READ_ONLY_MESSAGE = (
     "Recall (gbrain_recall) remains available."
 )
 
+# A gbrain source slug is a short lowercased identifier (entity boundary).
+# memory_source can arrive from an untrusted cron job record and is forwarded
+# verbatim as the gbrain `source_id` op argument, so it is format-validated
+# before use. This is a syntactic guard against injection / malformed values;
+# semantic allowlisting against the canonical entity_map is the dashboard's
+# job (web_server ENTITY_SLUGS) and a planned shared follow-up.
+_SOURCE_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def _valid_source_slug(value: Any) -> str:
+    """Return a well-formed source slug, or "" for blank/invalid input.
+
+    Invalid (non-slug) values are dropped — a session falls back to its
+    configured source or combined recall rather than binding to an
+    attacker-shaped string."""
+    slug = str(value or "").strip().lower()
+    if not slug:
+        return ""
+    if not _SOURCE_SLUG_RE.match(slug):
+        logger.warning("ignoring malformed memory_source %r (not a slug)", slug)
+        return ""
+    return slug
+
 # Strip any fence markup a backend page might contain — providers must
 # return RAW text; the MemoryManager adds the <memory-context> fences.
 _FENCE_RE = re.compile(r"</?memory-context>", re.IGNORECASE)
@@ -528,7 +551,12 @@ class GbrainMemoryProvider(MemoryProvider):
             # Per-session entity binding (Phase 5): an explicit
             # memory_source kwarg overrides config memory.gbrain.source
             # for this session only (e.g. a cron job's memory_entity).
-            kwarg_source = str(kwargs.get("memory_source") or "").strip()
+            # SECURITY: memory_source can arrive from an untrusted job record
+            # and is forwarded as the gbrain `source_id` op argument, so it is
+            # format-validated here — the last choke point before use. A value
+            # that is not a well-formed source slug is ignored (falls back to
+            # config/combined) rather than passed through.
+            kwarg_source = _valid_source_slug(kwargs.get("memory_source"))
             if kwarg_source:
                 self._source = kwarg_source
 
