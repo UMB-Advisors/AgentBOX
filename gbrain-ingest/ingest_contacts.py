@@ -23,6 +23,19 @@ and the old 'unsorted' page is soft-deleted (recoverable 72h). Ambiguous
 (multi-entity) or signal-less contacts stay in unsorted. Inference rule:
 attribution.infer_reattribution_entity (pure, unit-tested).
 
+Durability: every successful move is recorded in a ledger
+(STATE_DIR/contacts-reattributed.json, crm_id -> entity). Both paths route
+through route_entity(), which consults the ledger, so:
+  - the daily regular ingest re-captures a moved contact into its NEW
+    entity source (page stays fresh) instead of resurrecting it in
+    'unsorted';
+  - --re-attribute skips already-moved contacts (idempotent re-runs, no
+    re-delete of an already-soft-deleted unsorted page).
+An explicit CRM company resolution always outranks the ledger. A move is
+recorded only after capture AND delete both succeed; a failed delete is
+retried on the next --re-attribute run (delete tolerates the page already
+being absent).
+
 Usage:
   python3 ingest_contacts.py [--limit N] [--dry-run] [--entity-map PATH]
   python3 ingest_contacts.py --re-attribute [--limit N] [--dry-run]
@@ -121,6 +134,40 @@ def build_page(contact: dict, entity: str) -> tuple[str, str]:
     return slug, common.render_page(frontmatter, "\n".join(body_lines))
 
 
+# ------------------------------------------------------------------ routing
+
+# Durable ledger of contacts moved out of 'unsorted' by --re-attribute:
+# {"<crm_id>": "<entity>"}. Lives in STATE_DIR next to the ingest watermarks.
+REATTRIBUTED_STATE = "contacts-reattributed.json"
+
+
+def load_reattributed() -> dict[str, str]:
+    state = common.read_state_json(REATTRIBUTED_STATE)
+    return dict(state) if isinstance(state, dict) else {}
+
+
+def record_reattributed(moves: dict[str, str]) -> None:
+    common.write_state_json(REATTRIBUTED_STATE, moves)
+
+
+def route_entity(contact: dict, company_map: dict, entities,
+                 reattributed: dict[str, str]) -> str:
+    """Single routing rule shared by the regular ingest and --re-attribute.
+
+    CRM company resolution wins. For company-unresolved contacts, a durable
+    re-attribution ledger entry routes the page to its moved-to entity so
+    the daily ingest cannot resurrect it in 'unsorted'. Anything else lands
+    in 'unsorted'."""
+    entity = resolve_company(contact.get("company"), company_map) or UNSORTED
+    if entity not in entities:
+        entity = UNSORTED
+    if entity == UNSORTED:
+        override = reattributed.get(str(contact["id"]))
+        if override and override != UNSORTED and override in entities:
+            return override
+    return entity
+
+
 # --------------------------------------------------------------- re-attribute
 
 # Cap correspondence scanned per address — enough for a clear signal without
@@ -168,14 +215,15 @@ def run_reattribute(args, emap: dict) -> int:
     """Move unsorted contact pages whose correspondence pins ONE entity."""
     company_map = emap["companies"]
     ladder = common.ladder_kwargs(emap)
-
-    def ingest_entity(c: dict) -> str:
-        """Mirror the ingest path's routing: where does this contact's page live?"""
-        e = resolve_company(c.get("company"), company_map) or UNSORTED
-        return e if e in emap["entities"] else UNSORTED
+    moves = load_reattributed()
 
     contacts = fetch_contacts(args.limit)
-    unsorted_contacts = [c for c in contacts if ingest_entity(c) == UNSORTED]
+    # route_entity consults the ledger: contacts already moved route to their
+    # entity, so they are never re-processed (idempotent re-runs).
+    unsorted_contacts = [
+        c for c in contacts
+        if route_entity(c, company_map, emap["entities"], moves) == UNSORTED
+    ]
     common.log(f"contacts in unsorted: {len(unsorted_contacts)} of {len(contacts)}")
 
     moved = ambiguous = no_signal = errors = 0
@@ -199,9 +247,15 @@ def run_reattribute(args, emap: dict) -> int:
             continue
         try:
             # New page first, soft-delete second: a failed delete leaves a
-            # recoverable duplicate, never a lost contact.
+            # recoverable duplicate, never a lost contact. missing_ok: a
+            # retried move (prior run captured but failed before recording)
+            # may find the unsorted page already gone.
             common.gbrain_capture(target, slug, content, page_type="contact")
-            common.gbrain_delete(UNSORTED, slug)
+            common.gbrain_delete(UNSORTED, slug, missing_ok=True)
+            # Record only after BOTH ops succeed; persist per move so a
+            # crash mid-run never forgets a completed move.
+            moves[str(contact["id"])] = target
+            record_reattributed(moves)
             moved += 1
             common.log(f"moved {slug}: {UNSORTED} -> {target}")
         except RuntimeError as exc:
@@ -229,6 +283,7 @@ def main() -> int:
     if args.re_attribute:
         return run_reattribute(args, emap)
     company_map = emap["companies"]
+    reattributed = load_reattributed()
 
     contacts = fetch_contacts(args.limit)
     common.log(f"fetched {len(contacts)} contacts")
@@ -236,9 +291,7 @@ def main() -> int:
     counts: dict[str, int] = {}
     written = errors = 0
     for contact in contacts:
-        entity = resolve_company(contact.get("company"), company_map) or UNSORTED
-        if entity not in emap["entities"]:
-            entity = UNSORTED
+        entity = route_entity(contact, company_map, emap["entities"], reattributed)
         slug, content = build_page(contact, entity)
         counts[entity] = counts.get(entity, 0) + 1
         if args.dry_run:
