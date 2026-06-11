@@ -7,6 +7,7 @@ import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { Link } from "react-router-dom";
 import { PluginPage } from "@/plugins";
+import KanbanListView from "@/components/KanbanListView";
 import { cn } from "@/lib/utils";
 import {
   api,
@@ -26,6 +27,27 @@ const PROVIDERS: Array<{ id: TaskProviderId; label: string }> = [
   { id: "linear", label: "Linear" },
 ];
 
+// Native sub-views (docs/kanban-linear-ux.v0.1.0.md §1.1): Board = the stock
+// kanban plugin embed (unchanged), List = our KanbanListView. UI-only state,
+// persisted in localStorage per the PRD (no backend round-trip).
+type NativeSubView = "board" | "list";
+
+const SUBVIEWS: Array<{ id: NativeSubView; label: string }> = [
+  { id: "board", label: "Board" },
+  { id: "list", label: "List" },
+];
+
+const SUBVIEW_STORAGE_KEY = "hermes.orgTasks.nativeSubView";
+
+function readStoredSubView(): NativeSubView {
+  try {
+    return localStorage.getItem(SUBVIEW_STORAGE_KEY) === "list" ? "list" : "board";
+  } catch {
+    // Storage unavailable (kiosk private mode etc.) — default to Board.
+    return "board";
+  }
+}
+
 // Linear priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low.
 const PRIORITY_LABELS: Record<number, string> = {
   1: "Urgent",
@@ -36,6 +58,16 @@ const PRIORITY_LABELS: Record<number, string> = {
 
 export default function OrgTasks({ kanbanName }: { kanbanName: string | null }) {
   const [prefs, setPrefs] = useState<TasksPrefs | null>(null);
+  const [subView, setSubView] = useState<NativeSubView>(readStoredSubView);
+
+  const selectSubView = useCallback((v: NativeSubView) => {
+    setSubView(v);
+    try {
+      localStorage.setItem(SUBVIEW_STORAGE_KEY, v);
+    } catch {
+      // Persistence is best-effort; the toggle still works for the session.
+    }
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -103,7 +135,36 @@ export default function OrgTasks({ kanbanName }: { kanbanName: string | null }) 
 
       {prefs.provider === "native" ? (
         kanbanName ? (
-          <PluginPage name={kanbanName} />
+          <div className="flex flex-col gap-3">
+            <div
+              className="inline-flex w-fit items-center gap-1 rounded-md border border-border p-1"
+              role="radiogroup"
+              aria-label="Native tasks view"
+            >
+              {SUBVIEWS.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={subView === v.id}
+                  onClick={() => selectSubView(v.id)}
+                  className={cn(
+                    "rounded px-3 py-1 text-sm font-medium transition-colors",
+                    subView === v.id
+                      ? "bg-brand text-brand-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+            {subView === "board" ? (
+              <PluginPage name={kanbanName} />
+            ) : (
+              <KanbanListView onOpenBoard={() => selectSubView("board")} />
+            )}
+          </div>
         ) : (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
