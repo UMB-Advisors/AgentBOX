@@ -2100,6 +2100,273 @@ async def get_digest_brief(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Top of Mind — the "most important" emails per inbox.
+#
+# inbox_messages stores no importance score (classification is unwritten), so we
+# COMPUTE a best guess: a cheap heuristic shortlist per inbox, then ONE box-model
+# call per inbox to pick the top few with a one-line reason. Cached a few minutes
+# (importance moves slowly; the LLM call is the cost). Data comes from the mailbox
+# Postgres via ``docker exec`` (hermes_cli ships no PG driver — same access path
+# as google_people.py); the model is the box default (local Qwen3 on T2). Every
+# layer degrades gracefully: DB error -> empty inbox, LLM error -> heuristic order.
+# ---------------------------------------------------------------------------
+_INBOX_RANK_CACHE: Dict[str, Any] = {}  # keyed by account view ("combined" | "<email>")
+_INBOX_RANK_TTL_SECONDS = 300.0
+_INBOX_RANK_TOP_N = 3        # picks surfaced per inbox
+_INBOX_RANK_CANDIDATES = 12  # heuristic shortlist handed to the model
+_INBOX_RANK_SCAN = 60        # most-recent active rows scanned per inbox
+
+_INBOX_BULK_SENDER_HINTS = (
+    "no-reply", "noreply", "do-not-reply", "donotreply", "notifications@",
+    "notification@", "newsletter", "mailer-daemon", "updates@", "marketing@",
+    "news@", "digest@", "@mailchimp", "@sendgrid", "automated",
+)
+
+_INBOX_RANK_SYSTEM = (
+    "You triage an email inbox. From the numbered emails, pick the ones MOST "
+    "important for the owner to see first: real personal or business "
+    "correspondence, time-sensitive or money/legal/customer matters, and replies "
+    "awaiting the owner. Rank automated notifications, newsletters, and marketing "
+    "LAST. Return ONLY a JSON array (no prose, no code fences) of up to {n} "
+    'objects, best first: [{{"n": <email number>, "why": "<reason, max 8 words>"}}].'
+)
+
+
+def _mbox_psql_json(sql: str) -> Any:
+    """Run one read-only query against the mailbox Postgres and return the JSON it
+    prints. The query MUST select a single json/jsonb value (wrap rows with
+    ``json_agg(row_to_json(...))``). Mailbox PG is not published to the host, so
+    we reach it through the container, like google_people.py."""
+    proc = subprocess.run(
+        ["docker", "exec", "-i", "mailbox-postgres-1",
+         "psql", "-U", "mailbox", "-d", "mailbox", "-tA", "-c", sql],
+        capture_output=True, text=True, timeout=20,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"psql failed: {(proc.stderr or '').strip()[:200]}")
+    out = (proc.stdout or "").strip()
+    return json.loads(out) if out else None
+
+
+def _fetch_inbox_accounts() -> List[Dict[str, Any]]:
+    """Real connected inboxes (skip the synthetic ``primary@appliance.local``)."""
+    sql = (
+        "SELECT coalesce(json_agg(json_build_object('id', id, 'email', "
+        "email_address) ORDER BY id), '[]') FROM accounts "
+        "WHERE email_address NOT LIKE '%@appliance.local'"
+    )
+    return _mbox_psql_json(sql) or []
+
+
+def _fetch_active_inbox_rows(account_id: int) -> List[Dict[str, Any]]:
+    """Most-recent active (unarchived, undeleted, unsnoozed) messages for one
+    inbox — the pool the importance ranking is drawn from."""
+    sql = (
+        "SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.received_at DESC), "
+        "'[]') FROM (SELECT id, message_id, subject, from_addr, snippet, "
+        "received_at, draft_id, is_read FROM inbox_messages WHERE account_id = "
+        f"{int(account_id)} AND archived_at IS NULL AND deleted_at IS NULL AND "
+        "(snooze_until IS NULL OR snooze_until < now()) ORDER BY received_at DESC "
+        f"LIMIT {_INBOX_RANK_SCAN}) t"
+    )
+    return _mbox_psql_json(sql) or []
+
+
+def _inbox_heuristic_score(row: Dict[str, Any]) -> float:
+    """Cheap importance proxy for the shortlist: unread + already-drafted + recent,
+    penalising obvious bulk senders."""
+    score = 0.0
+    if not row.get("is_read"):
+        score += 3.0
+    if row.get("draft_id"):
+        score += 2.5  # the pipeline already drafted a reply -> actionable
+    sender = (row.get("from_addr") or "").lower()
+    if any(h in sender for h in _INBOX_BULK_SENDER_HINTS):
+        score -= 3.0
+    ts = row.get("received_at")
+    if ts:
+        try:
+            from datetime import datetime, timezone
+
+            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            age_h = (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0
+            if age_h < 24:
+                score += 3.0
+            elif age_h < 72:
+                score += 2.0
+            elif age_h < 168:
+                score += 1.0
+        except Exception:  # noqa: BLE001
+            pass
+    return score
+
+
+def _parse_rank_reply(reply: str) -> List[Dict[str, Any]]:
+    """Pull the first JSON array out of the model reply, tolerating fences/prose."""
+    import re as _re
+
+    if not reply:
+        return []
+    m = _re.search(r"\[.*\]", reply, _re.DOTALL)
+    blob = m.group(0) if m else reply
+    try:
+        data = json.loads(blob)
+    except Exception:  # noqa: BLE001
+        return []
+    picks: List[Dict[str, Any]] = []
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict) and "n" in item:
+                try:
+                    picks.append({"n": int(item["n"]), "why": item.get("why")})
+                except Exception:  # noqa: BLE001
+                    continue
+    return picks
+
+
+def _llm_rank_inbox(
+    email: str,
+    candidates: List[Dict[str, Any]],
+    provider: Optional[str],
+    model: Optional[str],
+) -> List[Tuple[Dict[str, Any], str]]:
+    """Ask the box model to pick the top emails from the shortlist; fall back to
+    the heuristic order (shortlist order) if it is unavailable or returns junk."""
+    if not candidates:
+        return []
+    lines = []
+    for i, r in enumerate(candidates, 1):
+        subj = (r.get("subject") or "(no subject)")[:120]
+        frm = (r.get("from_addr") or "")[:80]
+        snip = (r.get("snippet") or "")[:160].replace("\n", " ")
+        lines.append(f"{i}. from: {frm} | subject: {subj} | {snip}")
+    user = f"Inbox: {email}\n\n" + "\n".join(lines)
+
+    picks: List[Dict[str, Any]] = []
+    try:
+        from agent.auxiliary_client import call_llm
+
+        resp = call_llm(
+            task="title_generation",
+            provider=provider,
+            model=model,
+            messages=[
+                {"role": "system",
+                 "content": _INBOX_RANK_SYSTEM.format(n=_INBOX_RANK_TOP_N)},
+                {"role": "user", "content": user},
+            ],
+            max_tokens=400,
+            temperature=0.2,
+            timeout=90.0,
+        )
+        picks = _parse_rank_reply((resp.choices[0].message.content or "").strip())
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("inbox-ranking LLM failed for %s: %s", email, exc)
+
+    if not picks:  # heuristic fallback: shortlist order, no reason text
+        picks = [{"n": i + 1, "why": ""}
+                 for i in range(min(_INBOX_RANK_TOP_N, len(candidates)))]
+
+    out: List[Tuple[Dict[str, Any], str]] = []
+    seen = set()
+    for p in picks:
+        idx = p.get("n")
+        if (not isinstance(idx, int) or idx < 1 or idx > len(candidates)
+                or idx in seen):
+            continue
+        seen.add(idx)
+        out.append((candidates[idx - 1], str(p.get("why") or "").strip()))
+        if len(out) >= _INBOX_RANK_TOP_N:
+            break
+    return out
+
+
+def _gmail_link(message_id: Optional[str]) -> str:
+    mid = (message_id or "").strip()
+    return f"https://mail.google.com/mail/u/0/#inbox/{mid}" if mid else ""
+
+
+def _build_inbox_ranking(view: str) -> Dict[str, Any]:
+    """Per-inbox top-N important emails. ``view`` is ``combined``/``all`` (every
+    inbox) or a single account email."""
+    try:
+        accounts = _fetch_inbox_accounts()
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("inbox-ranking: account fetch failed: %s", exc)
+        return {"inboxes": [], "error": "Inbox unavailable."}
+    if view not in ("combined", "all", ""):
+        accounts = [a for a in accounts
+                    if (a.get("email") or "").lower() == view.lower()]
+
+    provider = model = None
+    try:
+        model_cfg = load_config().get("model", {})
+        if isinstance(model_cfg, dict):
+            provider = str(model_cfg.get("provider", "") or "").strip() or None
+            model = str(
+                model_cfg.get("default", model_cfg.get("name", "")) or ""
+            ).strip() or None
+    except Exception:  # noqa: BLE001
+        pass
+
+    inboxes: List[Dict[str, Any]] = []
+    for acct in accounts:
+        aid = acct.get("id")
+        email = acct.get("email") or ""
+        group: Dict[str, Any] = {
+            "account_id": aid, "account": email, "items": [], "error": None,
+        }
+        try:
+            rows = _fetch_active_inbox_rows(int(aid))
+            shortlist = sorted(
+                rows, key=_inbox_heuristic_score, reverse=True
+            )[:_INBOX_RANK_CANDIDATES]
+            for row, reason in _llm_rank_inbox(email, shortlist, provider, model):
+                group["items"].append({
+                    "id": row.get("id"),
+                    "message_id": row.get("message_id"),
+                    "subject": row.get("subject") or "(no subject)",
+                    "from_addr": row.get("from_addr") or "",
+                    "snippet": row.get("snippet") or "",
+                    "received_at": row.get("received_at"),
+                    "draft_id": row.get("draft_id"),
+                    "is_read": bool(row.get("is_read")),
+                    "reason": reason,
+                    "link": _gmail_link(row.get("message_id")),
+                })
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("inbox-ranking failed for %s: %s", email, exc)
+            group["error"] = "Couldn't rank this inbox."
+        inboxes.append(group)
+    return {"inboxes": inboxes}
+
+
+@app.get("/api/digest/inbox-ranking")
+async def get_inbox_ranking(request: Request):
+    """Top-N most-important emails per inbox for the Home brief's Top of Mind.
+
+    ``?account=<email>`` restricts to one inbox; omitted/``combined`` ranks every
+    connected inbox. Best-effort (heuristic shortlist + one box-model pick per
+    inbox), cached briefly. Always 200 so the brief degrades gracefully."""
+    raw = (request.query_params.get("account") or "").strip()
+    key = raw.lower() or "combined"
+
+    mono = time.monotonic()
+    entry = _INBOX_RANK_CACHE.get(key)
+    if entry is not None and (mono - entry.get("ts", 0.0)) < _INBOX_RANK_TTL_SECONDS:
+        return JSONResponse(entry["data"])
+
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, _build_inbox_ranking, key)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("inbox-ranking build failed: %s", exc)
+        data = {"inboxes": [], "error": "Inbox ranking unavailable."}
+    _INBOX_RANK_CACHE[key] = {"ts": mono, "data": data}
+    return JSONResponse(data)
+
+
+# ---------------------------------------------------------------------------
 # Google Workspace — multi-account connect (dashboard OAuth, Web client).
 #
 # ``start`` and ``callback`` are full-page browser navigations, so they can't
@@ -2207,6 +2474,7 @@ async def google_auth_callback(request: Request):
         resp.delete_cookie(_GOOGLE_STATE_COOKIE, path="/api/google")
         return resp
     _BRIEF_CACHE.clear()  # force the brief to re-aggregate with the new account
+    _INBOX_RANK_CACHE.clear()
     resp = _google_settings_redirect("connected", email)
     resp.delete_cookie(_GOOGLE_STATE_COOKIE, path="/api/google")
     return resp
@@ -2236,6 +2504,7 @@ async def google_delete_account(email: str, request: Request):
         None, google_accounts.delete_account, email
     )
     _BRIEF_CACHE.clear()
+    _INBOX_RANK_CACHE.clear()
     return JSONResponse({"removed": removed})
 
 
@@ -2892,6 +3161,7 @@ async def create_google_calendar_event(body: CalendarEventBody):
         None, google_brief.create_event, body.account, body.model_dump()
     )
     _BRIEF_CACHE.clear()
+    _INBOX_RANK_CACHE.clear()
     if result.get("error"):
         return JSONResponse(result, status_code=400)
     return JSONResponse(result)
@@ -2907,6 +3177,7 @@ async def update_google_calendar_event(event_id: str, body: CalendarEventBody):
         None, google_brief.update_event, body.account, event_id, body.model_dump()
     )
     _BRIEF_CACHE.clear()
+    _INBOX_RANK_CACHE.clear()
     if result.get("error"):
         return JSONResponse(result, status_code=400)
     return JSONResponse(result)
@@ -2924,6 +3195,7 @@ async def delete_google_calendar_event(event_id: str, request: Request):
         None, google_brief.delete_event, account, event_id
     )
     _BRIEF_CACHE.clear()
+    _INBOX_RANK_CACHE.clear()
     if result.get("error"):
         return JSONResponse(result, status_code=400)
     return JSONResponse(result)

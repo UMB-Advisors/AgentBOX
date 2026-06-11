@@ -269,6 +269,11 @@ export const api = {
           ? `?account=${encodeURIComponent(account)}`
           : ""),
     ),
+  /** Top-N most-important emails per inbox for the brief's Top of Mind. */
+  getInboxRanking: (account = "combined") =>
+    fetchJSON<InboxRanking>(
+      `/api/digest/inbox-ranking?account=${encodeURIComponent(account)}`,
+    ),
   /**
    * Identity probe for the dashboard auth gate (Phase 7).
    *
@@ -1803,6 +1808,33 @@ export interface DigestCalendar {
  *  Google isn't connected, `connected` is false and both lists are empty (the
  *  UI shows a "Connect Google" prompt). The brief's third section, FYI, is the
  *  local Kanban board — fetched separately via `getKanbanBoard`. */
+/** One "most important" email picked for an inbox's Top of Mind. */
+export interface InboxRankItem {
+  id: number;
+  message_id: string;
+  subject: string;
+  from_addr: string;
+  snippet: string;
+  received_at: string | null;
+  /** Set when the pipeline already drafted a reply → deep-link to the review panel. */
+  draft_id: number | null;
+  is_read: boolean;
+  /** One-line "why this matters" from the ranking model (may be empty). */
+  reason: string;
+  /** Gmail web link to open the message. */
+  link: string;
+}
+export interface InboxRankGroup {
+  account_id: number;
+  account: string;
+  items: InboxRankItem[];
+  error: string | null;
+}
+export interface InboxRanking {
+  inboxes: InboxRankGroup[];
+  error?: string | null;
+}
+
 export interface BriefEmail {
   id: string;
   subject: string;
