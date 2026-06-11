@@ -17,8 +17,11 @@ import {
   type KanbanBulkUpdateBody,
   type KanbanBoard,
   type KanbanFilterState,
+  type KanbanLabel,
   type KanbanMeta,
   type KanbanTask,
+  type KanbanTaskMeta,
+  type KanbanTaskMetaPatch,
   type KanbanUpdateTaskBody,
 } from "@/lib/api";
 
@@ -328,7 +331,7 @@ export default function KanbanListView({
   hotkeysEnabled,
   filter,
   meta,
-  onSetDue,
+  onPatchMeta,
   onBoardLoaded,
 }: {
   onOpenBoard: () => void;
@@ -352,8 +355,9 @@ export default function KanbanListView({
   /** Sidecar meta (due dates etc.); null while loading — the list still
    *  renders, sidecar-driven filters/badges just stay inert. */
   meta: KanbanMeta | null;
-  /** Detail-panel due-date edits — parent owns the sidecar PATCH + toast. */
-  onSetDue: (taskId: string, dueAt: string | null) => void;
+  /** Detail-panel sidecar edits (due date / labels / estimate / cycle) —
+   *  parent owns the PATCH + toast + meta fold-back. */
+  onPatchMeta: (taskId: string, patch: KanbanTaskMetaPatch) => void;
   /** Live board task ids after every fetch (drives the parent's lazy
    *  sidecar prune, PRD §2.2). MUST be referentially stable or the list
    *  refetches whenever the parent re-renders. */
@@ -409,6 +413,19 @@ export default function KanbanListView({
   );
   // Flattened visible order for ↑/↓ row focus.
   const flatTasks = useMemo(() => groups.flatMap((g) => g.tasks), [groups]);
+  // id → label for row chips / detail (sidecar labels store ids only).
+  const labelById = useMemo(
+    () => new Map((meta?.labels ?? []).map((l) => [l.id, l])),
+    [meta],
+  );
+  const taskLabels = useCallback(
+    (id: string): KanbanLabel[] =>
+      (meta?.tasks[id]?.labels ?? []).flatMap((lid) => {
+        const l = labelById.get(lid);
+        return l ? [l] : [];
+      }),
+    [labelById, meta],
+  );
   const assignees = board?.assignees ?? [];
   const detail =
     detailId != null ? (tasks.find((t) => t.id === detailId) ?? null) : null;
@@ -686,6 +703,7 @@ export default function KanbanListView({
                     key={t.id}
                     task={t}
                     dueAt={meta?.tasks[t.id]?.due_at ?? null}
+                    labels={taskLabels(t.id)}
                     groupBy={groupBy}
                     selected={selected.has(t.id)}
                     focused={focusedId === t.id}
@@ -702,12 +720,13 @@ export default function KanbanListView({
       {detail && (
         <DetailPanel
           task={detail}
-          dueAt={meta?.tasks[detail.id]?.due_at ?? null}
+          taskMeta={meta?.tasks[detail.id] ?? null}
+          allLabels={meta?.labels ?? []}
           assignees={assignees}
           panelRef={panelRef}
           onClose={closeDetail}
           onPatch={(id, body) => void patchTask(id, body)}
-          onSetDue={onSetDue}
+          onPatchMeta={onPatchMeta}
           onOpenBoard={onOpenBoard}
         />
       )}
@@ -783,6 +802,7 @@ function BulkBar({
 function TaskRow({
   task,
   dueAt,
+  labels,
   groupBy,
   selected,
   focused,
@@ -792,6 +812,8 @@ function TaskRow({
   task: KanbanTask;
   /** Sidecar due date (ISO date) — null when unset or meta not loaded. */
   dueAt: string | null;
+  /** Resolved sidecar labels for the row chips (PRD §3.1). */
+  labels: KanbanLabel[];
   groupBy: GroupBy;
   selected: boolean;
   /** Keyboard row focus (↑/↓) — visual ring only, separate from selection. */
@@ -829,6 +851,9 @@ function TaskRow({
           {shortId(task.id)}
         </span>
         <span className="min-w-0 flex-1 truncate text-sm">{task.title}</span>
+        {labels.map((l) => (
+          <LabelChip key={l.id} label={l} />
+        ))}
         {dueAt && <DueBadge dueAt={dueAt} />}
         {groupBy !== "status" && (
           <Badge tone="outline" className="shrink-0">
@@ -854,25 +879,44 @@ function TaskRow({
   );
 }
 
+// Row/detail label chip: colored palette dot + name (PRD §3.1).
+function LabelChip({ label }: { label: KanbanLabel }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+      <span
+        className="h-2 w-2 rounded-full"
+        style={{ backgroundColor: label.color }}
+      />
+      {label.name}
+    </span>
+  );
+}
+
 function DetailPanel({
   task,
-  dueAt,
+  taskMeta,
+  allLabels,
   assignees,
   panelRef,
   onClose,
   onPatch,
-  onSetDue,
+  onPatchMeta,
   onOpenBoard,
 }: {
   task: KanbanTask;
-  dueAt: string | null;
+  /** The task's sidecar entry — null when unset or meta not loaded. */
+  taskMeta: KanbanTaskMeta | null;
+  /** Every defined label (multi-assign toggles, PRD §3.1). */
+  allLabels: KanbanLabel[];
   assignees: string[];
   panelRef: ReturnType<typeof useModalBehavior>;
   onClose: () => void;
   onPatch: (id: string, body: KanbanUpdateTaskBody) => void;
-  onSetDue: (taskId: string, dueAt: string | null) => void;
+  onPatchMeta: (taskId: string, patch: KanbanTaskMetaPatch) => void;
   onOpenBoard: () => void;
 }) {
+  const dueAt = taskMeta?.due_at ?? null;
+  const assignedLabels = taskMeta?.labels ?? [];
   // Prepend the current status / priority / assignee when they fall outside
   // the editable sets (running, review, out-of-ladder ints, retired
   // assignees) so the selects never render blank.
@@ -994,7 +1038,9 @@ function DetailPanel({
                   id="kanban-detail-due"
                   type="date"
                   value={dueAt ?? ""}
-                  onChange={(e) => onSetDue(task.id, e.target.value || null)}
+                  onChange={(e) =>
+                    onPatchMeta(task.id, { due_at: e.target.value || null })
+                  }
                   aria-label="Due date"
                 />
                 {dueAt && (
@@ -1003,13 +1049,54 @@ function DetailPanel({
                     ghost
                     size="icon"
                     aria-label="Clear due date"
-                    onClick={() => onSetDue(task.id, null)}
+                    onClick={() => onPatchMeta(task.id, { due_at: null })}
                   >
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 )}
               </div>
             </div>
+          </div>
+
+          <div className="grid gap-2">
+            <span className="text-sm font-medium">Labels</span>
+            {allLabels.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No labels defined — manage them from the filter bar.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {allLabels.map((l) => {
+                  const active = assignedLabels.includes(l.id);
+                  return (
+                    <button
+                      key={l.id}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() =>
+                        onPatchMeta(task.id, {
+                          labels: active
+                            ? assignedLabels.filter((id) => id !== l.id)
+                            : [...assignedLabels, l.id],
+                        })
+                      }
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors",
+                        active
+                          ? "border-brand text-foreground"
+                          : "border-border text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: l.color }}
+                      />
+                      {l.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">

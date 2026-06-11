@@ -10,7 +10,13 @@ import {
   shortId,
   type TaskContextAction,
 } from "@/components/KanbanListView";
-import { api, type KanbanTask, type KanbanUpdateTaskBody } from "@/lib/api";
+import {
+  api,
+  type KanbanMeta,
+  type KanbanTask,
+  type KanbanTaskMetaPatch,
+  type KanbanUpdateTaskBody,
+} from "@/lib/api";
 
 // Command palette for Org Chart > Tasks (PRD docs/kanban-linear-ux.v0.1.0.md
 // §1.4). Mounted inside the native Tasks view only — NOT global nav — so the
@@ -31,6 +37,7 @@ type Mode =
   | { kind: "root" }
   | { kind: "task"; task: KanbanTask }
   | { kind: "pick"; task: KanbanTask; field: "status" | "priority" | "assignee" }
+  | { kind: "label"; task: KanbanTask }
   | { kind: "archive"; task: KanbanTask }
   | { kind: "comment"; task: KanbanTask };
 
@@ -64,6 +71,7 @@ export default function CommandPalette({
   assignees,
   initialTask,
   initialAction,
+  meta,
   onOpenTask,
   onMutated,
   notify,
@@ -77,6 +85,8 @@ export default function CommandPalette({
   /** Open directly in a task's context (row hotkeys s/p/a/c, focused row). */
   initialTask: KanbanTask | null;
   initialAction: TaskContextAction | null;
+  /** Sidecar meta for the label submenu (PRD §3.1); null while loading. */
+  meta: KanbanMeta | null;
   onOpenTask: (task: KanbanTask) => void;
   /** A mutation succeeded — parent refetches its views. */
   onMutated: () => void;
@@ -126,6 +136,25 @@ export default function CommandPalette({
       busyRef.current = true;
       try {
         await api.updateKanbanTask(task.id, body);
+        finishMutation(done);
+      } catch (e: unknown) {
+        notify(
+          `Update failed: ${e instanceof Error ? e.message : String(e)}`,
+          "error",
+        );
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [finishMutation, notify],
+  );
+
+  const patchMeta = useCallback(
+    async (task: KanbanTask, body: KanbanTaskMetaPatch, done: string) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      try {
+        await api.patchKanbanTaskMeta(task.id, body);
         finishMutation(done);
       } catch (e: unknown) {
         notify(
@@ -212,6 +241,12 @@ export default function CommandPalette({
             run: () => enter({ kind: "pick", task: t, field: "assignee" }),
           },
           {
+            id: "label",
+            label: "Add label…",
+            hint: "toggle",
+            run: () => enter({ kind: "label", task: t }),
+          },
+          {
             id: "comment",
             label: "Comment…",
             run: () => enter({ kind: "comment", task: t }),
@@ -263,6 +298,44 @@ export default function CommandPalette({
               ),
           }));
       }
+      case "label": {
+        // Toggle one sidecar label per pick (PRD §3.1 "Add label"); the
+        // palette closes on mutation like every other action — reopen to
+        // stack more labels (detail panel is the bulk-toggle surface).
+        const t = mode.task;
+        const all = meta?.labels ?? [];
+        if (!all.length) {
+          return [
+            {
+              id: "none",
+              label: "No labels defined",
+              hint: "manage from the filter bar",
+              run: onClose,
+            },
+          ];
+        }
+        const assigned = meta?.tasks[t.id]?.labels ?? [];
+        return all
+          .filter((l) => fuzzyMatch(q, l.name))
+          .map<PaletteItem>((l) => {
+            const has = assigned.includes(l.id);
+            return {
+              id: l.id,
+              label: l.name,
+              hint: has ? "added · pick to remove" : undefined,
+              run: () =>
+                void patchMeta(
+                  t,
+                  {
+                    labels: has
+                      ? assigned.filter((id) => id !== l.id)
+                      : [...assigned, l.id],
+                  },
+                  has ? `Label removed: ${l.name} ✓` : `Label added: ${l.name} ✓`,
+                ),
+            };
+          });
+      }
       case "archive": {
         const t = mode.task;
         const all: PaletteItem[] = [
@@ -284,7 +357,7 @@ export default function CommandPalette({
         // Free-text mode: the input is the comment body; Enter posts.
         return [];
     }
-  }, [mode, query, commands, tasks, assignees, enter, onClose, onOpenTask, patchTask]);
+  }, [mode, query, commands, tasks, assignees, meta, enter, onClose, onOpenTask, patchTask, patchMeta]);
 
   // Esc backs out one level (submenu → task → root → closed), Linear-style.
   const goBack = useCallback(() => {
@@ -354,6 +427,7 @@ export default function CommandPalette({
             {mode.kind === "pick" && (
               <span className="shrink-0">· set {mode.field}</span>
             )}
+            {mode.kind === "label" && <span className="shrink-0">· add label</span>}
             {mode.kind === "comment" && <span className="shrink-0">· comment</span>}
             {mode.kind === "archive" && <span className="shrink-0">· archive?</span>}
             {mode.kind === "task" && (

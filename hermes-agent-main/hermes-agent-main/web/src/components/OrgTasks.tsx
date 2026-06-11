@@ -11,7 +11,7 @@ import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { Link } from "react-router-dom";
 import { PluginPage } from "@/plugins";
 import CommandPalette, { type PaletteCommand } from "@/components/CommandPalette";
-import KanbanFilterBar, { EMPTY_FILTER } from "@/components/KanbanFilterBar";
+import KanbanFilterBar, { EMPTY_FILTER, makeLabel } from "@/components/KanbanFilterBar";
 import KanbanListView, {
   type GroupBy,
   type TaskContextAction,
@@ -21,9 +21,11 @@ import { parseQuickAdd } from "@/lib/quickAdd";
 import {
   api,
   type KanbanFilterState,
+  type KanbanLabel,
   type KanbanMeta,
   type KanbanSavedView,
   type KanbanTask,
+  type KanbanTaskMetaPatch,
   type LinearBoard,
   type LinearTeam,
   type TaskProviderId,
@@ -220,13 +222,14 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
     };
   }, [refreshNonce]);
 
-  // Detail-panel due-date edits (PRD §2.2): PATCH the task's sidecar entry,
-  // then fold the server's canonical entry back into local meta so badges
-  // and the Overdue chip update without waiting for the next refetch.
-  const setDue = useCallback(
-    (taskId: string, dueAt: string | null) => {
+  // Detail-panel sidecar edits (due date / labels / estimate / cycle — PRD
+  // §2.2/§3): PATCH the task's sidecar entry, then fold the server's
+  // canonical entry back into local meta so badges, chips, and filters
+  // update without waiting for the next refetch.
+  const patchTaskMeta = useCallback(
+    (taskId: string, patch: KanbanTaskMetaPatch) => {
       void api
-        .patchKanbanTaskMeta(taskId, { due_at: dueAt })
+        .patchKanbanTaskMeta(taskId, patch)
         .then((entry) => {
           setMeta((m) => {
             if (!m) return m;
@@ -238,7 +241,7 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
         })
         .catch((e: unknown) => {
           showToast(
-            `Saving due date failed: ${e instanceof Error ? e.message : String(e)}`,
+            `Saving task metadata failed: ${e instanceof Error ? e.message : String(e)}`,
             "error",
           );
         });
@@ -342,6 +345,61 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
       });
     },
     [meta, putViews],
+  );
+
+  // Label CRUD (PRD §3.1): full-array replace via PUT. The server scrubs
+  // deleted ids off task entries; mirror that on the ACTIVE filter so a
+  // deleted label doesn't keep silently hiding tasks.
+  const saveLabels = useCallback(
+    (labels: KanbanLabel[]) => {
+      void (async () => {
+        try {
+          const updated = await api.putKanbanMeta({ labels });
+          setMeta(updated);
+          const ids = new Set(updated.labels.map((l) => l.id));
+          setFilter((f) =>
+            f.labels.every((id) => ids.has(id))
+              ? f
+              : { ...f, labels: f.labels.filter((id) => ids.has(id)) },
+          );
+          showToast("Labels saved ✓", "success");
+        } catch (e: unknown) {
+          showToast(
+            `Saving labels failed: ${e instanceof Error ? e.message : String(e)}`,
+            "error",
+          );
+        }
+      })();
+    },
+    [showToast],
+  );
+
+  // Quick-add unknown-label create shortcut (PRD §3.1): append the missing
+  // names (palette colors auto-rotate) and hand the updated doc back so the
+  // bar can resubmit against it without waiting for a refetch.
+  const createLabels = useCallback(
+    async (names: string[]): Promise<KanbanMeta | null> => {
+      const current = metaRef.current;
+      if (!current) return null;
+      const labels = [...current.labels];
+      for (const name of names) labels.push(makeLabel(name, labels));
+      try {
+        const updated = await api.putKanbanMeta({ labels });
+        setMeta(updated);
+        showToast(
+          `Label${names.length === 1 ? "" : "s"} created ✓`,
+          "success",
+        );
+        return updated;
+      } catch (e: unknown) {
+        showToast(
+          `Creating labels failed: ${e instanceof Error ? e.message : String(e)}`,
+          "error",
+        );
+        return null;
+      }
+    },
+    [showToast],
   );
 
   // Known assignees for quick-add @validation (PRD §1.3). Re-fetched after
@@ -485,6 +543,8 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
 
       <QuickAddBar
         assignees={assigneeNames}
+        meta={meta}
+        onCreateLabels={createLabels}
         showToast={showToast}
         onCreated={bumpRefresh}
       />
@@ -505,6 +565,8 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
             showOverdue={Object.values(meta?.tasks ?? {}).some(
               (t) => t.due_at != null,
             )}
+            labels={meta?.labels ?? []}
+            onSaveLabels={saveLabels}
           />
           <KanbanListView
             onOpenBoard={() => selectSubView("board")}
@@ -518,7 +580,7 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
             hotkeysEnabled={!palette.open}
             filter={filter}
             meta={meta}
-            onSetDue={setDue}
+            onPatchMeta={patchTaskMeta}
             onBoardLoaded={handleBoardLoaded}
           />
         </>
@@ -532,6 +594,7 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
         assignees={assigneeNames}
         initialTask={palette.task}
         initialAction={palette.action}
+        meta={meta}
         onOpenTask={openTaskDetail}
         onMutated={bumpRefresh}
         notify={showToast}
@@ -542,75 +605,152 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
 
 function QuickAddBar({
   assignees,
+  meta,
+  onCreateLabels,
   showToast,
   onCreated,
 }: {
   assignees: string[];
+  /** Sidecar doc for *label / cycle: token resolution; null while loading. */
+  meta: KanbanMeta | null;
+  /** Unknown-label create shortcut (PRD §3.1) — returns the updated doc. */
+  onCreateLabels: (names: string[]) => Promise<KanbanMeta | null>;
   showToast: (message: string, type: "error" | "success") => void;
   onCreated: () => void;
 }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Unknown *label names from the last submit — non-empty renders the
+  // "create label" shortcut next to the inline error (PRD §3.1).
+  const [unknownLabels, setUnknownLabels] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const submit = useCallback(async () => {
-    const raw = value.trim();
-    if (!raw || busy) return;
-    const parsed = parseQuickAdd(raw);
-    const errors = [...parsed.errors];
-    // @assignee must exist (PRD §1.3) — but only when the list actually
-    // loaded; with no data the server stays the authority.
-    if (
-      parsed.body.assignee &&
-      assignees.length > 0 &&
-      !assignees.includes(parsed.body.assignee)
-    ) {
-      errors.push(`Unknown assignee "@${parsed.body.assignee}"`);
-    }
-    if (errors.length) {
-      setError(errors.join(" · "));
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await api.createKanbanTask(parsed.body);
-      if (parsed.dueAt && res.task) {
-        // due: persists via the sidecar (PRD §2.2). onCreated below bumps
-        // the refresh nonce, which refetches meta — badges/filters pick the
-        // date up from there. Failure keeps the task (already created) and
-        // says so instead of pretending the date stuck.
-        try {
-          await api.patchKanbanTaskMeta(res.task.id, { due_at: parsed.dueAt });
-          showToast("Task created ✓", "success");
-        } catch (e: unknown) {
+  // metaOverride lets the create-label shortcut resubmit against the doc the
+  // PUT just returned, instead of waiting for the prop to catch up.
+  const submit = useCallback(
+    async (metaOverride?: KanbanMeta) => {
+      const doc = metaOverride ?? meta;
+      const raw = value.trim();
+      if (!raw || busy) return;
+      const parsed = parseQuickAdd(raw);
+      const errors = [...parsed.errors];
+      const unknown: string[] = [];
+      // @assignee must exist (PRD §1.3) — but only when the list actually
+      // loaded; with no data the server stays the authority.
+      if (
+        parsed.body.assignee &&
+        assignees.length > 0 &&
+        !assignees.includes(parsed.body.assignee)
+      ) {
+        errors.push(`Unknown assignee "@${parsed.body.assignee}"`);
+      }
+      // *label names resolve case-insensitively against the sidecar set
+      // (PRD §3.1): unknown = inline error + create shortcut, never an
+      // implicit create.
+      const labelIds: string[] = [];
+      if (parsed.labels?.length) {
+        if (!doc) {
+          errors.push("Labels unavailable — task metadata didn't load");
+        } else {
+          for (const name of parsed.labels) {
+            const hit = doc.labels.find(
+              (l) => l.name.toLowerCase() === name.toLowerCase(),
+            );
+            if (hit) labelIds.push(hit.id);
+            else unknown.push(name);
+          }
+          if (unknown.length) {
+            errors.push(
+              `Unknown label${unknown.length === 1 ? "" : "s"}: ` +
+                unknown.map((n) => `*${n}`).join(" "),
+            );
+          }
+        }
+      }
+      // cycle:<name> resolves the same way (PRD §3.3) but with NO create
+      // shortcut: cycles carry a date range, so creating one inline would
+      // invent a bogus range — use the Cycles dropdown (smallest reasonable
+      // choice; the PRD doesn't specify unknown-cycle behavior).
+      let cycleId: string | undefined;
+      if (parsed.cycleName !== undefined) {
+        if (!doc) {
+          errors.push("Cycles unavailable — task metadata didn't load");
+        } else {
+          const want = parsed.cycleName.toLowerCase();
+          const hit = doc.cycles.find((c) => c.name.toLowerCase() === want);
+          if (hit) cycleId = hit.id;
+          else {
+            errors.push(
+              `Unknown cycle "${parsed.cycleName}" — create it from the Cycles menu`,
+            );
+          }
+        }
+      }
+      if (errors.length) {
+        setError(errors.join(" · "));
+        setUnknownLabels(unknown);
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      setUnknownLabels([]);
+      try {
+        const res = await api.createKanbanTask(parsed.body);
+        // Sidecar fields (due / labels / estimate / cycle) persist via ONE
+        // meta PATCH once the create returns the id (PRD §2.2/§3). Failure
+        // keeps the task (already created) and says so instead of
+        // pretending the fields stuck.
+        const patch: KanbanTaskMetaPatch = {};
+        if (parsed.dueAt) patch.due_at = parsed.dueAt;
+        if (labelIds.length) patch.labels = labelIds;
+        if (parsed.estimate !== undefined) patch.estimate = parsed.estimate;
+        if (cycleId) patch.cycle_id = cycleId;
+        const wantsMeta = Object.keys(patch).length > 0;
+        if (wantsMeta && res.task) {
+          try {
+            await api.patchKanbanTaskMeta(res.task.id, patch);
+            showToast("Task created ✓", "success");
+          } catch (e: unknown) {
+            showToast(
+              `Task created — saving its metadata failed: ${e instanceof Error ? e.message : String(e)}`,
+              "error",
+            );
+          }
+        } else if (wantsMeta) {
+          // No task in the response (idempotency-key dedupe) — nothing to
+          // attach the fields to; surface that rather than dropping them.
           showToast(
-            `Task created — saving due date failed: ${e instanceof Error ? e.message : String(e)}`,
+            res.warning
+              ? `Task created — ${res.warning}; metadata not set`
+              : "Task created — metadata not set (no task id returned)",
             "error",
           );
+        } else if (res.warning) {
+          showToast(`Task created — ${res.warning}`, "success");
+        } else {
+          showToast("Task created ✓", "success");
         }
-      } else if (parsed.dueAt) {
-        // No task in the response (idempotency-key dedupe) — nothing to
-        // attach the date to; surface that rather than silently dropping it.
-        showToast(
-          res.warning
-            ? `Task created — ${res.warning}; due date not set`
-            : "Task created — due date not set (no task id returned)",
-          "error",
-        );
-      } else if (res.warning) {
-        showToast(`Task created — ${res.warning}`, "success");
-      } else {
-        showToast("Task created ✓", "success");
+        setValue("");
+        onCreated();
+      } catch (e: unknown) {
+        setError(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setBusy(false);
       }
-      setValue("");
-      onCreated();
-    } catch (e: unknown) {
-      setError(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setBusy(false);
-    }
-  }, [assignees, busy, onCreated, showToast, value]);
+    },
+    [assignees, busy, meta, onCreated, showToast, value],
+  );
+
+  // "Create label(s) + retry": append the unknown names to the sidecar set,
+  // then resubmit against the doc the PUT returned.
+  const createAndRetry = useCallback(async () => {
+    if (!unknownLabels.length || busy) return;
+    const updated = await onCreateLabels(unknownLabels);
+    if (!updated) return;
+    setError(null);
+    setUnknownLabels([]);
+    await submit(updated);
+  }, [busy, onCreateLabels, submit, unknownLabels]);
 
   return (
     <div className="flex flex-col gap-1">
@@ -620,7 +760,10 @@ function QuickAddBar({
         disabled={busy}
         onChange={(e) => {
           setValue(e.target.value);
-          if (error) setError(null);
+          if (error) {
+            setError(null);
+            setUnknownLabels([]);
+          }
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
@@ -628,10 +771,25 @@ function QuickAddBar({
             void submit();
           }
         }}
-        placeholder='Add task — words !urgent @assignee #tenant >parent-id due:YYYY-MM-DD · leading ? = triage · "quotes" escape tokens'
+        placeholder='Add task — words !urgent @assignee #tenant *label est:N cycle:name >parent-id due:YYYY-MM-DD · leading ? = triage · "quotes" escape tokens'
         aria-label="Quick add task"
       />
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs text-destructive">{error}</p>
+          {unknownLabels.length > 0 && (
+            <Button
+              type="button"
+              ghost
+              size="sm"
+              disabled={busy}
+              onClick={() => void createAndRetry()}
+            >
+              Create label{unknownLabels.length === 1 ? "" : "s"} + retry
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
