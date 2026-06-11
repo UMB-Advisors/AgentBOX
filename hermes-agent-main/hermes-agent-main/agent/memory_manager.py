@@ -252,6 +252,29 @@ class MemoryManager:
         self._providers: List[MemoryProvider] = []
         self._tool_to_provider: Dict[str, MemoryProvider] = {}
         self._has_external: bool = False  # True once a non-builtin provider is added
+        self._agent_context: str = "primary"  # set by initialize_all()
+
+    @property
+    def agent_context(self) -> str:
+        """Execution context from initialize_all ('primary', 'cron', ...)."""
+        return self._agent_context
+
+    def _writes_suppressed(self, hook: str) -> bool:
+        """Central write gate for non-primary contexts (cron/subagent).
+
+        Some providers self-gate writes on agent_context (gbrain, honcho,
+        supermemory), but most bundled providers ignore it. Suppress the
+        write fan-out here so non-primary content (cron prompts, skill
+        text, recalled material) never reaches long-term user memory,
+        regardless of which provider is configured.
+        """
+        if self._agent_context == "primary":
+            return False
+        logger.debug(
+            "Memory hook '%s' suppressed (agent_context=%s)",
+            hook, self._agent_context,
+        )
+        return True
 
     # -- Registration --------------------------------------------------------
 
@@ -389,6 +412,8 @@ class MemoryManager:
         messages: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """Sync a completed turn to all providers."""
+        if self._writes_suppressed("sync_all"):
+            return
         for provider in self._providers:
             try:
                 if messages is not None and self._provider_sync_accepts_messages(provider):
@@ -476,6 +501,8 @@ class MemoryManager:
 
     def on_session_end(self, messages: List[Dict[str, Any]]) -> None:
         """Notify all providers of session end."""
+        if self._writes_suppressed("on_session_end"):
+            return
         for provider in self._providers:
             try:
                 provider.on_session_end(messages)
@@ -526,6 +553,8 @@ class MemoryManager:
         Returns combined text from providers to include in the compression
         summary prompt. Empty string if no provider contributes.
         """
+        if self._writes_suppressed("on_pre_compress"):
+            return ""
         parts = []
         for provider in self._providers:
             try:
@@ -576,6 +605,8 @@ class MemoryManager:
 
         Skips the builtin provider itself (it's the source of the write).
         """
+        if self._writes_suppressed("on_memory_write"):
+            return
         for provider in self._providers:
             if provider.name == "builtin":
                 continue
@@ -598,6 +629,8 @@ class MemoryManager:
     def on_delegation(self, task: str, result: str, *,
                       child_session_id: str = "", **kwargs) -> None:
         """Notify all providers that a subagent completed."""
+        if self._writes_suppressed("on_delegation"):
+            return
         for provider in self._providers:
             try:
                 provider.on_delegation(
@@ -630,6 +663,7 @@ class MemoryManager:
         if "hermes_home" not in kwargs:
             from hermes_constants import get_hermes_home
             kwargs["hermes_home"] = str(get_hermes_home())
+        self._agent_context = str(kwargs.get("agent_context") or "primary")
         for provider in self._providers:
             try:
                 provider.initialize(session_id=session_id, **kwargs)
