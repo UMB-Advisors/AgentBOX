@@ -5649,6 +5649,10 @@ class CronTemplateAssistRequest(BaseModel):
     # Optional Agent Template id (hermes_cli/agent_templates). When set, the
     # assistant grounds the generated prompt in that template's pattern.
     template_id: Optional[str] = None
+    # Optional model/provider override for the assistant itself. Empty → the
+    # box's configured main model (a stronger model drafts better prompts).
+    model: Optional[str] = None
+    provider: Optional[str] = None
 
 
 def _template_grounding(template_id: Optional[str]) -> str:
@@ -5771,13 +5775,16 @@ def cron_template_assist(body: CronTemplateAssistRequest):
     system_prompt = _CRON_TEMPLATE_SYSTEM_PROMPT + _template_grounding(body.template_id)
     messages = [{"role": "system", "content": system_prompt}, *convo]
 
-    # Match the dashboard's configured brain. Empty → call_llm auto-detects.
-    provider = model = None
+    # Operator override wins; else match the dashboard's configured brain.
+    # Empty → call_llm auto-detects.
+    provider = (body.provider or "").strip() or None
+    model = (body.model or "").strip() or None
     try:
-        model_cfg = load_config().get("model", {})
-        if isinstance(model_cfg, dict):
-            provider = str(model_cfg.get("provider", "") or "").strip() or None
-            model = str(model_cfg.get("default", model_cfg.get("name", "")) or "").strip() or None
+        if not model and not provider:
+            model_cfg = load_config().get("model", {})
+            if isinstance(model_cfg, dict):
+                provider = str(model_cfg.get("provider", "") or "").strip() or None
+                model = str(model_cfg.get("default", model_cfg.get("name", "")) or "").strip() or None
     except Exception:
         _log.debug("cron template assist: could not read main model config", exc_info=True)
 

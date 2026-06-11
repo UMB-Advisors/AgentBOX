@@ -429,11 +429,21 @@ export const api = {
   // Interactive, LLM-assisted job-template builder. Sends the running chat
   // transcript and gets back the assistant's next reply plus an optional
   // structured proposal to prefill the create-job form.
-  assistCronTemplate: (messages: CronTemplateMessage[], templateId?: string | null) =>
+  assistCronTemplate: (
+    messages: CronTemplateMessage[],
+    templateId?: string | null,
+    model?: string | null,
+    provider?: string | null,
+  ) =>
     fetchJSON<CronTemplateAssistResult>(`/api/cron/template/assist`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, template_id: templateId || null }),
+      body: JSON.stringify({
+        messages,
+        template_id: templateId || null,
+        model: model || null,
+        provider: provider || null,
+      }),
     }),
   getCronOutputs: (limit = 10, profile = "all") =>
     fetchJSON<{ outputs: CronOutput[] }>(
