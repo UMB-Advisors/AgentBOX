@@ -50,6 +50,11 @@
       "main": [
         [
           {
+            "node": "Pack Draft Id",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Mark Processed",
             "type": "main",
             "index": 0
@@ -163,17 +168,6 @@
         [
           {
             "node": "Build Prompt",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Mark Processed": {
-      "main": [
-        [
-          {
-            "node": "Pack Draft Id",
             "type": "main",
             "index": 0
           }
@@ -837,7 +831,7 @@
       "typeVersion": 2.2
     },
     {
-      "id": "629ffe15-4f8c-41e5-9fcc-9933b03547ad",
+      "id": "dc9d7ea2-506f-4586-8b56-ab93c909a71d",
       "name": "Dedup Gate",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
@@ -871,13 +865,13 @@
       }
     },
     {
-      "id": "62bb7cd4-a753-4009-ad22-31646f7cbd7b",
+      "id": "fad7b51a-bc83-4dd0-957d-daec7d866e47",
       "name": "Mark Processed",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
         2480,
-        60
+        100
       ],
       "parameters": {
         "resource": "row",
