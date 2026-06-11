@@ -58,7 +58,7 @@ dbDescribe('POST /api/drafts/[id]/approve — real Postgres', () => {
         url: 'http://test.local/api/drafts/approve',
         json: async () => ({}),
       } as unknown as import('next/server').NextRequest,
-      { params: { id: String(seeded.draftId) } },
+      { params: Promise.resolve({ id: String(seeded.draftId) }) },
     );
     const body = await res.json();
 
@@ -96,7 +96,7 @@ dbDescribe('POST /api/drafts/[id]/approve — real Postgres', () => {
         url: 'http://test.local/api/drafts/approve',
         json: async () => ({}),
       } as unknown as import('next/server').NextRequest,
-      { params: { id: String(seeded.draftId) } },
+      { params: Promise.resolve({ id: String(seeded.draftId) }) },
     );
 
     expect(res.status).toBe(409);
@@ -127,7 +127,7 @@ dbDescribe('POST /api/drafts/[id]/approve — real Postgres', () => {
         url: 'http://test.local/api/drafts/approve',
         json: async () => ({}),
       } as unknown as import('next/server').NextRequest,
-      { params: { id: String(seeded.draftId) } },
+      { params: Promise.resolve({ id: String(seeded.draftId) }) },
     );
     const body = await res.json();
 
@@ -174,7 +174,7 @@ dbDescribe('POST /api/drafts/[id]/approve — real Postgres', () => {
         url: 'http://test.local/api/drafts/approve',
         json: async () => ({}),
       } as unknown as import('next/server').NextRequest,
-      { params: { id: String(seeded.draftId) } },
+      { params: Promise.resolve({ id: String(seeded.draftId) }) },
     );
 
     expect(res.status).toBe(200);
