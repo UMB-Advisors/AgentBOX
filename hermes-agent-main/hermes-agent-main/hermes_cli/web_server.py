@@ -1077,17 +1077,6 @@ def _run_graph_export() -> None:
                 f"gbrain graph adapter missing at {adapter} and no shipped copy at "
                 f"{_GRAPH_ADAPTER_SRC} — deploy tools/gbrain-graph-export.ts"
             )
-        # The dashboard service has no GBRAIN_HOME in its env, so the adapter's
-        # loadConfig() can't locate the brain (the appliance keeps it under
-        # ~/.hermesbox/.gbrain, not ~/.gbrain). Resolve + inject it; inherit the
-        # rest of the env so any daemon/OAuth creds (GBRAIN_*_CLIENT_*) carry too.
-        gbrain_home = _resolve_gbrain_home()
-        if not gbrain_home:
-            raise FileNotFoundError(
-                "gbrain config not found (no $GBRAIN_HOME/.gbrain/config.json under "
-                "~/.hermesbox or ~) — set GBRAIN_HOME for the dashboard service"
-            )
-        sub_env = {**os.environ, "GBRAIN_HOME": gbrain_home}
         out_path.parent.mkdir(parents=True, exist_ok=True)
         proc = subprocess.run(
             [bun, "run", str(adapter), "--out", str(out_path)],
@@ -1096,7 +1085,6 @@ def _run_graph_export() -> None:
             capture_output=True,
             text=True,
             timeout=600,
-            env=sub_env,
         )
         # On success the adapter prints a one-line summary ("pages=N … → path")
         # to stderr; on failure bun prints a multi-line stack/code-frame. Keep the
