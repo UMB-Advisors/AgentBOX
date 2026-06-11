@@ -320,6 +320,11 @@ export const api = {
     const s = qs.toString();
     return fetchJSON<LinearBoard>(`/api/tasks/linear/board${s ? `?${s}` : ""}`);
   },
+  /** Operations > Conversations: parsed Gemini meeting notes. */
+  getConversations: (refresh = false) =>
+    fetchJSON<ConversationsResponse>(
+      `/api/conversations${refresh ? "?refresh=1" : ""}`,
+    ),
   /** Today's calendar events for the digest (placeholder until calendar wired). */
   getDigestCalendar: () => fetchJSON<DigestCalendar>("/api/digest/calendar"),
   getDigestBrief: (account?: string) =>
@@ -2017,6 +2022,32 @@ export interface LinearBoard {
   reason?: string;
   team?: string | null;
   columns: Array<{ name: string; issues: LinearIssue[] }>;
+}
+
+/** Operations > Conversations: parsed Gemini meeting-notes emails. */
+export interface ConversationStep {
+  owners: string[];
+  title: string;
+  text: string;
+}
+export interface ConversationSection {
+  heading: string;
+  text: string;
+}
+export interface Conversation {
+  id: number;
+  account: string;
+  received_at: string | null;
+  title: string;
+  /** Human date string from the subject line, e.g. "Jun 10, 2026". */
+  meeting_date: string;
+  summary: string;
+  sections: ConversationSection[];
+  next_steps: ConversationStep[];
+}
+export interface ConversationsResponse {
+  conversations: Conversation[];
+  reason?: string;
 }
 
 export interface CalendarEvent {

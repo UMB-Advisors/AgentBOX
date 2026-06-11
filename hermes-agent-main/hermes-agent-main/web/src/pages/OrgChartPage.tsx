@@ -1,6 +1,6 @@
 import { useEffect, useMemo, type ComponentType, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Clock, LayoutDashboard, Network, Users } from "lucide-react";
+import { Clock, LayoutDashboard, MessagesSquare, Network, Users } from "lucide-react";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { usePlugins } from "@/plugins";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ import TeamPage from "@/pages/TeamPage";
 import CronPage from "@/pages/CronPage";
 import TeamGraph from "@/components/TeamGraph";
 import OrgTasks from "@/components/OrgTasks";
+import ConversationsView from "@/components/ConversationsView";
 
 // Org Chart — the consolidated org-facing workspace. Team, a reporting-hierarchy
 // graph, Tasks, and Agent Jobs live here as sub-views (replacing what used to be
@@ -18,7 +19,7 @@ import OrgTasks from "@/components/OrgTasks";
 // collide — and this page sets the title last (effect runs
 // parent-after-children), so the header stays "Org Chart".
 
-type SubTabId = "team" | "graph" | "tasks" | "jobs";
+type SubTabId = "team" | "graph" | "tasks" | "conversations" | "jobs";
 
 interface SubTab {
   id: SubTabId;
@@ -53,6 +54,12 @@ export default function OrgChartPage() {
       label: "Tasks",
       icon: LayoutDashboard,
       render: () => <OrgTasks kanbanName={kanban?.name ?? null} />,
+    });
+    list.push({
+      id: "conversations",
+      label: "Conversations",
+      icon: MessagesSquare,
+      render: () => <ConversationsView />,
     });
     list.push({ id: "jobs", label: "Agent Jobs", icon: Clock, render: () => <CronPage /> });
     return list;

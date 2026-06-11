@@ -30,6 +30,7 @@ ABX_STATIC_BACKEND=(
   mail_accounts.py
   mail_probe.py
   token_crypto.py
+  gemini_notes.py
   dashboard_bridge.py
   onboarding_state.py
   dashboard_auth/public_paths.py
