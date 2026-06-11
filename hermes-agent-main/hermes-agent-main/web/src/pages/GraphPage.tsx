@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AlertTriangle, Brain, Loader2, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useTheme } from "@/themes/context";
 import type { DashboardTheme } from "@/themes/types";
@@ -115,14 +117,79 @@ function graphThemeCss(theme: DashboardTheme): { css: string; isLight: boolean; 
   return { css, isLight, fontUrl: theme.typography.fontUrl };
 }
 
+interface GraphStatus {
+  bundleReady: boolean;
+  snapshotReady: boolean;
+  generating: boolean;
+  lastOk: boolean | null;
+  error: string | null;
+  summary: string | null;
+  nodes?: number;
+  edges?: number;
+  generatedAt?: string | null;
+}
+
 export default function GraphPage() {
   const { setTitle } = usePageHeader();
   const { theme, themeName } = useTheme();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
+  const [status, setStatus] = useState<GraphStatus | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Bumped to remount (reload) the iframe once a fresh snapshot lands.
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
     setTitle("Brain Graph");
   }, [setTitle]);
+
+  const fetchStatus = useCallback(async (): Promise<GraphStatus | null> => {
+    try {
+      const res = await fetch("/api/graph/status", { headers: { accept: "application/json" } });
+      if (!res.ok) return null;
+      const data = (await res.json()) as GraphStatus;
+      setStatus(data);
+      return data;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Initial readiness check — decides empty-state-button vs. graph iframe.
+  useEffect(() => {
+    void fetchStatus();
+  }, [fetchStatus]);
+
+  // Kick off generation, then poll status until the server is no longer busy.
+  const generate = useCallback(async () => {
+    setError(null);
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/graph/generate", { method: "POST" });
+      if (!res.ok && res.status !== 202) throw new Error(`generate failed (${res.status})`);
+    } catch (e) {
+      setGenerating(false);
+      setError(e instanceof Error ? e.message : "Failed to start generation");
+      return;
+    }
+    const poll = async () => {
+      const data = await fetchStatus();
+      if (data && data.generating) {
+        window.setTimeout(poll, 2000);
+        return;
+      }
+      setGenerating(false);
+      if (data && data.snapshotReady && data.lastOk !== false) {
+        setReloadKey((k) => k + 1); // reload the iframe onto the fresh graph
+      } else if (data && data.error) {
+        setError(data.error);
+      } else if (!data) {
+        setError("Lost contact with the server while generating.");
+      }
+    };
+    window.setTimeout(poll, 1500);
+  }, [fetchStatus]);
 
   // Paint the iframe document with the active dashboard theme. Same-origin, so
   // this is allowed; wrapped defensively in case the doc isn't ready/reachable.
@@ -187,9 +254,80 @@ export default function GraphPage() {
     void t2;
   }, [paint]);
 
+  // Initial status probe in flight — avoid flashing the empty-state on a box
+  // that already has a graph.
+  if (status === null) {
+    return (
+      <div className="flex h-[calc(100dvh-7rem)] w-full items-center justify-center border border-border bg-background/40">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // Show the graph once a snapshot exists; otherwise the generate empty-state.
+  const ready = status.snapshotReady === true;
+
+  if (!ready) {
+    return (
+      <div className="flex h-[calc(100dvh-7rem)] w-full items-center justify-center border border-border bg-background/40 p-8 text-center">
+        <div className="max-w-md">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-brand/10 text-brand">
+            <Brain className="h-6 w-6" />
+          </div>
+          <h2 className="text-lg font-semibold text-foreground">Brain Graph not generated yet</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Build an Understand-Anything snapshot of the gbrain knowledge base — a
+            node for every page, edges from links and content similarity.
+          </p>
+          {status && !status.bundleReady && (
+            <p className="mt-3 text-xs text-amber-500">
+              Heads up: the graph viewer bundle isn’t deployed on this box yet, so the
+              graph may not render until it’s shipped — generation still builds the
+              snapshot.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={generate}
+            disabled={generating}
+            className={cn(
+              "mt-5 inline-flex items-center gap-2 rounded-md bg-brand px-4 py-2 text-sm",
+              "font-medium text-brand-foreground transition-colors hover:bg-brand/90",
+              "disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+          >
+            {generating ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                Generate Brain Graph
+              </>
+            )}
+          </button>
+          {generating && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Querying gbrain and building the graph — this can take up to a minute.
+            </p>
+          )}
+          {error && (
+            <p className="mt-3 inline-flex items-start gap-1.5 text-left text-xs text-red-500">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{error}</span>
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-[calc(100dvh-7rem)] w-full overflow-hidden border border-border bg-background/40">
       <iframe
+        key={reloadKey}
         ref={iframeRef}
         src={GRAPH_APP_SRC}
         title="gbrain knowledge graph"

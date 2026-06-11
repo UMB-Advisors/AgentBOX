@@ -342,6 +342,24 @@ if [ -f "$REPO/bin/lib/custom-backend-files.sh" ] && [ -d "$ABX_HERMES/hermes_cl
     cp -a "$src" "$dst"; n=$((n+1))
   done < <(abx_custom_backend_files "$ABX_HERMES")
   log "  overlaid $n custom backend files onto $INSTALL_CLI"
+  # Ship non-.py custom extras (graph viewer bundle + gbrain→UA adapter) so the
+  # Brain Graph tab and its "Generate Brain Graph" button work on a fresh box.
+  # Paths are hermes-root-relative: graph_app/ lands under hermes_cli/, the
+  # adapter beside it under tools/. Directories are MERGED (cp -a src/.) so a
+  # box-generated knowledge-graph.json snapshot survives a re-run/repair.
+  INSTALL_HROOT="$(dirname "$INSTALL_CLI")"; ex=0
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    esrc="$ABX_HERMES/$p"; edst="$INSTALL_HROOT/$p"
+    [ -e "$esrc" ] || continue
+    if [ -d "$esrc" ]; then
+      mkdir -p "$edst"; cp -a "$esrc/." "$edst/"
+    else
+      mkdir -p "$(dirname "$edst")"; cp -a "$esrc" "$edst"
+    fi
+    ex=$((ex+1))
+  done < <(abx_custom_extras "$ABX_HERMES")
+  [ "$ex" -gt 0 ] && log "  shipped $ex custom extra(s) (graph viewer bundle + adapter)"
   # MBOX-468: provision the at-rest key for mail-account secrets. The custom
   # backend encrypts M365 client-secrets / IMAP app-passwords with AES-256-GCM
   # keyed by HERMES_MAIL_SECRET_KEY (32-byte hex); a missing key hard-fails the

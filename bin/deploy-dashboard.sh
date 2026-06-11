@@ -153,6 +153,22 @@ ssh "$REMOTE" "set -e
   sleep 4
   echo -n '    service: '; systemctl --user is-active '$UNIT'"
 
+# ── Ship non-.py custom extras (graph viewer bundle + gbrain→UA adapter) ──────
+# These ride alongside the Python backend so features like the Brain Graph tab's
+# "Generate Brain Graph" button work on a fresh box. Paths are relative to the
+# hermes root; rsync -R preserves structure into the box's hermes-agent dir
+# (parent of RDIR=…/hermes_cli). NO --delete — never clobber the box's per-brain
+# knowledge-graph.json snapshot (the local checkout has none). The dashboard
+# serves graph_app/ dynamically, so no extra restart is needed.
+mapfile -t EXTRA_FILES < <(abx_custom_extras "$HERMES")
+if [ "${#EXTRA_FILES[@]}" -gt 0 ]; then
+  echo "==> Shipping ${#EXTRA_FILES[@]} custom extra(s) -> $REMOTE"
+  printf '    %s\n' "${EXTRA_FILES[@]}"
+  HROOT_REMOTE="$(dirname "$RDIR")"
+  ssh "$REMOTE" "mkdir -p '$HROOT_REMOTE'"
+  ( cd "$HERMES" && rsync -aR "${EXTRA_FILES[@]}" "$REMOTE:$HROOT_REMOTE/" )
+fi
+
 echo "==> Verifying custom backend is live on $REMOTE (port $PORT)"
 ssh "$REMOTE" "'$RDIR/../venv/bin/python3' -c \"import http.client as h; c=h.HTTPConnection('127.0.0.1',$PORT,timeout=10); c.request('GET','/api/google/auth/start'); r=c.getresponse(); print('    /api/google/auth/start ->', r.status); raise SystemExit(0 if r.status in (301,302,303,307,308,200) else 1)\"" \
   && echo "    OK: custom backend routes are registered" \
