@@ -272,6 +272,10 @@ function NativeTasks({ kanbanName }: { kanbanName: string }) {
   const pruneInFlight = useRef(false);
   const handleBoardLoaded = useCallback((tasks: KanbanTask[]) => {
     setBoardTasks(tasks);
+    // Mirror into the palette's task list too, so an open palette's search
+    // results and "current" hints track the 30s poll instead of the
+    // snapshot fetched when it opened.
+    setPaletteTasks(tasks);
     const m = metaRef.current;
     if (!m || pruneInFlight.current) return;
     const liveIds = tasks.map((t) => t.id);

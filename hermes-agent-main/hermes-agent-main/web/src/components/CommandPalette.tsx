@@ -267,7 +267,12 @@ export default function CommandPalette({
         return all.filter((i) => fuzzyMatch(q, i.label));
       }
       case "pick": {
-        const t = mode.task;
+        // mode.task is a snapshot from palette-open time; resolve the live
+        // row from the tasks prop (refreshed by the parent's board fetches)
+        // so the "current" hints don't go stale if a background poll lands
+        // while the palette is open. Writes only use the id, so the
+        // fallback snapshot is always safe.
+        const t = tasks.find((x) => x.id === mode.task.id) ?? mode.task;
         if (mode.field === "status") {
           return SETTABLE_STATUSES.filter((st) => fuzzyMatch(q, st)).map<PaletteItem>(
             (st) => ({
