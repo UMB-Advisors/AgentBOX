@@ -33,6 +33,9 @@ import type {
   DigestBrief,
   DigestPrefs,
   DraftRow,
+  InboxRanking,
+  InboxRankGroup,
+  InboxRankItem,
   KanbanBoard,
   NewsItem,
 } from "@/lib/api";
@@ -43,11 +46,11 @@ import { usePageHeader } from "@/contexts/usePageHeader";
  * Home — the AgentBOX daily-digest landing.
  *
  *   • Top: the **Daily Brief** — three real-data sections styled like Google's
- *     emailed brief: **Top of Mind** (inbox messages with a pending/edited
- *     draft — the actionable queue, NOT live unread Gmail), **On Your Calendar**
- *     (today's Google Calendar), and **FYI** (active local Kanban cards).
- *     Top of Mind comes from `/dashboard/api/drafts`; Calendar from
- *     `/api/digest/brief`; FYI from the Kanban board.
+ *     emailed brief: **Top of Mind** (a best-guess at the few most important
+ *     emails per inbox — heuristic shortlist + one model pick per inbox),
+ *     **On Your Calendar** (today's Google Calendar), and **FYI** (active local
+ *     Kanban cards). Top of Mind comes from `/api/digest/inbox-ranking`;
+ *     Calendar from `/api/digest/brief`; FYI from the Kanban board.
  *   • Middle: the operator-chosen **Action Items** module (LLM-extracted from
  *     the inbox) — kept because the brief doesn't surface it.
  *   • Bottom: **Google News** — an infinite, thumbnailed top-stories feed.
@@ -84,6 +87,10 @@ export default function HomePage() {
   // Action items come from pending/edited inbox drafts.
   const [drafts, setDrafts] = useState<DraftRow[] | null>(null);
   const [draftsError, setDraftsError] = useState<string | null>(null);
+
+  // Top of Mind — best-guess most-important emails per inbox (LLM-ranked).
+  const [ranking, setRanking] = useState<InboxRanking | null>(null);
+  const [rankingError, setRankingError] = useState<string | null>(null);
 
   // The "summary" toggle now governs the whole Daily Brief.
   const briefOn = prefs ? prefs.modules.summary !== false : false;
@@ -135,8 +142,7 @@ export default function HomePage() {
       );
   }, []);
 
-  // Inbox drafts (pending/edited) power BOTH the brief's "Top of Mind" section
-  // and the Action Items card — load them whenever either module is shown.
+  // Inbox drafts (pending/edited) power the Action Items card.
   const loadDrafts = useCallback(() => {
     setDraftsError(null);
     api
@@ -147,18 +153,32 @@ export default function HomePage() {
       );
   }, []);
 
-  // The brief needs both Gmail/Calendar and the Kanban board (FYI section).
+  // Top of Mind — best-guess most-important emails per inbox. Re-fetches on view
+  // change (per-account vs combined); the backend ranks and caches.
+  const loadRanking = useCallback(() => {
+    setRankingError(null);
+    api
+      .getInboxRanking(view)
+      .then(setRanking)
+      .catch((e: unknown) =>
+        setRankingError(e instanceof Error ? e.message : "Failed to rank inbox."),
+      );
+  }, [view]);
+
+  // The brief needs Gmail/Calendar, the Kanban board (FYI), and the per-inbox
+  // Top of Mind ranking.
   useEffect(() => {
     if (!prefs || !briefOn) return;
     void loadBrief();
     loadBoard();
-  }, [prefs, briefOn, loadBrief, loadBoard]);
+    loadRanking();
+  }, [prefs, briefOn, loadBrief, loadBoard, loadRanking]);
 
   const refreshBrief = useCallback(() => {
     void loadBrief();
     loadBoard();
-    loadDrafts();
-  }, [loadBrief, loadBoard, loadDrafts]);
+    loadRanking();
+  }, [loadBrief, loadBoard, loadRanking]);
 
   const loadMoreNews = useCallback(async () => {
     const p = prefs;
@@ -217,11 +237,11 @@ export default function HomePage() {
     return () => obs.disconnect();
   }, [loadMoreNews]);
 
-  // Drafts feed Top of Mind (brief) and Action Items — load if either is on.
+  // Drafts feed the Action Items card.
   useEffect(() => {
-    if (!prefs || (!actionsOn && !briefOn)) return;
+    if (!prefs || !actionsOn) return;
     loadDrafts();
-  }, [prefs, actionsOn, briefOn, loadDrafts]);
+  }, [prefs, actionsOn, loadDrafts]);
 
   const actionItems = useMemo(
     () =>
@@ -248,12 +268,12 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
-      {/* Daily Brief — Top of Mind (inbox drafts) · On Your Calendar · FYI */}
+      {/* Daily Brief — Top of Mind (ranked emails) · On Your Calendar · FYI */}
       {briefOn && (
         <DailyBrief
           brief={brief}
-          drafts={drafts}
-          draftsError={draftsError}
+          ranking={ranking}
+          rankingError={rankingError}
           fyiTasks={fyiTasks}
           boardLoaded={board != null || boardError != null}
           loading={briefLoading}
@@ -347,8 +367,8 @@ interface FyiTask {
 
 function DailyBrief({
   brief,
-  drafts,
-  draftsError,
+  ranking,
+  rankingError,
   fyiTasks,
   boardLoaded,
   loading,
@@ -357,8 +377,8 @@ function DailyBrief({
   view,
 }: {
   brief: DigestBrief | null;
-  drafts: DraftRow[] | null;
-  draftsError: string | null;
+  ranking: InboxRanking | null;
+  rankingError: string | null;
   fyiTasks: FyiTask[];
   boardLoaded: boolean;
   loading: boolean;
@@ -419,27 +439,31 @@ function DailyBrief({
         ) : (
           <>
             {/* Only "On Your Calendar" needs a connected Google now — Top of
-                Mind reads the local inbox queue. The Combined / per-account view
-                comes from the global header selector. */}
+                Mind ranks the local ingested inboxes. The Combined / per-account
+                view comes from the global header selector. */}
             {!connected && <ConnectGoogle />}
 
-            {/* Top of Mind = the actionable inbox queue (messages with a
-                pending/edited draft), NOT live unread Gmail — the ingested
-                messages are already read in Gmail. Each row deep-links into the
-                inbox review panel. */}
+            {/* Top of Mind = a best-guess at the few most important emails in
+                each inbox (cheap heuristic shortlist → one model pick per inbox).
+                Rows with a drafted reply deep-link to the review panel; the rest
+                open in Gmail. */}
             <BriefSection icon={<Mail className="h-4 w-4" />} title="Top of Mind">
-              {draftsError ? (
-                <SectionNote tone="warn">{draftsError}</SectionNote>
-              ) : drafts == null ? (
+              {rankingError ? (
+                <SectionNote tone="warn">{rankingError}</SectionNote>
+              ) : ranking == null ? (
                 <Loading />
-              ) : drafts.length === 0 ? (
-                <SectionNote>Nothing needs your attention right now.</SectionNote>
+              ) : ranking.inboxes.length === 0 ? (
+                <SectionNote>No inboxes connected yet.</SectionNote>
               ) : (
-                <ul className="flex flex-col divide-y divide-border">
-                  {drafts.map((d) => (
-                    <DraftBriefRow key={d.id} draft={d} />
+                <div className="flex flex-col gap-4">
+                  {ranking.inboxes.map((g) => (
+                    <InboxRankGroupView
+                      key={g.account_id}
+                      group={g}
+                      showLabel={ranking.inboxes.length > 1}
+                    />
                   ))}
-                </ul>
+                </div>
               )}
             </BriefSection>
 
@@ -536,42 +560,89 @@ function EventRow({
   );
 }
 
-/** A pending/edited inbox draft surfaced in the brief's Top of Mind. Clicking
- *  deep-links into the inbox review panel for that draft (`/inbox?draft=<id>`). */
-function DraftBriefRow({ draft }: { draft: DraftRow }) {
-  const subject = draft.subject || draft.draft_subject || "(no subject)";
-  const edited = draft.status === "edited";
+/** One inbox's top picks in the brief's Top of Mind. In combined view each group
+ *  is labelled with its account; a single-account view drops the label. */
+function InboxRankGroupView({
+  group,
+  showLabel,
+}: {
+  group: InboxRankGroup;
+  showLabel: boolean;
+}) {
   return (
-    <li className="py-2.5">
-      <Link
-        to={`/inbox?draft=${draft.id}`}
-        className="group flex items-start gap-3"
-      >
-        <span
-          aria-hidden
-          className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand/70"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="flex-1 truncate text-sm font-medium leading-snug text-foreground group-hover:text-brand">
-              {subject}
-            </p>
-            <Badge tone={edited ? "outline" : "secondary"}>
-              {edited ? "edited" : "draft ready"}
-            </Badge>
-          </div>
-          {draft.from_addr && (
-            <p className="mt-0.5 truncate text-xs text-text-secondary">
-              {draft.from_addr}
-            </p>
+    <div className="flex flex-col gap-1.5">
+      {showLabel && (
+        <div className="flex items-center">
+          <AccountTag account={group.account} />
+        </div>
+      )}
+      {group.error ? (
+        <SectionNote tone="warn">{group.error}</SectionNote>
+      ) : group.items.length === 0 ? (
+        <SectionNote>Nothing notable right now.</SectionNote>
+      ) : (
+        <ul className="flex flex-col divide-y divide-border">
+          {group.items.map((it) => (
+            <InboxRankRow key={it.id} item={it} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** A single ranked email. A drafted reply deep-links into the review panel
+ *  (`/inbox?draft=<id>`); otherwise the row opens the message in Gmail. */
+function InboxRankRow({ item }: { item: InboxRankItem }) {
+  const inner = (
+    <>
+      <span
+        aria-hidden
+        className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+          item.is_read ? "bg-border" : "bg-brand/70"
+        }`}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="flex-1 truncate text-sm font-medium leading-snug text-foreground group-hover:text-brand">
+            {item.subject}
+          </p>
+          {item.draft_id && <Badge tone="secondary">draft ready</Badge>}
+        </div>
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-text-secondary">
+          {item.from_addr && <span className="truncate">{item.from_addr}</span>}
+          {item.reason && (
+            <>
+              <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
+              <span className="truncate italic">{item.reason}</span>
+            </>
           )}
         </div>
-        {draft.received_at && (
-          <span className="shrink-0 text-xs text-text-secondary">
-            {isoTimeAgo(draft.received_at)}
-          </span>
-        )}
-      </Link>
+      </div>
+      {item.received_at && (
+        <span className="shrink-0 text-xs text-text-secondary">
+          {isoTimeAgo(item.received_at)}
+        </span>
+      )}
+    </>
+  );
+  const cls = "group flex items-start gap-3";
+  return (
+    <li className="py-2.5">
+      {item.draft_id ? (
+        <Link to={`/inbox?draft=${item.draft_id}`} className={cls}>
+          {inner}
+        </Link>
+      ) : (
+        <a
+          href={item.link || undefined}
+          target="_blank"
+          rel="noreferrer"
+          className={cls}
+        >
+          {inner}
+        </a>
+      )}
     </li>
   );
 }
