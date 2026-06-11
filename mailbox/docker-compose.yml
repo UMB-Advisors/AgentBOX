@@ -38,7 +38,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
   ollama:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    # Pinned to match agentbox2 as of 2026-06-11 — bump deliberately (plans/012).
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.23.0}
     runtime: nvidia
     environment:
       # 5m (was 24h): let nomic-embed-text unload between RAG calls so the
