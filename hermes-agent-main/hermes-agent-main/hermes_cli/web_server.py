@@ -1087,12 +1087,17 @@ def _run_graph_export() -> None:
                 "gbrain config not found (no $GBRAIN_HOME/.gbrain/config.json under "
                 "~/.hermesbox or ~) — set GBRAIN_HOME for the dashboard service"
             )
-        sub_env = {**os.environ, "GBRAIN_HOME": gbrain_home}
+        # _gbrain_subprocess_env() resolves GBRAIN_HOME/GBRAIN_DATABASE_URL
+        # from process env → hermes .env → postgres.env; the config.json
+        # probe above (_resolve_gbrain_home) covers the one layout it can
+        # miss (~/.gbrain without a ~/.hermesbox dir), so seed it as the
+        # fallback rather than passing two conflicting env mappings.
+        sub_env = _gbrain_subprocess_env()
+        sub_env.setdefault("GBRAIN_HOME", gbrain_home)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         proc = subprocess.run(
             [bun, "run", str(adapter), "--out", str(out_path)],
             cwd=str(gbrain_dir),
-            env=_gbrain_subprocess_env(),
             capture_output=True,
             text=True,
             timeout=600,
