@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleHelp, ExternalLink, MessageSquare, RefreshCw, X } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -364,9 +364,9 @@ export default function KanbanListView({
    *  parent owns the PATCH + toast + meta fold-back. */
   onPatchMeta: (taskId: string, patch: KanbanTaskMetaPatch) => void;
   /** Live board tasks after every fetch — drives the parent's lazy sidecar
-   *  prune (PRD §2.2) and the per-cycle progress rollup (PRD §3.3). MUST be
-   *  referentially stable or the list refetches whenever the parent
-   *  re-renders. */
+   *  prune (PRD §2.2) and the per-cycle progress rollup (PRD §3.3). Latched
+   *  in a ref internally, so callers may pass an unstable reference without
+   *  resetting the poll timer. */
   onBoardLoaded: (tasks: KanbanTask[]) => void;
 }) {
   const { toast, showToast } = useToast();
@@ -378,22 +378,28 @@ export default function KanbanListView({
   const [detailId, setDetailId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(
-    async (manual = false) => {
-      if (manual) setRefreshing(true);
-      try {
-        const b = await api.getKanbanBoard();
-        setBoard(b);
-        setError(null);
-        onBoardLoaded(b.columns.flatMap((c) => c.tasks));
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (manual) setRefreshing(false);
-      }
-    },
-    [onBoardLoaded],
-  );
+  // onBoardLoaded rides a ref so `load` (and the polling effect depending
+  // on it) keeps a stable identity: a parent passing a fresh callback per
+  // render would otherwise tear down and restart the 30s timer on every
+  // board fetch, effectively disabling the poll.
+  const onBoardLoadedRef = useRef(onBoardLoaded);
+  useEffect(() => {
+    onBoardLoadedRef.current = onBoardLoaded;
+  }, [onBoardLoaded]);
+
+  const load = useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true);
+    try {
+      const b = await api.getKanbanBoard();
+      setBoard(b);
+      setError(null);
+      onBoardLoadedRef.current(b.columns.flatMap((c) => c.tasks));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (manual) setRefreshing(false);
+    }
+  }, []);
 
   // Initial fetch + 30s polling; every mutation below also refetches. The
   // plugin's WS /events live-refresh channel is deliberately skipped in v1
