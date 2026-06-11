@@ -1,5 +1,5 @@
 {
-  "active": false,
+  "active": true,
   "connections": {
     "Build Prompt": {
       "main": [
@@ -18,6 +18,17 @@
           {
             "index": 0,
             "node": "Normalize",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Dedup Gate": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Build Prompt",
             "type": "main"
           }
         ]
@@ -50,14 +61,14 @@
       "main": [
         [
           {
+            "index": 0,
             "node": "Pack Draft Id",
-            "type": "main",
-            "index": 0
+            "type": "main"
           },
           {
+            "index": 0,
             "node": "Mark Processed",
-            "type": "main",
-            "index": 0
+            "type": "main"
           }
         ]
       ]
@@ -77,9 +88,9 @@
       "main": [
         [
           {
+            "index": 0,
             "node": "Dedup Gate",
-            "type": "main",
-            "index": 0
+            "type": "main"
           }
         ]
       ]
@@ -162,17 +173,6 @@
           }
         ]
       ]
-    },
-    "Dedup Gate": {
-      "main": [
-        [
-          {
-            "node": "Build Prompt",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
     }
   },
   "description": null,
@@ -180,6 +180,7 @@
   "isArchived": false,
   "meta": null,
   "name": "MailBOX-Classify",
+  "nodeGroups": [],
   "nodes": [
     {
       "id": "trg00000-0000-0000-0000-000000000001",
@@ -831,67 +832,67 @@
       "typeVersion": 2.2
     },
     {
-      "id": "dc9d7ea2-506f-4586-8b56-ab93c909a71d",
+      "id": "10e9abfa-3444-4404-9056-8c0f622ea1f0",
       "name": "Dedup Gate",
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "eRpSG4hI2Ac6WpxI"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "account_id",
+              "keyValue": "={{ $json.account_id }}"
+            },
+            {
+              "condition": "eq",
+              "keyName": "provider_message_id",
+              "keyValue": "={{ $json.message_id }}"
+            }
+          ]
+        },
+        "matchType": "allConditions",
+        "operation": "rowNotExists",
+        "resource": "row"
+      },
       "position": [
         280,
         160
       ],
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1
+    },
+    {
+      "id": "7a15060f-ef6d-49dd-80ea-f2a40e02881b",
+      "name": "Mark Processed",
       "parameters": {
-        "resource": "row",
-        "operation": "rowNotExists",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [],
+          "value": {
+            "account_id": "={{ $('Load Inbox Row').item.json.account_id }}",
+            "ingested_at": "={{ $now.toISO() }}",
+            "provider_message_id": "={{ $('Load Inbox Row').item.json.message_id }}"
+          }
+        },
         "dataTableId": {
           "__rl": true,
           "mode": "id",
           "value": "eRpSG4hI2Ac6WpxI"
         },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "account_id",
-              "condition": "eq",
-              "keyValue": "={{ $json.account_id }}"
-            },
-            {
-              "keyName": "provider_message_id",
-              "condition": "eq",
-              "keyValue": "={{ $json.message_id }}"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "fad7b51a-bc83-4dd0-957d-daec7d866e47",
-      "name": "Mark Processed",
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
+        "operation": "insert",
+        "resource": "row"
+      },
       "position": [
         2480,
         100
       ],
-      "parameters": {
-        "resource": "row",
-        "operation": "insert",
-        "dataTableId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "eRpSG4hI2Ac6WpxI"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "account_id": "={{ $('Load Inbox Row').item.json.account_id }}",
-            "provider_message_id": "={{ $('Load Inbox Row').item.json.message_id }}",
-            "ingested_at": "={{ $now.toISO() }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        }
-      }
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1
     }
   ],
   "pinData": {},
@@ -899,6 +900,11 @@
     "errorWorkflow": "MlbxErrHandler01",
     "executionOrder": "v1"
   },
+  "sourceWorkflowId": null,
   "staticData": null,
-  "tags": []
+  "tags": [],
+  "versionMetadata": {
+    "description": null,
+    "name": null
+  }
 }
