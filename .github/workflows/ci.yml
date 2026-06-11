@@ -106,6 +106,10 @@ jobs:
           bash -n bin/deploy-dashboard.sh
           bash -n bin/lib/custom-backend-files.sh
           for f in provisioning/*.sh mailbox/scripts/*.sh; do bash -n "$f"; done
+      - name: shellcheck (bin/)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -x bin/deploy-dashboard.sh bin/lib/custom-backend-files.sh
 
 # Deferred for follow-up commits under STAQPRO-134:
 #   - Lint/format step (Biome recommended; pick + add)
