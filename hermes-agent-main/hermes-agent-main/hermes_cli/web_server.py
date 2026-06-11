@@ -1567,7 +1567,8 @@ def _read_news_feedback() -> Dict[str, Any]:
 
 def _write_news_feedback(data: Dict[str, Any]) -> None:
     _NEWS_FEEDBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _NEWS_FEEDBACK_FILE.with_suffix(".json.tmp")
+    # with_name, not with_suffix: multi-dot suffixes raise on Python 3.12+.
+    tmp = _NEWS_FEEDBACK_FILE.with_name(_NEWS_FEEDBACK_FILE.name + ".tmp")
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
     tmp.replace(_NEWS_FEEDBACK_FILE)
 
@@ -1631,7 +1632,11 @@ def _news_title_tokens(title: str) -> set:
 
 
 def _news_feedback_stats() -> Dict[str, Any]:
-    """Aggregate the vote ledger into rerank inputs (cheap; runs per request)."""
+    """Aggregate the vote ledger into rerank inputs (cheap; runs per request).
+
+    Reads without _NEWS_FEEDBACK_LOCK on purpose: the writer lands the file
+    via an atomic rename, so a reader always sees a complete old/new file.
+    """
     votes = _read_news_feedback()["votes"]
     hidden: set = set()
     source_net: Dict[str, int] = {}
@@ -1719,7 +1724,7 @@ def _read_news_discovery() -> Dict[str, Any]:
 
 def _write_news_discovery(data: Dict[str, Any]) -> None:
     _NEWS_DISCOVERY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _NEWS_DISCOVERY_FILE.with_suffix(".json.tmp")
+    tmp = _NEWS_DISCOVERY_FILE.with_name(_NEWS_DISCOVERY_FILE.name + ".tmp")
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
     tmp.replace(_NEWS_DISCOVERY_FILE)
 
@@ -1750,11 +1755,20 @@ def _todays_news_discovery(prefs: Dict[str, Any]) -> List[Dict[str, Any]]:
                 - _dt.timedelta(days=_NEWS_DISCOVERY_COOLDOWN_DAYS)
             ).isoformat()
             dismissed = set(state["dismissed"])
+            # kept normally implies selected (keep writes news_sources), but
+            # guard on it directly so a failed prefs write can't re-expose a
+            # kept source to the picker.
+            kept = set(state["kept"])
             candidates: List[Tuple[float, int, str]] = []
             for sid in _NEWS_SOURCE_BY_ID:
-                if sid in selected or sid in dismissed or sid in stats["muted"]:
+                if (
+                    sid in selected
+                    or sid in kept
+                    or sid in dismissed
+                    or sid in stats["muted"]
+                ):
                     continue
-                if str(state["history"].get(sid, "")) > cutoff:
+                if str(state["history"].get(sid, "")) >= cutoff:
                     continue
                 affinity = sum(
                     tag_score.get(t, 0.0) for t in _NEWS_SOURCE_TAGS.get(sid, ())

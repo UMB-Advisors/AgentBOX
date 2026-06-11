@@ -87,8 +87,9 @@ def load_ledger(path: Path = FEEDBACK_FILE) -> dict:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {"events": [], "votes": {}}
-    except ValueError:
-        common.log(f"WARNING: corrupt ledger {path}; treating as empty")
+    except (ValueError, OSError) as exc:
+        common.log(f"WARNING: cannot read ledger {path} ({exc}); "
+                   "treating as empty")
         return {"events": [], "votes": {}}
     events = [e for e in raw.get("events", []) if isinstance(e, dict)]
     votes = {
