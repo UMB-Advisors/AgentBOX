@@ -174,6 +174,23 @@ def gbrain_capture(source: str, slug: str, content: str, page_type: str = "note"
     return out.stdout.strip() or slug
 
 
+def gbrain_delete(source: str, slug: str) -> None:
+    """Soft-delete a page in a specific source via the local wrapper CLI.
+
+    ``gbrain delete`` has no --source flag; CLI source resolution honors the
+    GBRAIN_SOURCE env var (explicit flag > env > dotfile > path-match >
+    brain default), so the env var is the supported way to scope the
+    delete. Soft-deletes are recoverable for 72h via restore_page.
+    """
+    argv = [GBRAIN_BIN, "delete", slug]
+    env = {**os.environ, "GBRAIN_SOURCE": source}
+    out = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=120)
+    if out.returncode != 0:
+        raise RuntimeError(
+            f"gbrain delete failed for {source}/{slug}: {out.stderr.strip()[:500]}"
+        )
+
+
 def render_page(frontmatter: dict, body: str) -> str:
     """Render YAML frontmatter + markdown body for gbrain capture --stdin."""
     fm = yaml.safe_dump(frontmatter, default_flow_style=False, sort_keys=False,

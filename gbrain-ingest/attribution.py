@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Callable, Iterable, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Tuple
 
 UNSORTED = "unsorted"
 
@@ -175,3 +175,46 @@ def attribute(
     if ok(default):
         return Attribution(default, 0.3, 5)
     return Attribution(UNSORTED, 0.0, 5)
+
+
+# Floor for correspondence-based re-attribution: rungs 1-3 (account 1.0,
+# CRM 0.95, domain 0.9) qualify; rung-5 per-account defaults (0.3) do not —
+# they reflect the ACCOUNT a message arrived on, not the contact.
+REATTRIBUTE_MIN_CONFIDENCE = 0.6
+
+
+def infer_reattribution_entity(
+    attributions: Iterable[Any],
+    *,
+    min_confidence: float = REATTRIBUTE_MIN_CONFIDENCE,
+) -> Optional[str]:
+    """Conservative correspondence-based entity inference (Phase 5).
+
+    Given the Attribution of every mailbox message a contact's email
+    address participates in, return the single entity the contact should
+    be re-attributed to, or None to leave it unsorted.
+
+    Rules (pure; unit-tested):
+      - ``unsorted`` carries no signal and is ignored
+      - attributions below ``min_confidence`` are ignored (weak rungs)
+      - exactly ONE distinct entity must remain; correspondence spanning
+        multiple entities is ambiguous and stays unsorted
+      - no qualifying signal at all -> None
+
+    Accepts Attribution objects or plain ``(entity, confidence)`` tuples.
+    """
+    entities: set[str] = set()
+    for a in attributions or []:
+        if isinstance(a, tuple):
+            entity, confidence = a[0], float(a[1])
+        else:
+            entity = getattr(a, "entity", None)
+            confidence = float(getattr(a, "confidence", 0.0))
+        if not entity or entity == UNSORTED:
+            continue
+        if confidence < min_confidence:
+            continue
+        entities.add(entity)
+    if len(entities) == 1:
+        return next(iter(entities))
+    return None
