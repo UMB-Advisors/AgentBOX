@@ -2042,6 +2042,60 @@ async def get_linear_board(team: Optional[str] = None, refresh: bool = False):
     return payload
 
 
+# --- Operations > Conversations (Gemini meeting notes) -----------------------
+
+_CONVERSATIONS_SENDER = "gemini-notes@google.com"
+_CONVERSATIONS_LIMIT = 50
+_CONVERSATIONS_TTL_SECONDS = 60.0
+_CONVERSATIONS_CACHE: Dict[str, Any] = {}
+
+
+def _fetch_gemini_note_rows() -> List[Dict[str, Any]]:
+    """Gemini meeting-notes emails across all inboxes, newest first. The
+    sender literal is a module constant (no user input reaches the SQL)."""
+    sql = (
+        "SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.received_at DESC), "
+        "'[]') FROM (SELECT m.id, m.subject, m.body, m.received_at, "
+        "a.email_address AS account FROM inbox_messages m "
+        "JOIN accounts a ON a.id = m.account_id "
+        f"WHERE m.from_addr ILIKE '%{_CONVERSATIONS_SENDER}%' "
+        "AND m.deleted_at IS NULL "
+        f"ORDER BY m.received_at DESC LIMIT {_CONVERSATIONS_LIMIT}) t"
+    )
+    return _mbox_psql_json(sql) or []
+
+
+@app.get("/api/conversations")
+async def get_conversations(refresh: bool = False):
+    """Parsed Gemini meeting notes for the Operations > Conversations tab."""
+    from hermes_cli.gemini_notes import parse_gemini_note
+
+    mono = time.monotonic()
+    cached = _CONVERSATIONS_CACHE.get("all")
+    if cached and not refresh and mono - cached["ts"] < _CONVERSATIONS_TTL_SECONDS:
+        return cached["data"]
+    loop = asyncio.get_running_loop()
+    try:
+        rows = await loop.run_in_executor(None, _fetch_gemini_note_rows)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("conversations fetch failed: %s", exc)
+        if cached:  # serve stale rather than blanking the tab
+            return cached["data"]
+        return {"conversations": [], "reason": str(exc)}
+    conversations = []
+    for r in rows:
+        parsed = parse_gemini_note(r.get("subject") or "", r.get("body") or "")
+        parsed.update({
+            "id": r.get("id"),
+            "account": r.get("account"),
+            "received_at": r.get("received_at"),
+        })
+        conversations.append(parsed)
+    payload = {"conversations": conversations}
+    _CONVERSATIONS_CACHE["all"] = {"ts": mono, "data": payload}
+    return payload
+
+
 @app.get("/api/digest/calendar")
 async def get_digest_calendar():
     """Today's calendar events for the digest.
