@@ -222,6 +222,9 @@ export const api = {
     modules?: Record<string, boolean>;
     news_sources?: string[];
     custom_sources?: Array<{ id?: string; label?: string; url: string }>;
+    reddit_subreddits?: string[];
+    twitter_handles?: string[];
+    twitter_instance?: string;
   }) =>
     fetchJSON<DigestPrefs>("/api/digest/prefs", {
       method: "PUT",
@@ -240,6 +243,21 @@ export const api = {
     if (refresh) qs.set("refresh", "1");
     return fetchJSON<NewsResponse>(`/api/digest/news?${qs.toString()}`);
   },
+  /** Hot posts from the prefs' subreddits (digest Reddit module). */
+  getDigestReddit: (refresh = false) =>
+    fetchJSON<DigestRedditResponse>(
+      `/api/digest/reddit${refresh ? "?refresh=1" : ""}`,
+    ),
+  /** Latest tweets for the prefs' handles, via Nitter (digest Twitter module). */
+  getDigestTwitter: (refresh = false) =>
+    fetchJSON<DigestTwitterResponse>(
+      `/api/digest/twitter${refresh ? "?refresh=1" : ""}`,
+    ),
+  /** Hottest GitHub repos created this week (digest GitHub module). */
+  getDigestGithub: (refresh = false) =>
+    fetchJSON<DigestGithubResponse>(
+      `/api/digest/github${refresh ? "?refresh=1" : ""}`,
+    ),
   /** Thumbs up/down on a news article; vote=null clears a prior vote (Undo). */
   voteNews: (body: {
     link: string;
@@ -1824,9 +1842,66 @@ export interface DigestPrefs {
     tasks: boolean;
     calendar: boolean;
     news: boolean;
+    reddit: boolean;
+    twitter: boolean;
+    github: boolean;
   } & Record<string, boolean>;
   news_sources: string[];
   custom_sources: CustomNewsSource[];
+  /** Subreddit names (no "r/") for the Reddit module. */
+  reddit_subreddits: string[];
+  /** Handles (no "@") for the Twitter/X module. */
+  twitter_handles: string[];
+  /** Nitter instance the Twitter module reads RSS from. */
+  twitter_instance: string;
+}
+
+/** A hot Reddit post (digest Reddit module). */
+export interface RedditPost {
+  title: string;
+  /** Comments-page permalink on reddit.com. */
+  link: string;
+  /** The linked article/media URL (may equal `link` for self posts). */
+  url: string;
+  subreddit: string;
+  author: string;
+  score: number;
+  comments: number;
+  created_utc: number;
+  /** Thumbnail URL; "" when none. */
+  image: string;
+}
+export interface DigestRedditResponse {
+  items: RedditPost[];
+  subreddits: string[];
+  error: string | null;
+}
+
+/** A tweet pulled via Nitter RSS — reuses the feed-item shape plus `handle`. */
+export interface TweetItem extends NewsItem {
+  handle: string;
+}
+export interface DigestTwitterResponse {
+  items: TweetItem[];
+  handles: string[];
+  instance: string;
+  error: string | null;
+}
+
+/** A hot new GitHub repo (digest GitHub module). */
+export interface GithubRepo {
+  name: string;
+  link: string;
+  description: string;
+  stars: number;
+  language: string;
+  created_at: string;
+  avatar: string;
+}
+export interface DigestGithubResponse {
+  items: GithubRepo[];
+  days: number;
+  error: string | null;
 }
 
 /** Derived age metrics attached to each board task (seconds, or null when

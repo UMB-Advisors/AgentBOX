@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { ListChecks, Newspaper, Plus, Sparkles, X } from "lucide-react";
+import {
+  Flame,
+  Github,
+  ListChecks,
+  Newspaper,
+  Plus,
+  Sparkles,
+  Twitter,
+  X,
+} from "lucide-react";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Checkbox } from "@nous-research/ui/ui/components/checkbox";
 import { Input } from "@nous-research/ui/ui/components/input";
@@ -38,12 +47,19 @@ export default function DigestSettingsPage() {
   const [newUrl, setNewUrl] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [busy, setBusy] = useState(false);
+  // Reddit / Twitter module config, edited as plain text and parsed on save.
+  const [subsText, setSubsText] = useState("");
+  const [handlesText, setHandlesText] = useState("");
+  const [instanceText, setInstanceText] = useState("");
 
   useEffect(() => {
     Promise.all([api.getDigestPrefs(), api.getNewsSources()])
       .then(([p, s]) => {
         setPrefs(p);
         setSources(s.sources);
+        setSubsText((p.reddit_subreddits ?? []).join(", "));
+        setHandlesText((p.twitter_handles ?? []).join(", "));
+        setInstanceText(p.twitter_instance ?? "");
       })
       .catch((e: unknown) =>
         showToast(e instanceof Error ? e.message : "Failed to load", "error"),
@@ -75,15 +91,22 @@ export default function DigestSettingsPage() {
       const saved = await api.setDigestPrefs({
         modules: prefs.modules,
         news_sources: prefs.news_sources,
+        reddit_subreddits: splitList(subsText),
+        twitter_handles: splitList(handlesText),
+        twitter_instance: instanceText.trim(),
       });
       setPrefs(saved);
+      // Echo back the server-normalized lists (prefixes stripped, invalid dropped).
+      setSubsText((saved.reddit_subreddits ?? []).join(", "));
+      setHandlesText((saved.twitter_handles ?? []).join(", "));
+      setInstanceText(saved.twitter_instance ?? "");
       showToast("Saved ✓", "success");
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Failed to save", "error");
     } finally {
       setSaving(false);
     }
-  }, [prefs, showToast]);
+  }, [prefs, subsText, handlesText, instanceText, showToast]);
 
   const refreshSources = useCallback(async () => {
     const s = await api.getNewsSources();
@@ -190,8 +213,80 @@ export default function DigestSettingsPage() {
               checked={prefs.modules.news !== false}
               onChange={(on) => toggleModule("news", on)}
             />
+            <ModuleRow
+              icon={<Flame className="h-4 w-4 text-text-secondary" />}
+              label="Reddit"
+              description="Hot posts from your chosen subreddits."
+              checked={prefs.modules.reddit === true}
+              onChange={(on) => toggleModule("reddit", on)}
+            />
+            <ModuleRow
+              icon={<Twitter className="h-4 w-4 text-text-secondary" />}
+              label="Twitter / X"
+              description="Latest posts from handles you follow, via a Nitter feed."
+              checked={prefs.modules.twitter === true}
+              onChange={(on) => toggleModule("twitter", on)}
+            />
+            <ModuleRow
+              icon={<Github className="h-4 w-4 text-text-secondary" />}
+              label="GitHub trending"
+              description="The hottest repos created in the last 7 days."
+              checked={prefs.modules.github === true}
+              onChange={(on) => toggleModule("github", on)}
+            />
           </CardContent>
         </Card>
+
+        {/* Config for the Reddit / Twitter modules (GitHub needs none). */}
+        {(prefs.modules.reddit === true || prefs.modules.twitter === true) && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Social sources</CardTitle>
+              <CardDescription>
+                What the Reddit and Twitter modules pull from.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              {prefs.modules.reddit === true && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Subreddits (comma-separated, no “r/”)
+                  </span>
+                  <Input
+                    placeholder="technology, programming, LocalLLaMA"
+                    value={subsText}
+                    onChange={(e) => setSubsText(e.target.value)}
+                  />
+                </div>
+              )}
+              {prefs.modules.twitter === true && (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Handles (comma-separated, no “@”)
+                    </span>
+                    <Input
+                      placeholder="karpathy, AnthropicAI"
+                      value={handlesText}
+                      onChange={(e) => setHandlesText(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Nitter instance (tweets are read as RSS — swap it if this
+                      one stops responding)
+                    </span>
+                    <Input
+                      placeholder="https://nitter.net"
+                      value={instanceText}
+                      onChange={(e) => setInstanceText(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
@@ -284,6 +379,14 @@ export default function DigestSettingsPage() {
       </div>
     </div>
   );
+}
+
+/** "a, b  c" → ["a","b","c"] — commas or whitespace both separate entries. */
+function splitList(text: string): string[] {
+  return text
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function ModuleRow({
