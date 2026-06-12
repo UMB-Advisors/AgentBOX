@@ -1,0 +1,14 @@
+[Unit]
+Description=Run gbrain news-feedback ingestion every 30 minutes
+
+[Timer]
+# Offset from the email timer (*:0/15) and the draft-feedback timer
+# (*:11/30) so the jobs rarely contend for the shared flock; Persistent
+# catches missed runs after suspend/reboot.
+OnCalendar=*:21/30
+RandomizedDelaySec=60
+Persistent=true
+Unit=gbrain-ingest-news-feedback.service
+
+[Install]
+WantedBy=timers.target

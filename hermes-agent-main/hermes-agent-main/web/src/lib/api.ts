@@ -258,6 +258,34 @@ export const api = {
     fetchJSON<DigestGithubResponse>(
       `/api/digest/github${refresh ? "?refresh=1" : ""}`,
     ),
+  /** Thumbs up/down on a news article; vote=null clears a prior vote (Undo). */
+  voteNews: (body: {
+    link: string;
+    vote: "up" | "down" | null;
+    reason?: string;
+    title?: string;
+    source_id?: string;
+    source?: string;
+    published?: string;
+  }) =>
+    fetchJSON<{ ok: boolean; vote: "up" | "down" | null }>(
+      "/api/digest/news/feedback",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  /** Keep (add to sources) or dismiss (never re-suggest) a discovery pick. */
+  actNewsDiscovery: (id: string, action: "keep" | "dismiss") =>
+    fetchJSON<{ ok: boolean; news_sources: string[] }>(
+      "/api/digest/news/discovery",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action }),
+      },
+    ),
   /** Kanban board (digest Tasks module + Org Chart Tasks list view). */
   getKanbanBoard: () => fetchJSON<KanbanBoard>("/api/plugins/kanban/board"),
   /** Create a native kanban task. May carry a dispatcher-presence warning. */
@@ -2296,12 +2324,25 @@ export interface NewsItem {
   source_id: string;
   /** Best-effort thumbnail URL (Media RSS / enclosure / inline <img>); "" when none. */
   image?: string;
+  /** The operator's current thumbs vote on this article (server-annotated). */
+  vote?: "up" | "down" | null;
+  /** True when the article comes from one of today's discovery suggestions. */
+  discovery?: boolean;
+}
+
+/** One of today's suggested-new-source picks (daily discovery). */
+export interface NewsDiscoverySource {
+  id: string;
+  label: string;
+  tags?: string[];
 }
 
 export interface NewsResponse {
   items: NewsItem[];
   total: number;
   has_more: boolean;
+  /** Today's suggested sources (already merged into the feed, badged). */
+  discovery?: NewsDiscoverySource[];
 }
 
 /** Per-call overrides for {@link fetchJSON}. */

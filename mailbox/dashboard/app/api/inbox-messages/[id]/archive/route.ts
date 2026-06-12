@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic';
 // Gmail (messages.modify removeLabelIds [INBOX]). Per the MBOX-369 decision,
 // archive KEEPS any pending draft (operator may still reply); only delete
 // discards it.
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, idParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

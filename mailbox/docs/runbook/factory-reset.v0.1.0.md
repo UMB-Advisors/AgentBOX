@@ -126,9 +126,11 @@ sudo journalctl --vacuum-time=1s
 sudo tailscale logout
 ```
 
-The operator must re-auth (`sudo tailscale up`) after reset to issue a fresh
-node identity. The read/send Gmail quotas are unrelated; this only affects
-tailnet membership.
+The operator must re-auth (`sudo tailscale up --ssh`) after reset to issue a
+fresh node identity. **Keep `--ssh`** — it re-enables the Tailscale SSH server so
+the tailnet admin keeps shell access without a per-box key (a plain
+`tailscale up` here is how a reset box drifts into being unreachable). The
+read/send Gmail quotas are unrelated; this only affects tailnet membership.
 
 ### 7. Regenerate SSH host keys
 
@@ -154,7 +156,7 @@ the mDNS host identity (`mailbox.local`) and the avahi service record.
 
 ## Post-reset checklist (operator)
 
-- [ ] Re-auth Tailscale: `sudo tailscale up` → approve in the admin console.
+- [ ] Re-auth Tailscale: `sudo tailscale up --ssh` → approve in the admin console.
 - [ ] Refresh `known_hosts` on each connecting workstation: `ssh-keygen -R <host>`.
 - [ ] Re-fill `.env` secrets: basic_auth hash (`bin/rotate-basic-auth`),
       `CLOUDFLARE_API_TOKEN`, model API keys, `DOMAIN`.
