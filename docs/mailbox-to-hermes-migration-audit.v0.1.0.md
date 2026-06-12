@@ -70,3 +70,12 @@ Inbox/queue core, Calendar, Drive, Contacts, Businesses, Team (CRM), Google conn
 - `/chat` (email-corpus): port or drop? Hermes already has a terminal chat. (MBOX-480)
 - `/status`: standalone page or fold into HomePage? (MBOX-478)
 - Does retiring mailbox-dashboard also move the n8n `/api/internal/*` writer endpoints into `hermes_cli`? (n8n ingestion still POSTs there — see MBOX-464/466.)
+
+## Addendum-01 (2026-06-12)
+
+The "Deployment model (ground truth)" table is superseded by the sidecar
+decoupling PRD (`/home/bob/code/tbox/AgentBOX/docs/agentbox-sidecar-decoupling.prd.v0.1.0.md`
++ addendum). Port target for all open MBOX-469 children = **agentbox-sidecar**
+(UI in `web/`, routes in the sidecar FastAPI app). Deploy path = the sidecar
+runbook (`agentbox-sidecar/docs/update-runbook.md`), not `bin/deploy-dashboard.sh`.
+Cross-link added to the MBOX-469 `[STATE]` comment (see L1 in the post-sidecar audit).
