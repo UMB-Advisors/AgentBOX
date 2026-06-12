@@ -19,7 +19,8 @@ export const dynamic = 'force-dynamic';
 // lib/transitions.ts:transitionToApprovedAndSend — kept inline here rather
 // than extending that helper because the terminal state and audit reason
 // are different.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, idParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

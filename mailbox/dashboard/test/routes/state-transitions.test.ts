@@ -37,7 +37,9 @@ dbDescribe('state_transitions trigger — real Postgres', () => {
     const seeded = await seedDraft({ status: 'pending' });
     try {
       const { POST } = await import('@/app/api/drafts/[id]/approve/route');
-      const res = await POST(fakeRequest(), { params: { id: String(seeded.draftId) } });
+      const res = await POST(fakeRequest(), {
+        params: Promise.resolve({ id: String(seeded.draftId) }),
+      });
       expect(res.status).toBe(200);
 
       const pool = getTestPool();

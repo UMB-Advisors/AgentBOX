@@ -54,7 +54,8 @@ interface KbSourceRef {
 
 type SourceRef = EmailSourceRef | KbSourceRef;
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, idParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

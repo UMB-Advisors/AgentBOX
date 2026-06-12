@@ -99,7 +99,7 @@ dbDescribe('POST /api/drafts/[id]/action-items/push — real Postgres', () => {
       await setItems(seed.draftId, [ITEM_A, ITEM_B]);
       const { POST } = await import('@/app/api/drafts/[id]/action-items/push/route');
       const res = await POST(fakeRequest({ body: { index: 0 } }), {
-        params: { id: String(seed.draftId) },
+        params: Promise.resolve({ id: String(seed.draftId) }),
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
@@ -125,7 +125,9 @@ dbDescribe('POST /api/drafts/[id]/action-items/push — real Postgres', () => {
     try {
       await setItems(seed.draftId, [{ ...ITEM_A, task_external_id: 'gtask-existing-7' }]);
       const { POST } = await import('@/app/api/drafts/[id]/action-items/push/route');
-      await POST(fakeRequest({ body: { index: 0 } }), { params: { id: String(seed.draftId) } });
+      await POST(fakeRequest({ body: { index: 0 } }), {
+        params: Promise.resolve({ id: String(seed.draftId) }),
+      });
       // The provider was called WITH the existing id (PATCH path), not null.
       expect(pushSpy).toHaveBeenCalledWith(expect.anything(), seed.draftId, 'gtask-existing-7');
       const stored = await readItems(seed.draftId);
@@ -145,7 +147,7 @@ dbDescribe('POST /api/drafts/[id]/action-items/push — real Postgres', () => {
       await setItems(seed.draftId, [ITEM_A, ITEM_B]);
       const { POST } = await import('@/app/api/drafts/[id]/action-items/push/route');
       const res = await POST(fakeRequest({ body: { all: true } }), {
-        params: { id: String(seed.draftId) },
+        params: Promise.resolve({ id: String(seed.draftId) }),
       });
       expect(res.status).toBe(200);
       const stored = await readItems(seed.draftId);
@@ -164,7 +166,7 @@ dbDescribe('POST /api/drafts/[id]/action-items/push — real Postgres', () => {
       await setItems(seed.draftId, [ITEM_A]);
       const { POST } = await import('@/app/api/drafts/[id]/action-items/push/route');
       const res = await POST(fakeRequest({ body: { index: 0 } }), {
-        params: { id: String(seed.draftId) },
+        params: Promise.resolve({ id: String(seed.draftId) }),
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
@@ -186,7 +188,7 @@ dbDescribe('POST /api/drafts/[id]/action-items/push — real Postgres', () => {
       await setItems(seed.draftId, [ITEM_A]);
       const { POST } = await import('@/app/api/drafts/[id]/action-items/push/route');
       const res = await POST(fakeRequest({ body: { index: 9 } }), {
-        params: { id: String(seed.draftId) },
+        params: Promise.resolve({ id: String(seed.draftId) }),
       });
       expect(res.status).toBe(400);
     } finally {
@@ -196,14 +198,14 @@ dbDescribe('POST /api/drafts/[id]/action-items/push — real Postgres', () => {
 
   it('returns 400 when neither index nor all is provided', async () => {
     const { POST } = await import('@/app/api/drafts/[id]/action-items/push/route');
-    const res = await POST(fakeRequest({ body: {} }), { params: { id: '1' } });
+    const res = await POST(fakeRequest({ body: {} }), { params: Promise.resolve({ id: '1' }) });
     expect(res.status).toBe(400);
   });
 
   it('returns 404 for a nonexistent draft', async () => {
     const { POST } = await import('@/app/api/drafts/[id]/action-items/push/route');
     const res = await POST(fakeRequest({ body: { index: 0 } }), {
-      params: { id: '999999999' },
+      params: Promise.resolve({ id: '999999999' }),
     });
     expect(res.status).toBe(404);
   });

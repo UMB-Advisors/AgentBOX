@@ -25,9 +25,9 @@
 
 import { type NextRequest, NextResponse } from 'next/server';
 import { authorized } from '@/lib/internal-auth';
+import { parseJson } from '@/lib/middleware/validate';
 import { deregisterTransportAccount } from '@/lib/queries-accounts';
 import { accountDeregisterBodySchema } from '@/lib/schemas/internal';
-import { parseJson } from '@/lib/middleware/validate';
 
 export const dynamic = 'force-dynamic';
 

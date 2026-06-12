@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
 // client-side in ChatClient.
 
 interface ChatPageProps {
-  searchParams?: { c?: string | string[]; account?: string | string[] };
+  searchParams?: Promise<{ c?: string | string[]; account?: string | string[] }>;
 }
 
 function parseIntParam(raw: string | string[] | undefined): number | null {
@@ -29,7 +29,8 @@ function parseIntParam(raw: string | string[] | undefined): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-export default async function ChatPage({ searchParams }: ChatPageProps) {
+export default async function ChatPage(props: ChatPageProps) {
+  const searchParams = await props.searchParams;
   const activeId = parseIntParam(searchParams?.c);
   const accountParam = parseIntParam(searchParams?.account);
 

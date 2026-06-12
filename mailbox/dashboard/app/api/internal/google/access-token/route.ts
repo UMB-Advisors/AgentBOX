@@ -39,9 +39,9 @@
 // mirroring lib/oauth/google.ts:getAccessToken (the appliance is dependency-light
 // by constraint, root CLAUDE.md).
 
+import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { timingSafeEqual } from 'node:crypto';
 import { type NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';

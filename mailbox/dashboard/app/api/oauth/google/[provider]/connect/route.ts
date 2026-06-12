@@ -17,8 +17,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { provider: string } },
+  props: { params: Promise<{ provider: string }> },
 ): Promise<NextResponse> {
+  const params = await props.params;
   const p = parseParams(params, oauthProviderParamSchema);
   if (!p.ok) return p.response;
 

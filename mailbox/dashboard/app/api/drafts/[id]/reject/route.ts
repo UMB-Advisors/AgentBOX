@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic';
 // inserted in the same transaction. drafts.error_message is NO LONGER written
 // here (that column is for send-side Gmail Reply failures per CLAUDE.md state
 // machine).
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, idParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

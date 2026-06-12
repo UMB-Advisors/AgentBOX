@@ -1,5 +1,10 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { deleteTeamMember, type TeamInput, type TeamKind, updateTeamMember } from '@/lib/crm/queries';
+import {
+  deleteTeamMember,
+  type TeamInput,
+  type TeamKind,
+  updateTeamMember,
+} from '@/lib/crm/queries';
 
 // PATCH  /api/crm/team/[id] {...partial} → { member } | 404
 // DELETE /api/crm/team/[id]              → { deleted, id } | 404
@@ -30,8 +35,9 @@ function readPatch(body: Record<string, unknown>): Partial<TeamInput> {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  props: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
+  const params = await props.params;
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'bad id' }, { status: 400 });
   try {
@@ -47,8 +53,9 @@ export async function PATCH(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } },
+  props: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
+  const params = await props.params;
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'bad id' }, { status: 400 });
   try {

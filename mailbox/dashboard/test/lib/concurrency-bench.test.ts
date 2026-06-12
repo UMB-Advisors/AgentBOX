@@ -80,31 +80,6 @@ function makeDraftResponse(body = '{"body":"reply text"}'): string {
   });
 }
 
-/**
- * A classify stub that records account_id + 'classify' into an order array
- * on entry, then resolves immediately. Latency returned is fixed.
- */
-function makeClassifyStub(
-  order: string[],
-  latency_ms = 100,
-  resolveDelay = 0,
-): ConcurrencyBenchDeps['classifyFn'] {
-  return async (account, _trace, _opts): Promise<ClassifyResult> => {
-    order.push(`${account.account_id}:classify:start`);
-    if (resolveDelay > 0) {
-      await new Promise<void>((res) => setTimeout(res, resolveDelay));
-    }
-    order.push(`${account.account_id}:classify:done`);
-    return {
-      response: 'inquiry',
-      eval_count: 10,
-      latency_ms,
-      status: 'ok',
-      error: null,
-    };
-  };
-}
-
 // ── 1. evaluateS1Verdict boundary table ───────────────────────────────
 
 describe('evaluateS1Verdict — MBOX-162 S1 boundary cases', () => {

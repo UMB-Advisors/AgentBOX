@@ -34,8 +34,9 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  props: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
+  const params = await props.params;
   const p = parseParams(params, accountIdParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

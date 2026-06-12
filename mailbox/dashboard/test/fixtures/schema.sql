@@ -1533,3 +1533,9 @@ CREATE INDEX IF NOT EXISTS job_outcomes_department_occurred_idx
 CREATE INDEX IF NOT EXISTS job_outcomes_occurred_idx
   ON mailbox.job_outcomes (occurred_at DESC);
 
+-- ── Migration 050: thread_id indexes ──
+CREATE INDEX IF NOT EXISTS inbox_messages_thread_id_idx
+  ON mailbox.inbox_messages (thread_id);
+CREATE INDEX IF NOT EXISTS sent_history_thread_id_idx
+  ON mailbox.sent_history (thread_id);
+
