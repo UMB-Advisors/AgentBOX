@@ -1,27 +1,15 @@
 name: Deploy dashboard
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SINGLE-DEPLOYER (CI/CD). Every merge to `main` auto-deploys the AgentBOX
-# dashboard to the appliance(s) via the guarded bin/deploy-dashboard.sh, running
-# on a SELF-HOSTED runner on the dev workstation (it has Tailscale SSH to the
-# boxes + the npm build env + the SSH keys). Agents must NOT run
-# deploy-dashboard.sh by hand anymore — merge to main and let this deploy.
-# Break-glass only: run `bin/deploy-dashboard.sh --force` locally if CI is down.
-# See docs/ci-cd-deployer.v0.1.0.md and CLAUDE.md "Deploy Coordination".
+# DECOMMISSIONED 2026-06-12 — deployed the retired hermes_cli-overlay
+# architecture into the rollback-only checkout (~/.hermes/hermes-agent).
+# Custom features deploy from UMB-Advisors/agentbox-sidecar per its
+# docs/update-runbook.md. workflow_dispatch retained for break-glass legacy
+# rollback only. Runner (`agentbox-deploy`) disposition TBD (U2).
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  push:
-    branches: [main]
-    # Only deploy when something the dashboard actually ships changed — doc-only
-    # or unrelated merges don't trigger a (re)deploy.
-    paths:
-      - 'hermes-agent-main/hermes-agent-main/web/**'
-      - 'hermes-agent-main/hermes-agent-main/hermes_cli/**'
-      - 'bin/deploy-dashboard.sh'
-      - 'bin/lib/custom-backend-files.sh'
-      - '.github/workflows/deploy-dashboard.yml'
-  workflow_dispatch: {}   # manual "Run workflow" button in the Actions tab
+  workflow_dispatch: {}   # break-glass legacy rollback only (push trigger removed 2026-06-12)
 
 # Serialize deploys at the workflow level (belt-and-suspenders with the script's
 # flock). Never cancel an in-flight deploy — let it finish, queue the next.
