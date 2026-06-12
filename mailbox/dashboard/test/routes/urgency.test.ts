@@ -231,12 +231,16 @@ dbDescribe('urgency SQL surface + VIP routes — real Postgres', () => {
     );
     const { sender } = (await created.json()) as { sender: { id: number } };
 
-    const delRes = await DELETE(fakeRequest(), { params: { id: String(sender.id) } });
+    const delRes = await DELETE(fakeRequest(), {
+      params: Promise.resolve({ id: String(sender.id) }),
+    });
     expect(delRes.status).toBe(200);
     const delBody = (await delRes.json()) as { deleted: boolean; id: number };
     expect(delBody.deleted).toBe(true);
 
-    const again = await DELETE(fakeRequest(), { params: { id: String(sender.id) } });
+    const again = await DELETE(fakeRequest(), {
+      params: Promise.resolve({ id: String(sender.id) }),
+    });
     expect(again.status).toBe(404);
   });
 });

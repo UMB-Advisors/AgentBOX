@@ -34,10 +34,11 @@ function resolveSelectedAccount(
 }
 
 interface TuningPageProps {
-  searchParams?: { account?: string | string[] };
+  searchParams?: Promise<{ account?: string | string[] }>;
 }
 
-export default async function TuningSettingsPage({ searchParams }: TuningPageProps) {
+export default async function TuningSettingsPage(props: TuningPageProps) {
+  const searchParams = await props.searchParams;
   let initialStyle = { ...DEFAULT_STYLE_PROFILE };
   let toneOverride = false;
   let initialRules: PromptRule[] = [];

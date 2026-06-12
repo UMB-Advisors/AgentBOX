@@ -1,0 +1,3 @@
+# Appliance scripts. Keep this disable list minimal; add entries only with
+# a justifying comment.
+disable=SC1091

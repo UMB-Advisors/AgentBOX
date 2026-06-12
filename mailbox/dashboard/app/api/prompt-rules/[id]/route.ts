@@ -17,8 +17,9 @@ export const dynamic = 'force-dynamic';
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  props: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
+  const params = await props.params;
   const p = parseParams(params, promptRuleIdParamSchema);
   if (!p.ok) return p.response;
   const q = parseQuery(request, accountQuerySchema);
@@ -43,8 +44,9 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  props: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
+  const params = await props.params;
   const p = parseParams(params, promptRuleIdParamSchema);
   if (!p.ok) return p.response;
   const q = parseQuery(request, accountQuerySchema);

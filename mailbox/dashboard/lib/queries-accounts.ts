@@ -369,9 +369,7 @@ export type DeregisterResult =
 //   - a non-default account with NO history → hard delete.
 // The n8n credential teardown (IMAP) is the route/script caller's job — this is
 // the DB projection only.
-export async function deregisterTransportAccount(
-  email: string,
-): Promise<DeregisterResult> {
+export async function deregisterTransportAccount(email: string): Promise<DeregisterResult> {
   const db = getKysely();
   const normalized = email.trim().toLowerCase();
   const acct = await db

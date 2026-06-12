@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
+import { requireOnboardingToken } from '@/lib/middleware/onboarding-auth';
 import { parseJson } from '@/lib/middleware/validate';
 import { isAllowedTransition } from '@/lib/onboarding/wizard-stages';
 import { getOnboarding, setStage } from '@/lib/queries-onboarding';
@@ -11,11 +12,14 @@ export const dynamic = 'force-dynamic';
 // ALLOWED_TRANSITIONS in lib/onboarding/wizard-stages.ts. Skip-aheads,
 // backwards moves, and stale-from concurrency races all return 409.
 //
-// Internal-only: not Caddy basic_auth gated. The wizard pages call this from
-// the customer's browser, so it IS publicly reachable through the dashboard
-// routing — but the operation is bounded (one DB row UPDATE on a single
-// non-secret enum column) and zod-validated (STAQPRO-138). HMAC gating is a
-// planned hardening once the broader internal-route auth model lands.
+// Internal-only: protected by a shared-secret gate (lib/middleware/onboarding-auth.ts)
+// when ONBOARDING_API_TOKEN is set. If the env var is unset the gate is a no-op
+// so existing installs are unaffected. The operative protection on correctly-configured
+// boxes is Caddy basic_auth (see exposure analysis in fix/onboarding-route-auth commit 1).
+// The client-side wizard components (StepNav, ImapConnectForm, GraphConnectForm) are all
+// 'use client' with no server parent to thread the header through; ONBOARDING_API_TOKEN
+// must remain unset until those components are refactored. See onboarding-auth.ts for
+// the full note on the client-threading gap.
 
 interface AdvanceSuccess {
   ok: true;
@@ -28,6 +32,9 @@ interface AdvanceError {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const authError = requireOnboardingToken(request);
+  if (authError) return authError;
+
   const parsed = await parseJson(request, onboardingAdvanceBodySchema);
   if (!parsed.ok) return parsed.response;
 

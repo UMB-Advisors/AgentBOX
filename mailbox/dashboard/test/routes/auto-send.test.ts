@@ -77,13 +77,15 @@ dbDescribe('auto-send rules — real Postgres', () => {
 
       const { PATCH, DELETE } = await import('@/app/api/auto-send-rules/[id]/route');
       const patchRes = await PATCH(fakeRequest({ body: { enabled: false } }), {
-        params: { id: String(rule.id) },
+        params: Promise.resolve({ id: String(rule.id) }),
       });
       expect(patchRes.status).toBe(200);
       const patched = (await patchRes.json()) as { rule: { enabled: boolean } };
       expect(patched.rule.enabled).toBe(false);
 
-      const delRes = await DELETE(fakeRequest({}), { params: { id: String(rule.id) } });
+      const delRes = await DELETE(fakeRequest({}), {
+        params: Promise.resolve({ id: String(rule.id) }),
+      });
       expect(delRes.status).toBe(200);
     });
 
@@ -95,7 +97,7 @@ dbDescribe('auto-send rules — real Postgres', () => {
 
     it('404s deleting a nonexistent rule', async () => {
       const { DELETE } = await import('@/app/api/auto-send-rules/[id]/route');
-      const res = await DELETE(fakeRequest({}), { params: { id: '999999999' } });
+      const res = await DELETE(fakeRequest({}), { params: Promise.resolve({ id: '999999999' }) });
       expect(res.status).toBe(404);
     });
   });

@@ -22,8 +22,9 @@ function accountIdFromQuery(req: NextRequest): number | undefined {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { provider: string } },
+  props: { params: Promise<{ provider: string }> },
 ): Promise<NextResponse> {
+  const params = await props.params;
   const p = parseParams(params, oauthProviderParamSchema);
   if (!p.ok) return p.response;
 
@@ -46,8 +47,9 @@ export async function GET(
 // next fetch sees not_connected and returns an empty snapshot anyway.
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { provider: string } },
+  props: { params: Promise<{ provider: string }> },
 ): Promise<NextResponse> {
+  const params = await props.params;
   const p = parseParams(params, oauthProviderParamSchema);
   if (!p.ok) return p.response;
 

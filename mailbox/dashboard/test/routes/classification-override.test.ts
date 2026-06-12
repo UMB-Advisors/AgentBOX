@@ -31,7 +31,7 @@ dbDescribe('PATCH /api/drafts/[id]/classification — real Postgres', () => {
         fakeRequest({
           body: { category: 'escalate', reason: 'customer is upset, I should reply' },
         }),
-        { params: { id: String(seed.draftId) } },
+        { params: Promise.resolve({ id: String(seed.draftId) }) },
       );
       expect(res.status).toBe(200);
       const body = (await res.json()) as { success: boolean; draft: { category: string } };
@@ -88,7 +88,7 @@ dbDescribe('PATCH /api/drafts/[id]/classification — real Postgres', () => {
     try {
       const { PATCH } = await import('@/app/api/drafts/[id]/classification/route');
       const res = await PATCH(fakeRequest({ body: { category: 'follow_up' } }), {
-        params: { id: String(seed.draftId) },
+        params: Promise.resolve({ id: String(seed.draftId) }),
       });
       expect(res.status).toBe(200);
 
@@ -110,7 +110,7 @@ dbDescribe('PATCH /api/drafts/[id]/classification — real Postgres', () => {
     try {
       const { PATCH } = await import('@/app/api/drafts/[id]/classification/route');
       const res = await PATCH(fakeRequest({ body: { category: 'not_a_real_category' } }), {
-        params: { id: String(seed.draftId) },
+        params: Promise.resolve({ id: String(seed.draftId) }),
       });
       expect(res.status).toBe(400);
       const body = await res.json();
@@ -136,7 +136,7 @@ dbDescribe('PATCH /api/drafts/[id]/classification — real Postgres', () => {
   it('returns 400 for a non-numeric id', async () => {
     const { PATCH } = await import('@/app/api/drafts/[id]/classification/route');
     const res = await PATCH(fakeRequest({ body: { category: 'escalate' } }), {
-      params: { id: 'abc' },
+      params: Promise.resolve({ id: 'abc' }),
     });
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -146,7 +146,7 @@ dbDescribe('PATCH /api/drafts/[id]/classification — real Postgres', () => {
   it('returns 404 for a nonexistent draft', async () => {
     const { PATCH } = await import('@/app/api/drafts/[id]/classification/route');
     const res = await PATCH(fakeRequest({ body: { category: 'escalate' } }), {
-      params: { id: '999999999' },
+      params: Promise.resolve({ id: '999999999' }),
     });
     expect(res.status).toBe(404);
     const body = await res.json();

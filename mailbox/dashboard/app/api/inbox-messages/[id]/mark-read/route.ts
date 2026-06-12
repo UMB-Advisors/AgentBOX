@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic';
 // MBOX-369 — mark a queue row read. Clears the unread dot locally (is_read) and
 // fans out to Gmail (messages.modify removeLabelIds [UNREAD]). Per the MBOX-369
 // decision, the row STAYS in the queue — read is a visual state, not a disposal.
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, idParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

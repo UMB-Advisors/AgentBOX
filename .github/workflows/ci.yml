@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
 
 # Cancel in-progress runs on PR push.
 concurrency:
@@ -41,7 +41,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: dashboard
+        working-directory: mailbox/dashboard
 
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +51,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: dashboard/package-lock.json
+          cache-dependency-path: mailbox/dashboard/package-lock.json
 
       # dashboard/.npmrc points @umb-advisors:* at npm.pkg.github.com and reads
       # the auth token from ${GITHUB_PACKAGES_TOKEN}. The built-in GITHUB_TOKEN
@@ -93,6 +93,26 @@ jobs:
         env:
           TEST_POSTGRES_URL: postgresql://mailbox:mailbox@localhost:5432/mailbox
         run: npm test
+
+  bash-syntax:
+    name: bash -n (install/deploy scripts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check owned shell scripts
+        run: |
+          set -e
+          bash -n install/agentbox-install.sh
+          bash -n bin/deploy-dashboard.sh
+          bash -n bin/lib/custom-backend-files.sh
+          for f in provisioning/*.sh mailbox/scripts/*.sh; do bash -n "$f"; done
+      - name: shellcheck (bin/)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          # --severity=warning: gate on warnings/errors, not info-level advisories.
+          # The deploy scripts intentionally expand local vars client-side into
+          # remote ssh commands (SC2029), which is the desired behavior here.
+          shellcheck -x --severity=warning bin/deploy-dashboard.sh bin/lib/custom-backend-files.sh
 
 # Deferred for follow-up commits under STAQPRO-134:
 #   - Lint/format step (Biome recommended; pick + add)
