@@ -1,7 +1,7 @@
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-> **⚠️ Status (2026-06-11, MBOX-469): the operator UI is the Hermes dashboard, not `mailbox-dashboard`.** `mailbox-dashboard` (Next.js, `:3001`) is now the **headless pipeline backend** behind the hermes reverse-proxy (`/dashboard/*` → `:3001`) — it serves n8n's `/api/internal/*` routes + proxied JSON, but its operator-facing pages are retired/ported to `hermes-agent-main/.../web` (`:9119`). Build new operator UI in Hermes. Don't rename the `mailbox-dashboard` docker service (load-bearing DNS in 8 n8n workflows). See `mailbox/dashboard/CLAUDE.md` and the `[STATE]` on MBOX-469.
+> **⚠️ Status (2026-06-12, MBOX-469): the operator UI is the AgentBOX dashboard served by agentbox-sidecar, not `mailbox-dashboard`.** The operator UI = the AgentBOX dashboard served by **agentbox-sidecar** (`:9200`, tunnel `:9120`; repo `UMB-Advisors/agentbox-sidecar` — UI in `web/`, backend routes in the sidecar FastAPI app). `hermes-agent-main/.../web` is a **stale duplicate — never build there**. `mailbox-dashboard` (Next.js, `:3001`) is the **headless pipeline backend** behind the hermes reverse-proxy (`/dashboard/*` → `:3001`, the single agentbox2-v3 hermes patch — dies with the retirement endgame) — it serves n8n's `/api/internal/*` routes + proxied JSON; its operator-facing pages are retired. Don't rename the `mailbox-dashboard` docker service (load-bearing DNS in 8 n8n workflows). See `mailbox/dashboard/CLAUDE.md` and the `[STATE]` on MBOX-469.
 
 **MailBox One — Email Agent Appliance**
 
