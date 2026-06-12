@@ -9,6 +9,9 @@ on:
   pull_request:
     paths:
       - 'hermes-agent-main/**'
+      # the deprecation banners themselves are allowed to change
+      - '!hermes-agent-main/DEPRECATED.md'
+      - '!hermes-agent-main/hermes-agent-main/web/README.md'
 
 jobs:
   block:
