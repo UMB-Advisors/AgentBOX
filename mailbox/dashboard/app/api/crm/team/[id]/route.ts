@@ -23,6 +23,10 @@ function readPatch(body: Record<string, unknown>): Partial<TeamInput> {
     const d = body.department_id;
     patch.department_id = d === null || d === '' || d === undefined ? null : Number(d);
   }
+  if ('reports_to' in body) {
+    const r = body.reports_to;
+    patch.reports_to = r === null || r === '' || r === undefined ? null : Number(r);
+  }
   if (typeof body.email === 'string') patch.email = body.email;
   if (body.status === 'active' || body.status === 'inactive') patch.status = body.status;
   if (typeof body.notes === 'string') patch.notes = body.notes;

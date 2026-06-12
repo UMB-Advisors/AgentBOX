@@ -1,0 +1,15 @@
+# systemd USER unit (install: ~/.config/systemd/user/, systemctl --user)
+[Unit]
+Description=gbrain ingest: Google Calendar events -> entity pages
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.hermes/.env
+WorkingDirectory=%h/gbrain-ingest
+ExecStart=/usr/bin/flock -w 600 /tmp/gbrain-ingest.lock /usr/bin/python3 %h/gbrain-ingest/ingest_calendar.py --days-back 7 --days-forward 30
+Nice=10
+TimeoutStartSec=30min
+
+[Install]
+WantedBy=default.target

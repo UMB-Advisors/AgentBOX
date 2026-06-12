@@ -1649,7 +1649,14 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
             # Without a workdir, keep cwd context discovery disabled.
             skip_context_files=not bool(_job_workdir),
             load_soul_identity=True,
-            skip_memory=True,  # Cron system prompts would corrupt user representations
+            # Read-only memory recall: builtin MEMORY.md/USER.md stays off (cron
+            # system prompts would corrupt user representations); memory providers
+            # receive agent_context="cron" and self-gate all writes.
+            memory_context="cron",
+            # Per-job entity binding (Phase 5): an optional memory_entity job
+            # field scopes the memory provider's recall to that entity source
+            # for this run (threaded to provider initialize as memory_source).
+            memory_source=(str(job.get("memory_entity") or "").strip() or None),
             platform="cron",
             session_id=_cron_session_id,
             session_db=_session_db,

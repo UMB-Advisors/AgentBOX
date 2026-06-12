@@ -1,6 +1,17 @@
 {
   "active": true,
   "connections": {
+    "Acquire Send Lock": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Lock Acquired?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
     "Already Sent?": {
       "main": [
         [
@@ -14,35 +25,6 @@
           {
             "index": 0,
             "node": "Acquire Send Lock",
-            "type": "main"
-          }
-        ]
-      ]
-    },
-    "Acquire Send Lock": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Lock Acquired?",
-            "type": "main"
-          }
-        ]
-      ]
-    },
-    "Lock Acquired?": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Gmail Reply",
-            "type": "main"
-          }
-        ],
-        [
-          {
-            "index": 0,
-            "node": "Respond Already Attempted",
             "type": "main"
           }
         ]
@@ -88,6 +70,24 @@
         ]
       ]
     },
+    "Lock Acquired?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Gmail Reply",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Respond Already Attempted",
+            "type": "main"
+          }
+        ]
+      ]
+    },
     "Mark Sent": {
       "main": [
         [
@@ -118,6 +118,7 @@
     "aiBuilderAssisted": true
   },
   "name": "MailBOX-Send",
+  "nodeGroups": [],
   "nodes": [
     {
       "id": "3c0e8e7f-57c2-4ed2-b411-52c955f4f0a9",
@@ -138,18 +139,18 @@
     },
     {
       "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
       "id": "c4b66934-9a16-4654-bbb0-3baa5a358761",
       "name": "Load Draft",
       "parameters": {
         "operation": "executeQuery",
         "options": {},
         "query": "SELECT\n  d.id            AS draft_id,\n  d.draft_subject AS draft_subject,\n  d.draft_body    AS draft_body,\n  d.status        AS status,\n  d.sent_gmail_message_id,\n  d.inbox_message_id,\n  m.message_id,\n  m.thread_id,\n  m.from_addr,\n  m.to_addr,\n  m.subject       AS original_subject\nFROM mailbox.drafts d\nJOIN mailbox.inbox_messages m ON d.inbox_message_id = m.id\nWHERE d.id = {{ Number($json.body.draft_id) }}\n  AND d.status IN ('approved', 'edited');"
-      },
-      "credentials": {
-        "postgres": {
-          "id": "JFX4tvrffvKnTouV",
-          "name": "MailBox Postgres"
-        }
       },
       "position": [
         432,
@@ -226,6 +227,12 @@
       "typeVersion": 2.3
     },
     {
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
       "id": "51102b37-86ec-47db-aa19-5173850d395e",
       "name": "Mark Sent",
       "parameters": {
@@ -307,12 +314,6 @@
           "value": "drafts"
         }
       },
-      "credentials": {
-        "postgres": {
-          "id": "JFX4tvrffvKnTouV",
-          "name": "MailBox Postgres"
-        }
-      },
       "position": [
         1600,
         320
@@ -336,6 +337,12 @@
       "typeVersion": 1.1
     },
     {
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "vEz5mz0uaAtlK8yz",
+          "name": "Gmail account"
+        }
+      },
       "id": "d4f4705f-8d43-425b-9892-60f819acfdd4",
       "name": "Gmail Reply",
       "parameters": {
@@ -347,12 +354,6 @@
           "appendAttribution": false
         },
         "resource": "message"
-      },
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "vEz5mz0uaAtlK8yz",
-          "name": "Gmail account"
-        }
       },
       "position": [
         1408,
@@ -379,18 +380,18 @@
     },
     {
       "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
       "id": "a1c11ea7-5e2f-4f7d-87aa-1d2db98c2026",
       "name": "Acquire Send Lock",
       "parameters": {
         "operation": "executeQuery",
         "options": {},
         "query": "-- STAQPRO-IDEM-2026-05-22: CAS-acquire the send lock BEFORE Gmail Reply.\n-- Sets send_attempt_at = NOW() iff it's currently NULL. If 0 rows return,\n-- a prior attempt is in flight (or crashed mid-send) — refuse to re-fire\n-- Gmail Reply. Operator must verify in Gmail Sent + clear send_attempt_at\n-- manually before another retry can proceed.\nUPDATE mailbox.drafts\nSET send_attempt_at = NOW(),\n    updated_at      = NOW()\nWHERE id = {{ Number($('Load Draft').item.json.draft_id) }}\n  AND status IN ('approved', 'edited')\n  AND send_attempt_at IS NULL\nRETURNING id;"
-      },
-      "credentials": {
-        "postgres": {
-          "id": "JFX4tvrffvKnTouV",
-          "name": "MailBox Postgres"
-        }
       },
       "position": [
         1056,
@@ -453,8 +454,14 @@
   ],
   "pinData": {},
   "settings": {
+    "errorWorkflow": "MlbxErrHandler01",
     "executionOrder": "v1"
   },
+  "sourceWorkflowId": null,
   "staticData": null,
-  "tags": []
+  "tags": [],
+  "versionMetadata": {
+    "description": "",
+    "name": "Version 6955f88d"
+  }
 }

@@ -1,0 +1,22 @@
+# systemd USER unit (install: ~/.config/systemd/user/, systemctl --user)
+[Unit]
+Description=gbrain ingest: CRM contacts -> entity contact pages
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.hermes/.env
+WorkingDirectory=%h/gbrain-ingest
+ExecStart=/usr/bin/flock -w 600 /tmp/gbrain-ingest.lock /usr/bin/python3 %h/gbrain-ingest/ingest_contacts.py
+# SECURITY: the re-attribution move decision is driven by received-mail From
+# headers, which are attacker-spoofable. Re-attribution therefore runs ONLY on
+# demand and reports a plan by default — executing moves now requires an
+# explicit `--re-attribute --confirm`, which a human runs after reviewing the
+# proposed (esp. [sender-only]) moves. The unattended daily ExecStart that
+# previously ran `--re-attribute` is intentionally removed; the regular ingest
+# above still runs (it does not move anything between entities).
+Nice=10
+TimeoutStartSec=60min
+
+[Install]
+WantedBy=default.target

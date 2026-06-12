@@ -1,5 +1,5 @@
 {
-  "active": false,
+  "active": true,
   "connections": {
     "Build Prompt": {
       "main": [
@@ -18,6 +18,17 @@
           {
             "index": 0,
             "node": "Normalize",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Dedup Gate": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Build Prompt",
             "type": "main"
           }
         ]
@@ -53,6 +64,11 @@
             "index": 0,
             "node": "Pack Draft Id",
             "type": "main"
+          },
+          {
+            "index": 0,
+            "node": "Mark Processed",
+            "type": "main"
           }
         ]
       ]
@@ -73,7 +89,7 @@
         [
           {
             "index": 0,
-            "node": "Build Prompt",
+            "node": "Dedup Gate",
             "type": "main"
           }
         ]
@@ -106,7 +122,7 @@
         [
           {
             "index": 0,
-            "node": "Insert Draft Stub",
+            "node": "Should Draft?",
             "type": "main"
           }
         ],
@@ -135,6 +151,18 @@
         ]
       ]
     },
+    "Should Draft?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Insert Draft Stub",
+            "type": "main"
+          }
+        ],
+        []
+      ]
+    },
     "When Called by Main": {
       "main": [
         [
@@ -152,6 +180,7 @@
   "isArchived": false,
   "meta": null,
   "name": "MailBOX-Classify",
+  "nodeGroups": [],
   "nodes": [
     {
       "id": "trg00000-0000-0000-0000-000000000001",
@@ -180,7 +209,7 @@
         "options": {
           "queryReplacement": "={{ String($json.id) }}"
         },
-        "query": "SELECT id, message_id, thread_id, from_addr, to_addr, subject, received_at, snippet, body, in_reply_to, \"references\" FROM mailbox.inbox_messages WHERE id = $1 LIMIT 1"
+        "query": "SELECT m.id, m.message_id, m.thread_id, m.from_addr, m.to_addr, m.subject, m.received_at, m.snippet, m.body, m.in_reply_to, m.\"references\", m.account_id, (position(lower(a.email_address) in lower(coalesce(m.to_addr,''))) > 0) AS operator_addressed, (SELECT count(*)::int FROM mailbox.draft_feedback df JOIN mailbox.drafts d2 ON d2.id = df.draft_id JOIN mailbox.inbox_messages m2 ON m2.id = d2.inbox_message_id WHERE df.reason_code IN ('dont_reply','should_reply_myself') AND lower(m2.from_addr) = lower(m.from_addr) AND m2.account_id = m.account_id) AS sender_suppress_count FROM mailbox.inbox_messages m JOIN mailbox.accounts a ON a.id = m.account_id WHERE m.id = $1 LIMIT 1"
       },
       "position": [
         220,
@@ -196,7 +225,7 @@
         "jsonBody": "={\n  \"from\": {{ JSON.stringify($json.from_addr || '') }},\n  \"subject\": {{ JSON.stringify($json.subject || '') }},\n  \"body\": {{ JSON.stringify($json.body || $json.snippet || '') }}\n}",
         "method": "POST",
         "options": {
-          "timeout": 5000
+          "timeout": 60000
         },
         "sendBody": true,
         "specifyBody": "json",
@@ -277,7 +306,7 @@
         "jsonBody": "={\n  \"raw\": {{ JSON.stringify($json.response || $json.thinking || '') }},\n  \"from\": {{ JSON.stringify($('Load Inbox Row').item.json.from_addr || '') }},\n  \"to\": {{ JSON.stringify($('Load Inbox Row').item.json.to_addr || '') }}\n}",
         "method": "POST",
         "options": {
-          "timeout": 5000
+          "timeout": 60000
         },
         "sendBody": true,
         "specifyBody": "json",
@@ -497,7 +526,7 @@
       "parameters": {
         "method": "GET",
         "options": {
-          "timeout": 5000
+          "timeout": 60000
         },
         "url": "http://mailbox-dashboard:3001/dashboard/api/onboarding/live-gate"
       },
@@ -666,9 +695,17 @@
               "id": "auto_send_blocked",
               "required": false,
               "type": "boolean"
+            },
+            {
+              "display": true,
+              "displayName": "account_id",
+              "id": "account_id",
+              "required": false,
+              "type": "number"
             }
           ],
           "value": {
+            "account_id": "={{ Number($('Load Inbox Row').item.json.account_id) }}",
             "auto_send_blocked": "={{ $('Shape Log Row').item.json.category === 'escalate' }}",
             "body_text": "={{ $('Load Inbox Row').item.json.body }}",
             "classification_category": "={{ $('Shape Log Row').item.json.category }}",
@@ -750,12 +787,124 @@
       ],
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2
+    },
+    {
+      "id": "if000000-0000-0000-0000-000000000031",
+      "name": "Should Draft?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cc-guard",
+              "leftValue": "={{ $('Load Inbox Row').item.json.operator_addressed }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": true
+            },
+            {
+              "id": "sender-suppress",
+              "leftValue": "={{ Number($('Load Inbox Row').item.json.sender_suppress_count) }}",
+              "operator": {
+                "operation": "lt",
+                "type": "number"
+              },
+              "rightValue": 2
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        2280,
+        -100
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "10e9abfa-3444-4404-9056-8c0f622ea1f0",
+      "name": "Dedup Gate",
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "eRpSG4hI2Ac6WpxI"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "account_id",
+              "keyValue": "={{ $json.account_id }}"
+            },
+            {
+              "condition": "eq",
+              "keyName": "provider_message_id",
+              "keyValue": "={{ $json.message_id }}"
+            }
+          ]
+        },
+        "matchType": "allConditions",
+        "operation": "rowNotExists",
+        "resource": "row"
+      },
+      "position": [
+        280,
+        160
+      ],
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1
+    },
+    {
+      "id": "7a15060f-ef6d-49dd-80ea-f2a40e02881b",
+      "name": "Mark Processed",
+      "parameters": {
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [],
+          "value": {
+            "account_id": "={{ $('Load Inbox Row').item.json.account_id }}",
+            "ingested_at": "={{ $now.toISO() }}",
+            "provider_message_id": "={{ $('Load Inbox Row').item.json.message_id }}"
+          }
+        },
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "eRpSG4hI2Ac6WpxI"
+        },
+        "operation": "insert",
+        "resource": "row"
+      },
+      "position": [
+        2480,
+        100
+      ],
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1
     }
   ],
   "pinData": {},
   "settings": {
+    "errorWorkflow": "MlbxErrHandler01",
     "executionOrder": "v1"
   },
+  "sourceWorkflowId": null,
   "staticData": null,
-  "tags": []
+  "tags": [],
+  "versionMetadata": {
+    "description": null,
+    "name": null
+  }
 }

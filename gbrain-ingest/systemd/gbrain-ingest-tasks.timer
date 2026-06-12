@@ -1,0 +1,11 @@
+[Unit]
+Description=Run gbrain kanban-task ingestion every 6 hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:20:00
+RandomizedDelaySec=300
+Persistent=true
+Unit=gbrain-ingest-tasks.service
+
+[Install]
+WantedBy=timers.target

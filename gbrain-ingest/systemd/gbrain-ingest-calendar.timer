@@ -1,0 +1,11 @@
+[Unit]
+Description=Run gbrain calendar ingestion every 6 hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:10:00
+RandomizedDelaySec=300
+Persistent=true
+Unit=gbrain-ingest-calendar.service
+
+[Install]
+WantedBy=timers.target

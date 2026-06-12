@@ -1,41 +1,12 @@
 {
-  "active": true,
+  "active": false,
   "connections": {
-    "Webhook (mailbox-imap-send)": {
+    "Acquire Send Lock": {
       "main": [
         [
           {
             "index": 0,
-            "node": "Load Draft IMAP",
-            "type": "main"
-          }
-        ]
-      ]
-    },
-    "Load Draft IMAP": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "If draft loaded",
-            "type": "main"
-          }
-        ]
-      ]
-    },
-    "If draft loaded": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Already Sent?",
-            "type": "main"
-          }
-        ],
-        [
-          {
-            "index": 0,
-            "node": "Respond Not Found",
+            "node": "Lock Acquired?",
             "type": "main"
           }
         ]
@@ -59,12 +30,30 @@
         ]
       ]
     },
-    "Acquire Send Lock": {
+    "If draft loaded": {
       "main": [
         [
           {
             "index": 0,
-            "node": "Lock Acquired?",
+            "node": "Already Sent?",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Respond Not Found",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Load Draft IMAP": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "If draft loaded",
             "type": "main"
           }
         ]
@@ -88,6 +77,17 @@
         ]
       ]
     },
+    "Mark Sent IMAP": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Respond Success",
+            "type": "main"
+          }
+        ]
+      ]
+    },
     "Send Email (SMTP)": {
       "main": [
         [
@@ -99,74 +99,69 @@
         ]
       ]
     },
-    "Mark Sent IMAP": {
+    "Webhook (mailbox-imap-send)": {
       "main": [
         [
           {
             "index": 0,
-            "node": "Respond Success",
+            "node": "Load Draft IMAP",
             "type": "main"
           }
         ]
       ]
     }
   },
-  "description": "MBOX-357 (P1 T5) — IMAP/SMTP egress, the per-transport sibling of MailBOX-Send (DR-56 Option A). The dashboard's send trigger (lib/n8n.ts) routes here via N8N_IMAP_WEBHOOK_URL when the draft's account is an IMAP provider, leaving MailBOX-Send (the live Gmail critical path) byte-untouched. Same { draft_id } contract + send_attempt_at CAS idempotency lock (migration 025) as the Gmail path; the only differences are the SMTP Send Email node instead of Gmail Reply, and writing the provider-neutral drafts.provider_message_id (not sent_gmail_message_id). The 'Already Sent?' guard keys on provider_message_id. ON IMPORT: (1) create + link an SMTP credential ('MailBox SMTP') for the operator's outbound server (DR-58: app-password / basic-auth v1, domain-aligned per NC-37 — no relay); (2) re-point the Postgres credential id if it differs. EXPRESSION CONVENTION (MBOX-344): Send Email + Mark Sent IMAP read $('Load Draft IMAP').item.json.* — NEVER bare $json — because Acquire Send Lock (RETURNING id) sits between and would blank a bare $json read. S-MP-2 RESIDUAL: emailSend sets To/Subject(Re:)/body + replyTo; true RFC In-Reply-To/References threading headers are tuned/verified on the M1 test rig (kill-criterion: ship flat + flag degraded mode).",
+  "description": "MBOX-357 (P1 T5) \u2014 IMAP/SMTP egress, the per-transport sibling of MailBOX-Send (DR-56 Option A). The dashboard's send trigger (lib/n8n.ts) routes here via N8N_IMAP_WEBHOOK_URL when the draft's account is an IMAP provider, leaving MailBOX-Send (the live Gmail critical path) byte-untouched. Same { draft_id } contract + send_attempt_at CAS idempotency lock (migration 025) as the Gmail path; the only differences are the SMTP Send Email node instead of Gmail Reply, and writing the provider-neutral drafts.provider_message_id (not sent_gmail_message_id). The 'Already Sent?' guard keys on provider_message_id. ON IMPORT: (1) create + link an SMTP credential ('MailBox SMTP') for the operator's outbound server (DR-58: app-password / basic-auth v1, domain-aligned per NC-37 \u2014 no relay); (2) re-point the Postgres credential id if it differs. EXPRESSION CONVENTION (MBOX-344): Send Email + Mark Sent IMAP read $('Load Draft IMAP').item.json.* \u2014 NEVER bare $json \u2014 because Acquire Send Lock (RETURNING id) sits between and would blank a bare $json read. S-MP-2 RESIDUAL: emailSend sets To/Subject(Re:)/body + replyTo; true RFC In-Reply-To/References threading headers are tuned/verified on the M1 test rig (kill-criterion: ship flat + flag degraded mode).",
   "id": "mailbox-imap-send",
   "isArchived": false,
   "meta": {
     "templateCredsSetupCompleted": false
   },
   "name": "MailBOX-Imap-Send",
+  "nodeGroups": [],
   "nodes": [
     {
       "id": "d2c00000-0000-0000-0000-000000000001",
       "name": "Webhook (mailbox-imap-send)",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2.1,
-      "position": [
-        208,
-        320
-      ],
       "parameters": {
         "httpMethod": "POST",
         "options": {},
         "path": "mailbox-imap-send",
         "responseMode": "responseNode"
       },
+      "position": [
+        208,
+        320
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
       "webhookId": "d2c0aa00-39f4-4154-a33d-712366a7b201"
     },
     {
       "alwaysOutputData": true,
-      "id": "d2c00000-0000-0000-0000-000000000002",
-      "name": "Load Draft IMAP",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        432,
-        320
-      ],
-      "parameters": {
-        "operation": "executeQuery",
-        "options": {},
-        "query": "SELECT\n  d.id            AS draft_id,\n  d.draft_subject AS draft_subject,\n  d.draft_body    AS draft_body,\n  d.status        AS status,\n  d.provider_message_id,\n  d.inbox_message_id,\n  m.message_id,\n  m.thread_id,\n  m.from_addr,\n  m.to_addr,\n  m.subject       AS original_subject,\n  m.references    AS original_references,\n  a.email_address AS account_email\nFROM mailbox.drafts d\nJOIN mailbox.inbox_messages m ON d.inbox_message_id = m.id\nJOIN mailbox.accounts a ON d.account_id = a.id\nWHERE d.id = {{ Number($json.body.draft_id) }}\n  AND d.status IN ('approved', 'edited');"
-      },
       "credentials": {
         "postgres": {
           "id": "JFX4tvrffvKnTouV",
           "name": "MailBox Postgres"
         }
-      }
+      },
+      "id": "d2c00000-0000-0000-0000-000000000002",
+      "name": "Load Draft IMAP",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "SELECT\n  d.id            AS draft_id,\n  d.draft_subject AS draft_subject,\n  d.draft_body    AS draft_body,\n  d.status        AS status,\n  d.provider_message_id,\n  d.inbox_message_id,\n  m.message_id,\n  m.thread_id,\n  m.from_addr,\n  m.to_addr,\n  m.subject       AS original_subject,\n  m.references    AS original_references,\n  a.email_address AS account_email\nFROM mailbox.drafts d\nJOIN mailbox.inbox_messages m ON d.inbox_message_id = m.id\nJOIN mailbox.accounts a ON d.account_id = a.id\nWHERE d.id = {{ Number($json.body.draft_id) }}\n  AND d.status IN ('approved', 'edited');"
+      },
+      "position": [
+        432,
+        320
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5
     },
     {
       "id": "d2c00000-0000-0000-0000-000000000003",
       "name": "If draft loaded",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.1,
-      "position": [
-        640,
-        320
-      ],
       "parameters": {
         "conditions": {
           "combinator": "and",
@@ -189,17 +184,17 @@
           }
         },
         "options": {}
-      }
+      },
+      "position": [
+        640,
+        320
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1
     },
     {
       "id": "d2c00000-0000-0000-0000-000000000004",
       "name": "Already Sent?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        848,
-        320
-      ],
       "parameters": {
         "conditions": {
           "combinator": "and",
@@ -223,39 +218,39 @@
           }
         },
         "options": {}
-      }
+      },
+      "position": [
+        848,
+        320
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3
     },
     {
       "alwaysOutputData": true,
-      "id": "d2c00000-0000-0000-0000-000000000005",
-      "name": "Acquire Send Lock",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        1056,
-        320
-      ],
-      "parameters": {
-        "operation": "executeQuery",
-        "options": {},
-        "query": "-- Migration 025 idempotency lock (provider-neutral). CAS-acquire BEFORE the\n-- SMTP send: set send_attempt_at = NOW() iff currently NULL. 0 rows returned =\n-- a prior attempt is in flight or crashed mid-send → refuse to re-fire. Operator\n-- verifies in the Sent folder + clears send_attempt_at before another retry.\nUPDATE mailbox.drafts\nSET send_attempt_at = NOW(),\n    updated_at      = NOW()\nWHERE id = {{ Number($('Load Draft IMAP').item.json.draft_id) }}\n  AND status IN ('approved', 'edited')\n  AND send_attempt_at IS NULL\nRETURNING id;"
-      },
       "credentials": {
         "postgres": {
           "id": "JFX4tvrffvKnTouV",
           "name": "MailBox Postgres"
         }
-      }
+      },
+      "id": "d2c00000-0000-0000-0000-000000000005",
+      "name": "Acquire Send Lock",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "-- Migration 025 idempotency lock (provider-neutral). CAS-acquire BEFORE the\n-- SMTP send: set send_attempt_at = NOW() iff currently NULL. 0 rows returned =\n-- a prior attempt is in flight or crashed mid-send \u2192 refuse to re-fire. Operator\n-- verifies in the Sent folder + clears send_attempt_at before another retry.\nUPDATE mailbox.drafts\nSET send_attempt_at = NOW(),\n    updated_at      = NOW()\nWHERE id = {{ Number($('Load Draft IMAP').item.json.draft_id) }}\n  AND status IN ('approved', 'edited')\n  AND send_attempt_at IS NULL\nRETURNING id;"
+      },
+      "position": [
+        1056,
+        320
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5
     },
     {
       "id": "d2c00000-0000-0000-0000-000000000006",
       "name": "Lock Acquired?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        1216,
-        320
-      ],
       "parameters": {
         "conditions": {
           "combinator": "and",
@@ -279,56 +274,51 @@
           }
         },
         "options": {}
-      }
+      },
+      "position": [
+        1216,
+        320
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3
     },
     {
-      "id": "d2c00000-0000-0000-0000-000000000007",
-      "name": "Send Email (SMTP)",
-      "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2.1,
-      "position": [
-        1408,
-        240
-      ],
-      "parameters": {
-        "fromEmail": "={{ $('Load Draft IMAP').item.json.account_email }}",
-        "toEmail": "={{ $('Load Draft IMAP').item.json.from_addr }}",
-        "subject": "={{ ($('Load Draft IMAP').item.json.original_subject || '').toLowerCase().startsWith('re:') ? $('Load Draft IMAP').item.json.original_subject : 'Re: ' + ($('Load Draft IMAP').item.json.original_subject || '') }}",
-        "emailFormat": "text",
-        "text": "={{ $('Load Draft IMAP').item.json.draft_body }}",
-        "options": {
-          "appendAttribution": false,
-          "replyTo": "={{ $('Load Draft IMAP').item.json.account_email }}"
-        }
-      },
       "credentials": {
         "smtp": {
           "id": "REPLACE_ON_IMPORT_SMTP",
           "name": "MailBox SMTP"
         }
-      }
+      },
+      "id": "d2c00000-0000-0000-0000-000000000007",
+      "name": "Send Email (SMTP)",
+      "parameters": {
+        "emailFormat": "text",
+        "fromEmail": "={{ $('Load Draft IMAP').item.json.account_email }}",
+        "options": {
+          "appendAttribution": false,
+          "replyTo": "={{ $('Load Draft IMAP').item.json.account_email }}"
+        },
+        "subject": "={{ ($('Load Draft IMAP').item.json.original_subject || '').toLowerCase().startsWith('re:') ? $('Load Draft IMAP').item.json.original_subject : 'Re: ' + ($('Load Draft IMAP').item.json.original_subject || '') }}",
+        "text": "={{ $('Load Draft IMAP').item.json.draft_body }}",
+        "toEmail": "={{ $('Load Draft IMAP').item.json.from_addr }}"
+      },
+      "position": [
+        1408,
+        240
+      ],
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1
     },
     {
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
       "id": "d2c00000-0000-0000-0000-000000000008",
       "name": "Mark Sent IMAP",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        1600,
-        320
-      ],
       "parameters": {
-        "operation": "update",
-        "schema": {
-          "__rl": true,
-          "mode": "list",
-          "value": "mailbox"
-        },
-        "table": {
-          "__rl": true,
-          "mode": "list",
-          "value": "drafts"
-        },
         "columns": {
           "mappingMode": "defineBelow",
           "matchingColumns": [
@@ -388,73 +378,90 @@
           "value": {
             "error_message": null,
             "id": "={{ $('Load Draft IMAP').item.json.draft_id }}",
-            "send_attempt_at": null,
             "provider_message_id": "={{ $('Send Email (SMTP)').item?.json?.messageId ?? ('imap-sent-' + $('Load Draft IMAP').item.json.draft_id) }}",
+            "send_attempt_at": null,
             "status": "sent",
             "updated_at": "={{ $now.toISO() }}"
           }
         },
-        "options": {}
-      },
-      "credentials": {
-        "postgres": {
-          "id": "JFX4tvrffvKnTouV",
-          "name": "MailBox Postgres"
+        "operation": "update",
+        "options": {},
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "mailbox"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "drafts"
         }
-      }
+      },
+      "position": [
+        1600,
+        320
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5
     },
     {
       "id": "d2c00000-0000-0000-0000-000000000009",
       "name": "Respond Success",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        1808,
-        320
-      ],
       "parameters": {
         "options": {},
         "respondWith": "json",
         "responseBody": "={{ { success: true, draft_id: $('Load Draft IMAP').item.json.draft_id, sent_at: $now.toISO() } }}"
-      }
+      },
+      "position": [
+        1808,
+        320
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1
     },
     {
       "id": "d2c00000-0000-0000-0000-00000000000a",
       "name": "Respond Not Found",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        1088,
-        480
-      ],
       "parameters": {
         "options": {},
         "respondWith": "json",
         "responseBody": "={{ { success: false, error: 'Draft not found, or not in approved/edited status', draft_id: $('Webhook (mailbox-imap-send)').item.json.body.draft_id } }}"
-      }
+      },
+      "position": [
+        1088,
+        480
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1
     },
     {
       "id": "d2c00000-0000-0000-0000-00000000000b",
       "name": "Respond Already Attempted",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        1344,
-        480
-      ],
       "parameters": {
         "options": {
           "responseCode": 409
         },
         "respondWith": "json",
-        "responseBody": "={{ { success: false, error: 'send_attempt_at already set — possible duplicate. Verify in your Sent folder, then clear mailbox.drafts.send_attempt_at to retry.', draft_id: $('Load Draft IMAP').item.json.draft_id } }}"
-      }
+        "responseBody": "={{ { success: false, error: 'send_attempt_at already set \u2014 possible duplicate. Verify in your Sent folder, then clear mailbox.drafts.send_attempt_at to retry.', draft_id: $('Load Draft IMAP').item.json.draft_id } }}"
+      },
+      "position": [
+        1344,
+        480
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1
     }
   ],
   "pinData": {},
   "settings": {
+    "errorWorkflow": "MlbxErrHandler01",
     "executionOrder": "v1"
   },
+  "sourceWorkflowId": null,
   "staticData": null,
-  "tags": []
+  "tags": [],
+  "versionMetadata": {
+    "description": null,
+    "name": null
+  }
 }

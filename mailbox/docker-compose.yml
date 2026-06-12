@@ -107,7 +107,7 @@ services:
     restart: unless-stopped
     depends_on: []
   n8n:
-    image: n8nio/n8n:2.14.2
+    image: n8nio/n8n:2.25.7
     environment:
       DB_TYPE: postgresdb
       DB_POSTGRESDB_HOST: postgres
@@ -156,6 +156,23 @@ services:
       # recipient resolution live on the dashboard side (ALERT_* read by
       # /api/internal/alert-check); n8n only needs the cadence. Unset → 15.
       ALERT_CHECK_INTERVAL_MIN: ${ALERT_CHECK_INTERVAL_MIN:-15}
+      # MBOX-466 (transport OPTION B — dashboard mints) — shared secret for the
+      # token-authority endpoint, which lives on the mailbox-dashboard CONTAINER
+      # (GET http://mailbox-dashboard:3001/dashboard/api/internal/google/access-token),
+      # NOT on Hermes. The MailBOX workflow's "Get Gmail Token" node sends this
+      # value as the X-Hermes-Internal-Token header; the dashboard route reads the
+      # same HERMES_INTERNAL_TOKEN env and constant-time-compares (fail closed if
+      # unset). The call stays on the docker network — no host-gateway, no Caddy
+      # route. Reference the secret from the env; never hardcode a value.
+      HERMES_INTERNAL_TOKEN: ${HERMES_INTERNAL_TOKEN}
+      # MailBOX-ErrorHandler (PR #88) — alert recipient + per-workflow throttle,
+      # read via $env in the error workflow's Code node. Recipient resolution:
+      # ERROR_ALERT_RECIPIENT → MAILBOX_OPERATOR_EMAIL → computes-but-skips send.
+      # Without these forwards the .env values never reach the n8n container
+      # (this environment: block is an explicit allowlist).
+      ERROR_ALERT_RECIPIENT: ${ERROR_ALERT_RECIPIENT:-}
+      ERROR_ALERT_THROTTLE_MIN: ${ERROR_ALERT_THROTTLE_MIN:-60}
+      MAILBOX_OPERATOR_EMAIL: ${MAILBOX_OPERATOR_EMAIL:-}
     volumes:
     - n8n_data:/home/node/.n8n
     healthcheck:
@@ -387,8 +404,33 @@ services:
       # uses by default. Override only if you deploy under a non-default
       # project name (`docker compose -p <name>`).
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-mailbox}
+      # MBOX-466 (transport OPTION B — dashboard mints) — this container is the
+      # Gmail token authority for n8n ingestion. The new route
+      # app/api/internal/google/access-token reads the read-only-mounted Hermes
+      # SoT store (below) and mints short-lived access tokens. HERMES_STORE_DIR
+      # is the container-side mount root (matches the volume targets below);
+      # HERMES_INTERNAL_TOKEN is the shared secret the route constant-time-checks
+      # against the X-Hermes-Internal-Token header n8n sends (fail closed if
+      # unset — no token, every request 401s). Same value lives in the n8n
+      # service env above. Reference the secret from .env; never hardcode.
+      HERMES_STORE_DIR: /hermes-store
+      HERMES_INTERNAL_TOKEN: ${HERMES_INTERNAL_TOKEN}
+      # Dogfood escape hatch: bypass the onboarding live-gate so classify→draft
+      # runs on a box that hasn't completed the onboarding wizard. Set =1 in .env.
+      MAILBOX_LIVE_GATE_BYPASS: ${MAILBOX_LIVE_GATE_BYPASS:-}
     volumes:
       - mailbox_kb_uploads:/var/lib/mailbox/kb
+      # MBOX-466 (transport OPTION B) — mount the host Hermes Google store
+      # READ-ONLY so the access-token route mints Gmail tokens from the SAME
+      # connection the operator made in the dashboard's Settings → Google. Hermes
+      # (the host process) writes these files via hermes_cli/google_accounts.py;
+      # the dashboard only ever READS them (:ro). Host-path style mirrors the
+      # HOST_REPO_DIR bind below (${VAR:-default}). HERMES_HOME defaults to
+      # ${HOME}/.hermes — the same store Calendar/Drive/the account selector use.
+      #   accounts/<email>.json  → per-account refresh token (read for the email)
+      #   client_secret.json     → the operator's Google OAuth Web client
+      - ${HERMES_HOME:-${HOME}/.hermes}/google_accounts:/hermes-store/accounts:ro
+      - ${HERMES_HOME:-${HOME}/.hermes}/google_client_secret.json:/hermes-store/client_secret.json:ro
       # MBOX-163 — bind-mount the host repo READ-ONLY so the dashboard can
       # surface live appliance git state on /api/system/status (branch,
       # short_sha, commits_behind_master, fetch age, dirty). Closes the

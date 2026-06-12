@@ -23,6 +23,17 @@
         ]
       ]
     },
+    "Send Digest": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Record Send",
+            "type": "main"
+          }
+        ]
+      ]
+    },
     "Should Send?": {
       "main": [
         [
@@ -34,26 +45,16 @@
         ],
         []
       ]
-    },
-    "Send Digest": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Record Send",
-            "type": "main"
-          }
-        ]
-      ]
     }
   },
-  "description": "MBOX-132 Phase 2d — daily operator digest. Fires once per day at DIGEST_SEND_HOUR_LOCAL, asks the dashboard to render the digest + decide whether to send (recipient resolved + DIGEST_SEND_FROM_GMAIL on + not already sent today), sends via appliance Gmail OAuth, then records the send in mailbox.digest_sends for the once-per-day de-dupe guard.",
+  "description": "MBOX-132 Phase 2d \u2014 daily operator digest. Fires once per day at DIGEST_SEND_HOUR_LOCAL, asks the dashboard to render the digest + decide whether to send (recipient resolved + DIGEST_SEND_FROM_GMAIL on + not already sent today), sends via appliance Gmail OAuth, then records the send in mailbox.digest_sends for the once-per-day de-dupe guard.",
   "id": "MlbxDigestSb0001",
   "isArchived": false,
   "meta": {
     "templateCredsSetupCompleted": true
   },
   "name": "MailBOX-Digest",
+  "nodeGroups": [],
   "nodes": [
     {
       "id": "a1000000-0000-0000-0000-000000000001",
@@ -81,10 +82,10 @@
       "name": "Get Digest",
       "parameters": {
         "method": "GET",
-        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/digest",
         "options": {
           "timeout": 15000
-        }
+        },
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/digest"
       },
       "position": [
         220,
@@ -98,25 +99,25 @@
       "name": "Should Send?",
       "parameters": {
         "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "a1000c01-0000-0000-0000-000000000001",
+              "leftValue": "={{ $json.should_send }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": true
+            }
+          ],
           "options": {
             "caseSensitive": true,
             "leftValue": "",
             "typeValidation": "strict",
             "version": 2
-          },
-          "conditions": [
-            {
-              "id": "a1000c01-0000-0000-0000-000000000001",
-              "leftValue": "={{ $json.should_send }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
+          }
         },
         "options": {}
       },
@@ -128,24 +129,24 @@
       "typeVersion": 2.2
     },
     {
-      "id": "a1000000-0000-0000-0000-000000000004",
-      "name": "Send Digest",
-      "parameters": {
-        "resource": "message",
-        "operation": "send",
-        "sendTo": "={{ $json.recipient }}",
-        "subject": "={{ $json.subject }}",
-        "emailType": "html",
-        "message": "={{ $json.html }}",
-        "options": {
-          "appendAttribution": false
-        }
-      },
       "credentials": {
         "gmailOAuth2": {
           "id": "vEz5mz0uaAtlK8yz",
           "name": "Gmail account"
         }
+      },
+      "id": "a1000000-0000-0000-0000-000000000004",
+      "name": "Send Digest",
+      "parameters": {
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "operation": "send",
+        "options": {
+          "appendAttribution": false
+        },
+        "resource": "message",
+        "sendTo": "={{ $json.recipient }}",
+        "subject": "={{ $json.subject }}"
       },
       "position": [
         660,
@@ -158,14 +159,14 @@
       "id": "a1000000-0000-0000-0000-000000000005",
       "name": "Record Send",
       "parameters": {
-        "method": "POST",
-        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/digest/record",
-        "sendBody": true,
-        "specifyBody": "json",
         "jsonBody": "={\n  \"sent_on\": {{ JSON.stringify($('Get Digest').item.json.sent_on) }},\n  \"recipient\": {{ JSON.stringify($('Get Digest').item.json.recipient || \"\") }},\n  \"subject\": {{ JSON.stringify($('Get Digest').item.json.subject || \"\") }}\n}",
+        "method": "POST",
         "options": {
           "timeout": 5000
-        }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/digest/record"
       },
       "position": [
         880,
@@ -177,8 +178,18 @@
   ],
   "pinData": {},
   "settings": {
+    "errorWorkflow": "MlbxErrHandler01",
     "executionOrder": "v1"
   },
-  "staticData": null,
-  "tags": []
+  "sourceWorkflowId": null,
+  "staticData": {
+    "node:Daily Digest Schedule": {
+      "recurrenceRules": []
+    }
+  },
+  "tags": [],
+  "versionMetadata": {
+    "description": null,
+    "name": null
+  }
 }

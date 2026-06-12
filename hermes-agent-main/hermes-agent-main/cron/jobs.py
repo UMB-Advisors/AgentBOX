@@ -597,6 +597,7 @@ def create_job(
     department_name: Optional[str] = None,
     employee_id: Optional[int] = None,
     employee_name: Optional[str] = None,
+    memory_entity: Optional[str] = None,
     no_agent: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -643,6 +644,11 @@ def create_job(
                 credentials, scripts, skills, and memory paths resolve
                 consistently. ``default`` selects the root profile; empty /
                 None preserves the scheduler's existing behaviour.
+        memory_entity: Optional gbrain entity-source slug (e.g. "umb",
+                "heron"). When set, the job's memory provider recall is
+                scoped to that entity source for each run (threaded to the
+                provider as memory_source). Empty / None keeps the
+                provider's configured source.
         no_agent: When True, skip the agent entirely — run ``script`` on schedule
                 and deliver its stdout directly. Empty stdout = silent (no
                 delivery). Requires ``script`` to be set. Ideal for classic
@@ -747,6 +753,10 @@ def create_job(
         "department_name": normalized_department_name,
         "employee_id": normalized_employee_id,
         "employee_name": normalized_employee_name,
+        # Per-job memory entity binding (Phase 5) — scheduler threads this
+        # to the memory provider as memory_source.
+        "memory_entity": (str(memory_entity).strip() or None)
+        if isinstance(memory_entity, str) else None,
     }
 
     jobs = load_jobs()

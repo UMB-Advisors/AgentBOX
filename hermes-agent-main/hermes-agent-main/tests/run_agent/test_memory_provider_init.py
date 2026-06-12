@@ -1,5 +1,6 @@
 """Regression tests for memory provider selection during AIAgent init."""
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -10,6 +11,7 @@ class RecordingMemoryProvider:
     def __init__(self):
         self.init_kwargs = None
         self.init_session_id = None
+        self.write_calls = []
 
     def is_available(self):
         return True
@@ -20,6 +22,16 @@ class RecordingMemoryProvider:
 
     def get_tool_schemas(self):
         return []
+
+    def sync_turn(self, messages):
+        self.write_calls.append(("sync_turn", messages))
+
+    def on_session_end(self, messages):
+        self.write_calls.append(("on_session_end", messages))
+
+    def handle_tool_call(self, name, args):
+        self.write_calls.append(("handle_tool_call", name, args))
+        return ""
 
     def shutdown(self):
         pass
@@ -90,3 +102,155 @@ def test_aiagent_forwards_user_id_alt_to_memory_provider():
     assert provider.init_kwargs["user_id"] == "open-id"
     assert provider.init_kwargs["user_id_alt"] == "union-id"
     assert provider.init_kwargs["platform"] == "feishu"
+
+
+@contextmanager
+def _memory_init_patches(cfg, provider):
+    with (
+        patch("hermes_cli.config.load_config", return_value=cfg),
+        patch("plugins.memory.load_memory_provider", return_value=provider),
+        patch("agent.model_metadata.get_model_context_length", return_value=204_800),
+        patch("run_agent.get_tool_definitions", return_value=[]),
+        patch("run_agent.check_toolset_requirements", return_value={}),
+        patch("run_agent.OpenAI"),
+    ):
+        yield
+
+
+def test_memory_context_cron_threads_agent_context_and_keeps_builtin_off():
+    """memory_context='cron' reaches the provider as agent_context while the
+    builtin MEMORY.md/USER.md store stays disabled — cron system prompts must
+    never feed user representations."""
+    provider = RecordingMemoryProvider()
+    cfg = {
+        "memory": {
+            "provider": "recording",
+            "memory_enabled": True,
+            "user_profile_enabled": True,
+        },
+        "agent": {},
+    }
+
+    with _memory_init_patches(cfg, provider):
+        from run_agent import AIAgent
+
+        agent = AIAgent(
+            api_key="test-key-1234567890",
+            base_url="https://openrouter.ai/api/v1",
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=False,
+            memory_context="cron",
+            session_id="sess-cron",
+            platform="cron",
+        )
+        agent.close()
+
+    assert agent._memory_manager is not None
+    assert provider.init_kwargs["agent_context"] == "cron"
+    assert provider.init_kwargs["platform"] == "cron"
+    # Builtin store must stay off despite memory_enabled in config.
+    assert agent._memory_store is None
+    assert agent._memory_enabled is False
+    assert agent._user_profile_enabled is False
+    # No write-path provider hooks fired across init + close.
+    assert provider.write_calls == []
+
+
+def test_memory_context_defaults_to_primary():
+    """Regression: callers that don't pass memory_context keep today's behavior
+    (agent_context='primary', builtin store active when configured)."""
+    provider = RecordingMemoryProvider()
+    cfg = {
+        "memory": {"provider": "recording", "memory_enabled": True},
+        "agent": {},
+    }
+
+    with _memory_init_patches(cfg, provider):
+        from run_agent import AIAgent
+
+        agent = AIAgent(
+            api_key="test-key-1234567890",
+            base_url="https://openrouter.ai/api/v1",
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=False,
+            session_id="sess-default",
+        )
+
+    assert agent._memory_manager is not None
+    assert provider.init_kwargs["agent_context"] == "primary"
+    assert agent._memory_enabled is True
+
+
+def test_memory_source_threads_to_provider_initialize():
+    """Phase 5: AIAgent(memory_source=...) reaches the provider as the
+    memory_source init kwarg (per-session entity binding)."""
+    provider = RecordingMemoryProvider()
+    cfg = {"memory": {"provider": "recording"}, "agent": {}}
+
+    with _memory_init_patches(cfg, provider):
+        from run_agent import AIAgent
+
+        agent = AIAgent(
+            api_key="test-key-1234567890",
+            base_url="https://openrouter.ai/api/v1",
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=False,
+            memory_context="cron",
+            memory_source="heron",
+            session_id="sess-entity",
+            platform="cron",
+        )
+
+    assert agent._memory_manager is not None
+    assert provider.init_kwargs["agent_context"] == "cron"
+    assert provider.init_kwargs["memory_source"] == "heron"
+
+
+def test_memory_source_absent_not_injected():
+    """Phase 5 regression: callers that don't pass memory_source must not
+    surprise providers with a new init kwarg."""
+    provider = RecordingMemoryProvider()
+    cfg = {"memory": {"provider": "recording"}, "agent": {}}
+
+    with _memory_init_patches(cfg, provider):
+        from run_agent import AIAgent
+
+        AIAgent(
+            api_key="test-key-1234567890",
+            base_url="https://openrouter.ai/api/v1",
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=False,
+            session_id="sess-no-entity",
+        )
+
+    assert "memory_source" not in provider.init_kwargs
+
+
+def test_skip_memory_true_still_disables_provider_and_builtin():
+    """Regression: skip_memory=True short-circuits both memory blocks even
+    when memory_context is non-default."""
+    provider = RecordingMemoryProvider()
+    cfg = {
+        "memory": {"provider": "recording", "memory_enabled": True},
+        "agent": {},
+    }
+
+    with _memory_init_patches(cfg, provider):
+        from run_agent import AIAgent
+
+        agent = AIAgent(
+            api_key="test-key-1234567890",
+            base_url="https://openrouter.ai/api/v1",
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=True,
+            memory_context="cron",
+        )
+
+    assert agent._memory_manager is None
+    assert agent._memory_store is None
+    assert provider.init_kwargs is None

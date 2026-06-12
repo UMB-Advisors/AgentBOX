@@ -1,0 +1,11 @@
+[Unit]
+Description=Run gbrain email ingestion every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+RandomizedDelaySec=60
+Persistent=true
+Unit=gbrain-ingest-email.service
+
+[Install]
+WantedBy=timers.target

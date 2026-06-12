@@ -240,8 +240,9 @@ docker compose --profile qdrant-bootstrap run --rm mailbox-qdrant-bootstrap || l
 
 # ── STAGE 6: n8n credential + workflows + activate ────────────────────────
 # Fresh n8n has no credentials; the workflows hard-reference the Postgres
-# credential id JFX4tvrffvKnTouV. Create it with that exact id, import the 4
-# core workflows (ids preserved incl sub-workflow refs), activate each by id
+# credential id JFX4tvrffvKnTouV. Create it with that exact id, import the 5
+# core workflows (ids preserved incl sub-workflow refs + the global
+# errorWorkflow target MlbxErrHandler01), activate each by id
 # (n8n dropped update:workflow --all), restart (CLI activation is a no-op until
 # restart). Validated working on the prototype 2026-05-31.
 log "STAGE 6 — n8n credential + workflows"
@@ -252,7 +253,7 @@ printf '[{"id":"JFX4tvrffvKnTouV","name":"MailBox Postgres","type":"postgres","d
 docker cp "$CJ" mailbox-n8n-1:/tmp/creds.json >/dev/null
 docker exec mailbox-n8n-1 n8n import:credentials --input=/tmp/creds.json >/dev/null 2>&1 && log "  Postgres credential imported (JFX4tvrffvKnTouV)"
 docker exec mailbox-n8n-1 rm -f /tmp/creds.json; rm -f "$CJ"
-for w in MailBOX MailBOX-Classify MailBOX-Draft MailBOX-Send; do
+for w in MailBOX MailBOX-Classify MailBOX-Draft MailBOX-Send MailBOX-ErrorHandler; do
   [ -f "n8n/workflows/$w.json" ] || { log "  WARN: n8n/workflows/$w.json missing"; continue; }
   docker cp "n8n/workflows/$w.json" "mailbox-n8n-1:/tmp/$w.json" >/dev/null
   docker exec mailbox-n8n-1 n8n import:workflow --input="/tmp/$w.json" >/dev/null 2>&1 && log "  imported $w"
@@ -263,7 +264,15 @@ for id in $(docker exec mailbox-postgres-1 psql -U "${POSTGRES_USER:-mailbox}" -
     || docker exec mailbox-n8n-1 n8n publish:workflow --id="$id" >/dev/null 2>&1 || true
 done
 docker compose restart n8n >/dev/null 2>&1; sleep 10
-docker compose --profile n8n-verify run --rm mailbox-n8n-verify || log "  WARN: n8n-verify non-zero — check workflow activation"
+# Hard gate (was advisory): an inactive core workflow dark-classifies the
+# inbox from day one (STAQPRO-181 class). Retry once after a second restart
+# before failing — activation occasionally needs the extra bounce.
+if ! docker compose --profile n8n-verify run --rm mailbox-n8n-verify; then
+  log "  n8n-verify failed — restarting n8n once and retrying"
+  docker compose restart n8n >/dev/null 2>&1; sleep 10
+  docker compose --profile n8n-verify run --rm mailbox-n8n-verify \
+    || die "STAGE 6: core MailBOX workflows not active after import (see n8n-verify output above)"
+fi
 log "  NOTE: live Gmail triage needs Gmail OAuth (MANUAL browser consent, per inbox) — not bench-automatable."
 
 # ── STAGE 7: Hermes (v0.15.1 pin) + gbrain memory ─────────────────────────
@@ -375,6 +384,39 @@ if [ -f "$REPO/bin/lib/custom-backend-files.sh" ] && [ -d "$ABX_HERMES/hermes_cl
     cp -a "$src" "$dst"; n=$((n+1))
   done < <(abx_custom_backend_files "$ABX_HERMES")
   log "  overlaid $n custom backend files onto $INSTALL_CLI"
+  # Ship non-.py custom extras (graph viewer bundle + gbrain→UA adapter) so the
+  # Brain Graph tab and its "Generate Brain Graph" button work on a fresh box.
+  # Paths are hermes-root-relative: graph_app/ lands under hermes_cli/, the
+  # adapter beside it under tools/. Directories are MERGED (cp -a src/.) so a
+  # box-generated knowledge-graph.json snapshot survives a re-run/repair.
+  INSTALL_HROOT="$(dirname "$INSTALL_CLI")"; ex=0
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    esrc="$ABX_HERMES/$p"; edst="$INSTALL_HROOT/$p"
+    [ -e "$esrc" ] || continue
+    if [ -d "$esrc" ]; then
+      mkdir -p "$edst"; cp -a "$esrc/." "$edst/"
+    else
+      mkdir -p "$(dirname "$edst")"; cp -a "$esrc" "$edst"
+    fi
+    ex=$((ex+1))
+  done < <(abx_custom_extras "$ABX_HERMES")
+  [ "$ex" -gt 0 ] && log "  shipped $ex custom extra(s) (graph viewer bundle + adapter)"
+  # MBOX-468: provision the at-rest key for mail-account secrets. The custom
+  # backend encrypts M365 client-secrets / IMAP app-passwords with AES-256-GCM
+  # keyed by HERMES_MAIL_SECRET_KEY (32-byte hex); a missing key hard-fails the
+  # 'connect' step (test-connection still works). A per-box random key is ideal —
+  # each box encrypts its own secrets. Idempotent: NEVER overwrite an existing
+  # key (rotating it would orphan every already-stored secret).
+  HENV="$HH/.env"
+  if [ -f "$HENV" ] && grep -q '^HERMES_MAIL_SECRET_KEY=' "$HENV"; then
+    log "  HERMES_MAIL_SECRET_KEY already present in $HENV"
+  else
+    mkdir -p "$HH"
+    printf 'HERMES_MAIL_SECRET_KEY=%s\n' "$(openssl rand -hex 32)" >> "$HENV"
+    chmod 600 "$HENV" 2>/dev/null || true
+    log "  generated HERMES_MAIL_SECRET_KEY -> $HENV"
+  fi
   # If the dashboard service is already running (re-run / hermes update repair),
   # restart so the overlay takes effect now. On a first install STAGE 8 starts it.
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"

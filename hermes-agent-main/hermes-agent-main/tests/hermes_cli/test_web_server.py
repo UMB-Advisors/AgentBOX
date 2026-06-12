@@ -330,6 +330,98 @@ class TestWebServerEndpoints:
         resp = self.client.get("/api/dashboard/plugins/rescan")
         assert resp.status_code == 200
 
+    def test_dashboard_api_proxy_requires_session(self, monkeypatch):
+        """Proxied ``/dashboard/api/*`` must session-gate like ``/api/*``.
+
+        Unauthenticated → 401 (never reaches upstream). Authenticated →
+        proxied to the upstream and the upstream response is streamed back.
+        """
+        import httpx
+        from starlette.testclient import TestClient
+        from hermes_cli.web_server import app
+
+        sent: list[str] = []
+
+        class _FakeResponse:
+            status_code = 200
+            headers = {"content-type": "application/json"}
+
+            async def aiter_raw(self):
+                yield b'{"ok": true}'
+
+            async def aclose(self):
+                return None
+
+        class _FakeClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            def build_request(self, method, url, **kw):
+                return ("req", method, url)
+
+            async def send(self, req, stream=False):
+                sent.append(req[2])  # upstream url
+                return _FakeResponse()
+
+            async def aclose(self):
+                return None
+
+        monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+
+        # Unauthenticated: blocked before any upstream call.
+        unauth_client = TestClient(app)
+        resp = unauth_client.get("/dashboard/api/auto-send-rules")
+        assert resp.status_code == 401
+        assert sent == []  # upstream never contacted
+
+        # Authenticated: proxied through to the upstream.
+        resp = self.client.get("/dashboard/api/auto-send-rules")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        assert sent == [
+            "http://127.0.0.1:3001/dashboard/api/auto-send-rules",
+        ]
+
+    def test_dashboard_non_api_proxy_passthrough(self, monkeypatch):
+        """Non-API ``/dashboard/*`` paths stay passthrough (no 401).
+
+        HTML pages and assets must load without the session token so direct
+        page loads keep working.
+        """
+        import httpx
+        from starlette.testclient import TestClient
+        from hermes_cli.web_server import app
+
+        class _FakeResponse:
+            status_code = 200
+            headers = {"content-type": "text/html"}
+
+            async def aiter_raw(self):
+                yield b"<html>dashboard</html>"
+
+            async def aclose(self):
+                return None
+
+        class _FakeClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            def build_request(self, method, url, **kw):
+                return ("req", method, url)
+
+            async def send(self, req, stream=False):
+                return _FakeResponse()
+
+            async def aclose(self):
+                return None
+
+        monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+
+        unauth_client = TestClient(app)
+        resp = unauth_client.get("/dashboard/inbox")
+        assert resp.status_code == 200
+        assert b"dashboard" in resp.content
+
     def test_path_traversal_blocked(self):
         """Verify URL-encoded path traversal is blocked."""
         # %2e%2e = ..
@@ -2445,4 +2537,345 @@ class TestDashboardPluginStaticAssetAllowlist:
         # 403 traversal-blocked OR 404 (depending on URL decode order)
         # — never 200.
         assert resp.status_code in (403, 404)
+
+
+class TestOnboardingAdvanceBodyValidation:
+    """The advance body validates stage names against the known STAGES set so a
+    malformed stage name fails fast with a 422 rather than surfacing as a
+    confusing 409 stale_from/invalid_transition downstream (MBOX-471 review)."""
+
+    def test_known_stages_accepted_and_trimmed(self):
+        from hermes_cli.web_server import OnboardingAdvanceBody
+        from hermes_cli.onboarding_state import STAGES
+
+        body = OnboardingAdvanceBody(
+            from_stage=f"  {STAGES[0]} ", to_stage=STAGES[1]
+        )
+        assert body.from_stage == STAGES[0]
+        assert body.to_stage == STAGES[1]
+
+    def test_unknown_stage_rejected(self):
+        from pydantic import ValidationError
+        from hermes_cli.web_server import OnboardingAdvanceBody
+
+        with pytest.raises(ValidationError):
+            OnboardingAdvanceBody(from_stage="bogus", to_stage="live")
+
+    def test_empty_stage_rejected(self):
+        from pydantic import ValidationError
+        from hermes_cli.web_server import OnboardingAdvanceBody
+
+        with pytest.raises(ValidationError):
+            OnboardingAdvanceBody(from_stage="", to_stage="live")
+
+
+class TestClassificationsProxy:
+    """MBOX-472 — the /api/classifications* routes proxy the on-box
+    mailbox-dashboard. These assert the forwarded URL/method/body and the
+    relay of the upstream status + JSON, plus the 502-on-unreachable path —
+    without a live dashboard. ``httpx`` is faked at the module level (the route
+    imports it lazily)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_test_client(self, monkeypatch, _isolate_hermes_home):
+        try:
+            from starlette.testclient import TestClient
+        except ImportError:
+            pytest.skip("fastapi/starlette not installed")
+
+        import hermes_state
+        from hermes_constants import get_hermes_home
+        from hermes_cli.web_server import app, _SESSION_HEADER_NAME, _SESSION_TOKEN
+
+        monkeypatch.setattr(
+            hermes_state, "DEFAULT_DB_PATH", get_hermes_home() / "state.db"
+        )
+        self.client = TestClient(app)
+        self.client.headers[_SESSION_HEADER_NAME] = _SESSION_TOKEN
+
+    def _install_fake_httpx(self, monkeypatch, *, status, json_body=None, raise_exc=None):
+        """Patch ``httpx`` so the route's lazy ``import httpx`` resolves to a fake
+        AsyncClient. Returns a dict the test reads back to assert the forwarded
+        request shape."""
+        import sys
+        import types
+        import httpx as real_httpx
+
+        captured = {}
+
+        class _FakeResponse:
+            def __init__(self):
+                self.status_code = status
+
+            def json(self):
+                if json_body is None:
+                    raise ValueError("no json")
+                return json_body
+
+        class _FakeAsyncClient:
+            def __init__(self, *a, **k):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def request(self, method, url, params=None, headers=None, content=None):
+                captured["method"] = method
+                captured["url"] = url
+                captured["params"] = dict(params) if params else {}
+                captured["content"] = content
+                if raise_exc is not None:
+                    raise raise_exc
+                return _FakeResponse()
+
+        fake_httpx = types.SimpleNamespace(
+            AsyncClient=_FakeAsyncClient,
+            Timeout=real_httpx.Timeout,
+            HTTPError=real_httpx.HTTPError,
+        )
+        monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+        return captured
+
+    def test_list_forwards_to_dashboard(self, monkeypatch):
+        from hermes_cli.web_server import _DASHBOARD_UPSTREAM
+
+        rows = [{"log_id": "1", "category": "internal", "confidence": 0.9}]
+        captured = self._install_fake_httpx(monkeypatch, status=200, json_body=rows)
+
+        resp = self.client.get("/api/classifications?limit=25")
+
+        assert resp.status_code == 200
+        assert resp.json() == rows
+        assert captured["method"] == "GET"
+        assert captured["url"] == f"{_DASHBOARD_UPSTREAM}/dashboard/api/classifications"
+        assert captured["params"].get("limit") == "25"
+
+    def test_reclassify_forwards_body(self, monkeypatch):
+        from hermes_cli.web_server import _DASHBOARD_UPSTREAM
+
+        body = {"success": True, "email": "a@b.com", "allowlisted": True,
+                "queued": 3, "capped": False}
+        captured = self._install_fake_httpx(monkeypatch, status=200, json_body=body)
+
+        resp = self.client.post(
+            "/api/classifications/reclassify-sender",
+            json={"email": "a@b.com"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["allowlisted"] is True
+        assert captured["method"] == "POST"
+        assert captured["url"] == (
+            f"{_DASHBOARD_UPSTREAM}/dashboard/api/classifications/reclassify-sender"
+        )
+        assert captured["content"] is not None
+
+    def test_unreachable_dashboard_returns_502(self, monkeypatch):
+        import httpx as real_httpx
+
+        self._install_fake_httpx(
+            monkeypatch,
+            status=0,
+            raise_exc=real_httpx.ConnectError("boom"),
+        )
+
+        resp = self.client.get("/api/classifications")
+        assert resp.status_code == 502
+        assert "unreachable" in resp.json()["detail"]
+
+    def test_non_json_upstream_surfaced_as_error(self, monkeypatch):
+        # The list route does not exist on the dashboard yet → Next.js HTML 404.
+        self._install_fake_httpx(monkeypatch, status=404, json_body=None)
+        resp = self.client.get("/api/classifications")
+        assert resp.status_code == 404
+        assert "non-JSON" in resp.json()["detail"]
+
+    def test_requires_session(self):
+        """GET /api/classifications without the session header must 401 —
+        the route must never land in PUBLIC_API_PATHS (auth-gated like the
+        rest of /api/*)."""
+        from starlette.testclient import TestClient
+        from hermes_cli.web_server import app
+
+        # Fresh client WITHOUT the dashboard session header.
+        unauth_client = TestClient(app)
+        resp = unauth_client.get("/api/classifications")
+        assert resp.status_code == 401
+
+
+class TestOperatorStatus:
+    """MBOX-478 — the /api/operator-status aggregation endpoint. Combines
+    hermes-native metrics (disk free, gathered directly) with the proxied
+    mailbox-pipeline snapshot (``/dashboard/api/system/status``). These assert
+    the native block is always present, the pipeline block degrades cleanly when
+    the upstream is unreachable / non-JSON, and the gaps list is surfaced.
+    ``httpx`` is faked at the module level (the proxy helper imports it lazily)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_test_client(self, monkeypatch, _isolate_hermes_home):
+        try:
+            from starlette.testclient import TestClient
+        except ImportError:
+            pytest.skip("fastapi/starlette not installed")
+
+        import hermes_state
+        from hermes_constants import get_hermes_home
+        from hermes_cli.web_server import app, _SESSION_HEADER_NAME, _SESSION_TOKEN
+
+        monkeypatch.setattr(
+            hermes_state, "DEFAULT_DB_PATH", get_hermes_home() / "state.db"
+        )
+        self.client = TestClient(app)
+        self.client.headers[_SESSION_HEADER_NAME] = _SESSION_TOKEN
+
+    def _install_fake_httpx(self, monkeypatch, *, status, json_body=None,
+                            raise_exc=None):
+        """Patch ``httpx`` so the proxy helper's lazy ``import httpx`` resolves
+        to a fake AsyncClient with a ``.get``. Mirrors the classifications-proxy
+        test harness."""
+        import sys
+        import types
+        import httpx as real_httpx
+
+        captured = {}
+
+        class _FakeResponse:
+            def __init__(self):
+                self.status_code = status
+
+            def json(self):
+                if json_body is None:
+                    raise ValueError("no json")
+                return json_body
+
+        class _FakeAsyncClient:
+            def __init__(self, *a, **k):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get(self, url, **k):
+                captured["url"] = url
+                if raise_exc is not None:
+                    raise raise_exc
+                return _FakeResponse()
+
+        fake_httpx = types.SimpleNamespace(
+            AsyncClient=_FakeAsyncClient,
+            Timeout=real_httpx.Timeout,
+            HTTPError=real_httpx.HTTPError,
+        )
+        monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+        return captured
+
+    def test_native_disk_always_present(self, monkeypatch):
+        from hermes_cli.web_server import _DASHBOARD_UPSTREAM
+
+        snapshot = {"queue_depth": 3, "drafts_24h": {"total": 5}}
+        captured = self._install_fake_httpx(
+            monkeypatch, status=200, json_body=snapshot
+        )
+
+        resp = self.client.get("/api/operator-status")
+        assert resp.status_code == 200
+        body = resp.json()
+        # Native disk-free is gathered directly (real shutil call) — always
+        # present and available on the test host.
+        assert body["native"]["disk_free"]["available"] is True
+        assert body["native"]["disk_free"]["total_bytes"] > 0
+        assert isinstance(body["native"]["uptime_seconds"], int)
+        # Pipeline snapshot proxied verbatim from the dashboard.
+        assert body["pipeline"]["available"] is True
+        assert body["pipeline"]["status"] == "ok"
+        assert body["pipeline"]["data"] == snapshot
+        assert captured["url"] == (
+            f"{_DASHBOARD_UPSTREAM}/dashboard/api/system/status"
+        )
+        # Gaps are surfaced, not faked.
+        metrics = {g["metric"] for g in body["gaps"]}
+        assert "draft_backlog_age" in metrics
+
+    def test_pipeline_unavailable_when_upstream_unreachable(self, monkeypatch):
+        import httpx as real_httpx
+
+        self._install_fake_httpx(
+            monkeypatch,
+            status=0,
+            raise_exc=real_httpx.ConnectError("boom"),
+        )
+        resp = self.client.get("/api/operator-status")
+        # Endpoint never fails as a whole — native still renders.
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["native"]["disk_free"]["available"] is True
+        assert body["pipeline"]["available"] is False
+        assert body["pipeline"]["status"] == "unreachable"
+        assert "unreachable" in body["pipeline"]["reason"]
+
+    def test_pipeline_upstream_error_on_http_4xx(self, monkeypatch):
+        # Next.js HTML 404 page → HTTP error (status checked before body parse).
+        self._install_fake_httpx(monkeypatch, status=404, json_body=None)
+        resp = self.client.get("/api/operator-status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["pipeline"]["available"] is False
+        assert body["pipeline"]["status"] == "upstream_error"
+        assert "404" in body["pipeline"]["reason"]
+
+    def test_pipeline_non_json_on_2xx_garbage(self, monkeypatch):
+        # Reached with 200 but body wasn't JSON → distinct non_json discriminant.
+        self._install_fake_httpx(monkeypatch, status=200, json_body=None)
+        resp = self.client.get("/api/operator-status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["pipeline"]["available"] is False
+        assert body["pipeline"]["status"] == "non_json"
+        assert "non-JSON" in body["pipeline"]["reason"]
+
+    def test_native_disk_free_degrades_on_exception(self, monkeypatch):
+        # shutil.disk_usage raising must degrade to available=False, not 500.
+        import shutil
+
+        self._install_fake_httpx(
+            monkeypatch, status=200, json_body={"queue_depth": 0}
+        )
+        monkeypatch.setattr(
+            shutil,
+            "disk_usage",
+            lambda *_a, **_k: (_ for _ in ()).throw(OSError("disk gone")),
+        )
+        resp = self.client.get("/api/operator-status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["native"]["disk_free"]["available"] is False
+        assert "disk gone" in body["native"]["disk_free"]["reason"]
+
+    def test_uptime_is_process_relative(self, monkeypatch):
+        # Reported uptime is the delta from process start, not the raw monotonic
+        # clock — so it must be small right after import, never a huge epoch.
+        self._install_fake_httpx(
+            monkeypatch, status=200, json_body={"queue_depth": 0}
+        )
+        resp = self.client.get("/api/operator-status")
+        assert resp.status_code == 200
+        body = resp.json()
+        uptime = body["native"]["uptime_seconds"]
+        assert isinstance(uptime, int)
+        assert 0 <= uptime < 86_400
+
+    def test_requires_session(self):
+        """/api/operator-status must be auth-gated like the rest of /api/*."""
+        from starlette.testclient import TestClient
+        from hermes_cli.web_server import app
+
+        unauth_client = TestClient(app)
+        resp = unauth_client.get("/api/operator-status")
+        assert resp.status_code == 401
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { Clock, Pause, Pencil, Play, Trash2, X, Zap } from "lucide-react";
+import { Clock, LayoutTemplate, Pause, Pencil, Play, Sparkles, Trash2, X, Zap } from "lucide-react";
 import cronstrue from "cronstrue";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -7,10 +7,18 @@ import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { H2 } from "@nous-research/ui/ui/components/typography/h2";
 import { api } from "@/lib/api";
-import type { CronJob, ProfileInfo, ModelOptionProvider } from "@/lib/api";
+import type {
+  CronJob,
+  ProfileInfo,
+  ModelOptionProvider,
+  AgentTemplate,
+  AgentTemplateSummary,
+  CronTemplateProposal,
+} from "@/lib/api";
 import { crmApi } from "@/lib/crm";
 import type { Department, TeamMember } from "@/lib/crm";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
+import { CronTemplateBuilder } from "@/components/CronTemplateBuilder";
 import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { useConfirmDelete } from "@nous-research/ui/hooks/use-confirm-delete";
 import { useModalBehavior } from "@/hooks/useModalBehavior";
@@ -260,7 +268,34 @@ export default function CronPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [creating, setCreating] = useState(false);
+  // Agent Templates: a picker of reusable blueprints that pre-fill the create
+  // form. `appliedTemplate` is the full descriptor backing the current draft (so
+  // we can show its pattern detail); template* carry the template's skills /
+  // toolsets through to createCronJob on submit.
+  const [templates, setTemplates] = useState<AgentTemplateSummary[]>([]);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [appliedTemplate, setAppliedTemplate] = useState<AgentTemplate | null>(null);
+  const [templateSkills, setTemplateSkills] = useState<string[]>([]);
+  const [templateToolsets, setTemplateToolsets] = useState<string[]>([]);
+  const [showPattern, setShowPattern] = useState(false);
+  // Outcome objective + live reprompt. `objective` is the end-goal the operator
+  // describes (persisted on the job); it steers the reprompt rewrite. The
+  // reprompt is one-shot: call -> `repromptResult` preview -> Accept/Discard.
+  // `repromptModel` defaults to the job's model ("" = box default) and is
+  // independently selectable.
+  const [objective, setObjective] = useState("");
+  const [repromptModel, setRepromptModel] = useState("");
+  const [reprompting, setReprompting] = useState(false);
+  const [repromptResult, setRepromptResult] = useState<string | null>(null);
   const isEditing = editingKey !== null;
+
+  // Clear any template association from the current draft.
+  const clearTemplate = useCallback(() => {
+    setAppliedTemplate(null);
+    setTemplateSkills([]);
+    setTemplateToolsets([]);
+    setShowPattern(false);
+  }, []);
   const closeCreateModal = useCallback(() => {
     setCreateModalOpen(false);
     setEditingKey(null);
@@ -271,6 +306,14 @@ export default function CronPage() {
   });
   const createProfile = selectedProfile === "all" ? "default" : selectedProfile;
 
+  // Reset the transient reprompt preview + objective for a fresh draft.
+  const resetReprompt = useCallback(() => {
+    setObjective("");
+    setRepromptModel("");
+    setRepromptResult(null);
+    setReprompting(false);
+  }, []);
+
   const openCreate = useCallback(() => {
     setEditingKey(null);
     setName("");
@@ -280,8 +323,30 @@ export default function CronPage() {
     setModel("");
     setDepartmentId("");
     setEmployeeId("");
+    clearTemplate();
+    resetReprompt();
     setCreateModalOpen(true);
-  }, []);
+  }, [clearTemplate, resetReprompt]);
+
+  // Interactive, LLM-assisted "build from a template" flow. The builder hands
+  // back a draft (and a matched Department from the template category); we drop
+  // it into the normal create form so the user can review and save as usual.
+  const [templateBuilderOpen, setTemplateBuilderOpen] = useState(false);
+  const applyProposal = useCallback(
+    (p: CronTemplateProposal, departmentId: string) => {
+      setEditingKey(null);
+      setName(p.name || "");
+      setPrompt(p.prompt || "");
+      setSchedule(p.schedule || "");
+      setDeliver(p.deliver || "local");
+      setModel("");
+      setDepartmentId(departmentId || "");
+      setEmployeeId("");
+      setTemplateBuilderOpen(false);
+      setCreateModalOpen(true);
+    },
+    [],
+  );
 
   const openEdit = useCallback((job: CronJob) => {
     setEditingKey(getJobKey(job));
@@ -293,8 +358,54 @@ export default function CronPage() {
     setModel(asText(job.model) || "");
     setDepartmentId(job.department_id != null ? String(job.department_id) : "");
     setEmployeeId(job.employee_id != null ? String(job.employee_id) : "");
+    clearTemplate();
+    resetReprompt();
+    setObjective(asText(job.objective));
+    setRepromptModel(asText(job.model) || "");
     setCreateModalOpen(true);
-  }, []);
+  }, [clearTemplate, resetReprompt]);
+
+  // Open the template picker (fetches the list lazily the first time).
+  const openTemplatePicker = useCallback(() => {
+    if (templates.length === 0) {
+      api
+        .getAgentTemplates()
+        .then((r) => setTemplates(r.templates ?? []))
+        .catch(() => showToast("Couldn’t load templates", "error"));
+    }
+    setTemplatePickerOpen(true);
+  }, [templates.length, showToast]);
+
+  // Apply a chosen template: fetch its full descriptor and pre-fill the create
+  // form. The operator can edit anything before saving — this only seeds it.
+  const applyTemplate = useCallback(
+    async (id: string) => {
+      try {
+        const tpl = await api.getAgentTemplate(id);
+        const d = tpl.defaults;
+        setEditingKey(null);
+        setName(d.name ?? "");
+        setObjective(d.objective ?? "");
+        setPrompt(d.prompt ?? "");
+        setSchedule(d.schedule ?? "");
+        setDeliver(d.deliver || "local");
+        setModel(d.model || "");
+        setRepromptModel(d.model || "");
+        setRepromptResult(null);
+        setDepartmentId("");
+        setEmployeeId("");
+        setTemplateSkills(d.skills ?? []);
+        setTemplateToolsets(d.enabled_toolsets ?? []);
+        setAppliedTemplate(tpl);
+        setShowPattern(false);
+        setTemplatePickerOpen(false);
+        setCreateModalOpen(true);
+      } catch {
+        showToast("Couldn’t load template", "error");
+      }
+    },
+    [showToast],
+  );
 
   const loadJobs = useCallback(() => {
     api
@@ -350,6 +461,43 @@ export default function CronPage() {
     });
   }, [jobs, sortBy, departments]);
 
+  // Resolve a model name to its provider slug from the picker options.
+  const providerForModel = useCallback(
+    (m: string) =>
+      modelProviders.find((p) => (p.models ?? []).includes(m))?.slug ?? null,
+    [modelProviders],
+  );
+
+  // Live reprompt: ask the model to improve the draft prompt toward the
+  // objective. One-shot — the result lands in `repromptResult` for accept/discard.
+  const handleReprompt = async () => {
+    if (!prompt.trim()) {
+      showToast("Write a draft prompt first", "error");
+      return;
+    }
+    setReprompting(true);
+    setRepromptResult(null);
+    try {
+      const chosen = repromptModel.trim() || null;
+      const res = await api.repromptCronPrompt({
+        draft_prompt: prompt.trim(),
+        outcome_objective: objective.trim(),
+        model: chosen,
+        provider: chosen ? providerForModel(chosen) : null,
+      });
+      const improved = (res.improved_prompt || "").trim();
+      if (!improved) {
+        showToast("Reprompt returned nothing", "error");
+      } else {
+        setRepromptResult(improved);
+      }
+    } catch (e) {
+      showToast(`Reprompt failed: ${e}`, "error");
+    } finally {
+      setReprompting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!prompt.trim() || !schedule.trim()) {
       showToast(`${t.cron.prompt} & ${t.cron.schedule} required`, "error");
@@ -387,6 +535,7 @@ export default function CronPage() {
             schedule: scheduleToSend,
             name: name.trim(),
             deliver,
+            objective: objective.trim() || null,
             ...modelFields,
             ...crmFields,
           },
@@ -400,7 +549,11 @@ export default function CronPage() {
             schedule: scheduleToSend,
             name: name.trim() || undefined,
             deliver,
+            objective: objective.trim() || null,
             ...modelFields,
+            // From an applied template, if any (omitted when empty).
+            skills: templateSkills.length ? templateSkills : undefined,
+            enabled_toolsets: templateToolsets.length ? templateToolsets : undefined,
             ...crmFields,
           },
           createProfile,
@@ -414,6 +567,8 @@ export default function CronPage() {
       setModel("");
       setDepartmentId("");
       setEmployeeId("");
+      clearTemplate();
+      resetReprompt();
       setEditingKey(null);
       setCreateModalOpen(false);
       loadJobs();
@@ -481,16 +636,23 @@ export default function CronPage() {
     ),
   });
 
-  // Put "Create" button in page header
+  // Put "From template" + "Create" buttons in page header
   useLayoutEffect(() => {
     setEnd(
-      <Button
-        className="uppercase"
-        size="sm"
-        onClick={openCreate}
-      >
-        {t.common.create}
-      </Button>,
+      <div className="flex items-center gap-2">
+        <Button
+          ghost
+          className="uppercase"
+          size="sm"
+          prefix={<Sparkles className="size-3.5" />}
+          onClick={() => setTemplateBuilderOpen(true)}
+        >
+          From template
+        </Button>
+        <Button className="uppercase" size="sm" onClick={openCreate}>
+          {t.common.create}
+        </Button>
+      </div>,
     );
     return () => {
       setEnd(null);
@@ -514,6 +676,15 @@ export default function CronPage() {
       <PluginSlot name="cron:top" />
       <Toast toast={toast} />
 
+      {templateBuilderOpen && (
+        <CronTemplateBuilder
+          onClose={() => setTemplateBuilderOpen(false)}
+          departments={departments}
+          onUse={applyProposal}
+          defaultTemplateId={appliedTemplate?.id}
+        />
+      )}
+
       <DeleteConfirmDialog
         open={jobDelete.isOpen}
         onCancel={jobDelete.cancel}
@@ -529,6 +700,77 @@ export default function CronPage() {
         loading={jobDelete.isDeleting}
       />
 
+      {/* Template picker modal */}
+      {templatePickerOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/85 backdrop-blur-sm p-4"
+          onClick={(e) =>
+            e.target === e.currentTarget && setTemplatePickerOpen(false)
+          }
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="template-picker-title"
+        >
+          <div
+            className={cn(
+              themedBody,
+              "relative w-full max-w-2xl border border-border bg-card shadow-2xl flex flex-col max-h-[85vh]",
+            )}
+          >
+            <Button
+              ghost
+              size="icon"
+              onClick={() => setTemplatePickerOpen(false)}
+              className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+              aria-label="Close"
+            >
+              <X />
+            </Button>
+
+            <header className="p-5 pb-3 border-b border-border">
+              <h2
+                id="template-picker-title"
+                className="font-mondwest text-display text-base tracking-wider"
+              >
+                Build from a template
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Agent Template Pattern blueprints, tuned for this box. Pick one to
+                pre-fill a new job — you can edit everything before saving.
+              </p>
+            </header>
+
+            <div className="p-5 grid gap-3 overflow-y-auto">
+              {templates.length === 0 && (
+                <p className="text-sm text-muted-foreground py-6 text-center">
+                  No templates available.
+                </p>
+              )}
+              {templates.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => applyTemplate(tpl.id)}
+                  className="text-left border border-border bg-background/40 p-4 hover:border-foreground/30 hover:bg-background/60 transition-colors"
+                >
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="font-medium text-sm">{tpl.name}</span>
+                    <Badge tone={tpl.category === "instance" ? "secondary" : "outline"}>
+                      {tpl.category}
+                    </Badge>
+                    <Badge tone="outline">{tpl.hardware_tier}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {tpl.node_count} nodes
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{tpl.summary}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Create job modal */}
       {createModalOpen && (
         <div
@@ -539,7 +781,7 @@ export default function CronPage() {
           aria-modal="true"
           aria-labelledby="create-cron-title"
         >
-          <div className={cn(themedBody, "relative w-full max-w-lg border border-border bg-card shadow-2xl flex flex-col")}>
+          <div className={cn(themedBody, "relative w-full max-w-2xl border border-border bg-card shadow-2xl flex flex-col")}>
             <Button
               ghost
               size="icon"
@@ -559,7 +801,172 @@ export default function CronPage() {
               </h2>
             </header>
 
-            <div className="p-5 grid gap-4">
+            <div className="p-5 grid gap-4 max-h-[80vh] overflow-y-auto">
+              {appliedTemplate && (
+                <div className="border border-border bg-background/40 p-3 text-xs">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <LayoutTemplate className="h-3.5 w-3.5 text-primary" />
+                    <span className="font-medium">{appliedTemplate.name}</span>
+                    <Badge tone="outline">{appliedTemplate.hardware_tier}</Badge>
+                    <Badge tone="secondary">{appliedTemplate.provenance.status}</Badge>
+                    <button
+                      type="button"
+                      className="ml-auto underline text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowPattern((v) => !v)}
+                    >
+                      {showPattern ? "Hide pattern" : "Show pattern"}
+                    </button>
+                    <button
+                      type="button"
+                      className="underline text-muted-foreground hover:text-foreground"
+                      onClick={clearTemplate}
+                    >
+                      Detach
+                    </button>
+                  </div>
+                  {(templateSkills.length > 0 || templateToolsets.length > 0) && (
+                    <p className="mt-2 text-muted-foreground">
+                      {templateSkills.length > 0 &&
+                        `Skills: ${templateSkills.join(", ")}`}
+                      {templateSkills.length > 0 && templateToolsets.length > 0 && " · "}
+                      {templateToolsets.length > 0 &&
+                        `Toolsets: ${templateToolsets.join(", ")}`}
+                    </p>
+                  )}
+                  {showPattern && (
+                    <div className="mt-3 grid gap-3 border-t border-border pt-3">
+                      <p className="text-muted-foreground">
+                        {appliedTemplate.provenance.note}
+                      </p>
+                      <div className="grid gap-1">
+                        {appliedTemplate.primitives.map((p) => (
+                          <div key={p.key}>
+                            <span className="font-medium">
+                              {p.key} · {p.title}
+                            </span>{" "}
+                            <span className="text-muted-foreground">{p.desc}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead className="text-muted-foreground">
+                            <tr>
+                              <th className="pr-2 font-normal">#</th>
+                              <th className="pr-2 font-normal">Node</th>
+                              <th className="pr-2 font-normal">Model</th>
+                              <th className="font-normal">Routing (T2)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {appliedTemplate.nodes.map((n) => (
+                              <tr key={n.n} className="align-top">
+                                <td className="pr-2 py-0.5">{n.n}</td>
+                                <td className="pr-2 py-0.5">{n.node}</td>
+                                <td className="pr-2 py-0.5">
+                                  {n.probabilistic ? "model" : "—"}
+                                </td>
+                                <td className="py-0.5 text-muted-foreground">
+                                  {n.routing_t2}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Objective & prompt — the hero of the form */}
+              <div className="grid gap-4 border border-border bg-background/30 p-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="cron-objective">Outcome / objective</Label>
+                  <textarea
+                    id="cron-objective"
+                    className="flex min-h-[64px] w-full resize-y border border-border bg-background/40 px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/30 focus-visible:border-foreground/25"
+                    placeholder="Describe the end goal — e.g. “a crisp daily digest of overnight email, grouped by sender.” The model uses this to improve your prompt."
+                    value={objective}
+                    onChange={(e) => setObjective(e.target.value)}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Label htmlFor="cron-prompt">{t.cron.prompt}</Label>
+                    <div className="flex items-center gap-2">
+                      <div className="w-44">
+                        <Select
+                          id="cron-reprompt-model"
+                          value={repromptModel}
+                          onValueChange={(v) => setRepromptModel(v)}
+                        >
+                          <SelectOption value="">Reprompt: box default</SelectOption>
+                          {repromptModel &&
+                            !modelProviders.some((p) => (p.models ?? []).includes(repromptModel)) && (
+                              <SelectOption value={repromptModel}>{repromptModel}</SelectOption>
+                            )}
+                          {modelProviders.flatMap((p) =>
+                            (p.models ?? []).map((m) => (
+                              <SelectOption key={`rp:${p.slug}:${m}`} value={m}>
+                                {modelProviders.length > 1 ? `${p.name} · ${m}` : m}
+                              </SelectOption>
+                            )),
+                          )}
+                        </Select>
+                      </div>
+                      <Button
+                        size="sm"
+                        ghost
+                        onClick={handleReprompt}
+                        disabled={reprompting || !prompt.trim()}
+                        prefix={reprompting ? <Spinner /> : <Sparkles />}
+                        title="Improve this prompt with the model, steered by your objective"
+                      >
+                        {reprompting ? "Reprompting…" : "Reprompt"}
+                      </Button>
+                    </div>
+                  </div>
+                  <textarea
+                    id="cron-prompt"
+                    className="flex min-h-[140px] w-full resize-y border border-border bg-background/40 px-3 py-2 text-sm font-courier shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/30 focus-visible:border-foreground/25"
+                    placeholder={t.cron.promptPlaceholder}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                  />
+                </div>
+
+                {repromptResult !== null && (
+                  <div className="grid gap-2 border border-primary/40 bg-primary/5 p-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Sparkles className="h-3.5 w-3.5 text-primary" />
+                      <span>Suggested rewrite — review before accepting</span>
+                    </div>
+                    <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-courier text-sm">
+                      {repromptResult}
+                    </pre>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button size="sm" ghost onClick={() => setRepromptResult(null)}>
+                        Discard
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setPrompt(repromptResult);
+                          setRepromptResult(null);
+                        }}
+                      >
+                        Accept
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                Job settings
+              </p>
               <div className="grid gap-2">
                 <Label htmlFor="cron-profile">Profile</Label>
                 <Select
@@ -586,17 +993,6 @@ export default function CronPage() {
                   placeholder={t.cron.namePlaceholder}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="cron-prompt">{t.cron.prompt}</Label>
-                <textarea
-                  id="cron-prompt"
-                  className="flex min-h-[80px] w-full border border-border bg-background/40 px-3 py-2 text-sm font-courier shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/30 focus-visible:border-foreground/25"
-                  placeholder={t.cron.promptPlaceholder}
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
                 />
               </div>
 
@@ -737,6 +1133,16 @@ export default function CronPage() {
           </H2>
 
           <div className="flex items-end gap-3">
+            <Button
+              size="sm"
+              ghost
+              className="uppercase shrink-0"
+              onClick={openTemplatePicker}
+              prefix={<LayoutTemplate />}
+            >
+              From Template
+            </Button>
+
             <Button size="sm" className="uppercase shrink-0" onClick={openCreate}>
               Schedule a New Job
             </Button>
@@ -775,9 +1181,28 @@ export default function CronPage() {
           <Card>
             <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
               <p className="text-sm text-muted-foreground">{t.cron.noJobs}</p>
-              <Button size="sm" className="uppercase" onClick={openCreate}>
-                Schedule a New Job
-              </Button>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button
+                  size="sm"
+                  className="uppercase"
+                  prefix={<Sparkles className="size-3.5" />}
+                  onClick={() => setTemplateBuilderOpen(true)}
+                >
+                  Build from template
+                </Button>
+                <Button
+                  size="sm"
+                  ghost
+                  className="uppercase"
+                  onClick={openTemplatePicker}
+                  prefix={<LayoutTemplate />}
+                >
+                  From Template
+                </Button>
+                <Button size="sm" className="uppercase" onClick={openCreate}>
+                  Schedule a New Job
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}

@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   CalendarClock,
   CalendarDays,
+  CheckCircle2,
   ChevronRight,
   ListChecks,
   Mail,
   Newspaper,
   RefreshCw,
+  Sparkles,
   SquareKanban,
+  ThumbsDown,
+  ThumbsUp,
 } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -22,16 +26,21 @@ import {
 } from "@nous-research/ui/ui/components/card";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { AccountTag } from "@/components/AccountSelector";
+import { Markdown } from "@/components/Markdown";
 import { useAccountView } from "@/contexts/useAccountView";
 import { api } from "@/lib/api";
 import type {
   ActionItem,
-  BriefEmail,
   BriefEvent,
+  CronOutput,
   DigestBrief,
   DigestPrefs,
   DraftRow,
+  InboxRanking,
+  InboxRankGroup,
+  InboxRankItem,
   KanbanBoard,
+  NewsDiscoverySource,
   NewsItem,
 } from "@/lib/api";
 import { isoTimeAgo } from "@/lib/utils";
@@ -41,9 +50,11 @@ import { usePageHeader } from "@/contexts/usePageHeader";
  * Home — the AgentBOX daily-digest landing.
  *
  *   • Top: the **Daily Brief** — three real-data sections styled like Google's
- *     emailed brief: **Top of Mind** (unread Gmail), **On Your Calendar**
- *     (today's Google Calendar), and **FYI** (active local Kanban cards).
- *     Gmail + Calendar come from `/api/digest/brief`; FYI from the Kanban board.
+ *     emailed brief: **Top of Mind** (a best-guess at the few most important
+ *     emails per inbox — heuristic shortlist + one model pick per inbox),
+ *     **On Your Calendar** (today's Google Calendar), and **FYI** (active local
+ *     Kanban cards). Top of Mind comes from `/api/digest/inbox-ranking`;
+ *     Calendar from `/api/digest/brief`; FYI from the Kanban board.
  *   • Middle: the operator-chosen **Action Items** module (LLM-extracted from
  *     the inbox) — kept because the brief doesn't surface it.
  *   • Bottom: **Google News** — an infinite, thumbnailed top-stories feed.
@@ -69,6 +80,7 @@ export default function HomePage() {
 
   // News module
   const [news, setNews] = useState<NewsItem[]>([]);
+  const [discovery, setDiscovery] = useState<NewsDiscoverySource[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -80,6 +92,10 @@ export default function HomePage() {
   // Action items come from pending/edited inbox drafts.
   const [drafts, setDrafts] = useState<DraftRow[] | null>(null);
   const [draftsError, setDraftsError] = useState<string | null>(null);
+
+  // Top of Mind — best-guess most-important emails per inbox (LLM-ranked).
+  const [ranking, setRanking] = useState<InboxRanking | null>(null);
+  const [rankingError, setRankingError] = useState<string | null>(null);
 
   // The "summary" toggle now governs the whole Daily Brief.
   const briefOn = prefs ? prefs.modules.summary !== false : false;
@@ -131,17 +147,43 @@ export default function HomePage() {
       );
   }, []);
 
-  // The brief needs both Gmail/Calendar and the Kanban board (FYI section).
+  // Inbox drafts (pending/edited) power the Action Items card.
+  const loadDrafts = useCallback(() => {
+    setDraftsError(null);
+    api
+      .inboxListDrafts("pending,edited", 200)
+      .then((r) => setDrafts(r.drafts))
+      .catch((e: unknown) =>
+        setDraftsError(e instanceof Error ? e.message : "Failed to load inbox."),
+      );
+  }, []);
+
+  // Top of Mind — best-guess most-important emails per inbox. Re-fetches on view
+  // change (per-account vs combined); the backend ranks and caches.
+  const loadRanking = useCallback(() => {
+    setRankingError(null);
+    api
+      .getInboxRanking(view)
+      .then(setRanking)
+      .catch((e: unknown) =>
+        setRankingError(e instanceof Error ? e.message : "Failed to rank inbox."),
+      );
+  }, [view]);
+
+  // The brief needs Gmail/Calendar, the Kanban board (FYI), and the per-inbox
+  // Top of Mind ranking.
   useEffect(() => {
     if (!prefs || !briefOn) return;
     void loadBrief();
     loadBoard();
-  }, [prefs, briefOn, loadBrief, loadBoard]);
+    loadRanking();
+  }, [prefs, briefOn, loadBrief, loadBoard, loadRanking]);
 
   const refreshBrief = useCallback(() => {
     void loadBrief();
     loadBoard();
-  }, [loadBrief, loadBoard]);
+    loadRanking();
+  }, [loadBrief, loadBoard, loadRanking]);
 
   const loadMoreNews = useCallback(async () => {
     const p = prefs;
@@ -152,11 +194,14 @@ export default function HomePage() {
     setNewsLoading(true);
     setNewsError(null);
     try {
-      const res = await api.getNews(p.news_sources, loadedRef.current, NEWS_PAGE);
+      const offset = loadedRef.current;
+      const res = await api.getNews(p.news_sources, offset, NEWS_PAGE);
       loadedRef.current += res.items.length;
       hasMoreRef.current = res.has_more;
       setNews((prev) => [...prev, ...res.items]);
       setHasMore(res.has_more);
+      // Today's suggested-new-source picks ride on the first page.
+      if (offset === 0) setDiscovery(res.discovery ?? []);
     } catch (err) {
       setNewsError(err instanceof Error ? err.message : "Failed to load news.");
     } finally {
@@ -174,6 +219,55 @@ export default function HomePage() {
     setHasMore(false);
     void loadMoreNews();
   }, [loadMoreNews]);
+
+  // Thumbs on a story: optimistic update, then persist. The server folds the
+  // vote into future feed ranking (and gbrain ingests it as a taste page).
+  const voteNews = useCallback(
+    (item: NewsItem, vote: "up" | "down" | null, reason?: string) => {
+      setNews((prev) =>
+        prev.map((n) => (n.link === item.link ? { ...n, vote } : n)),
+      );
+      api
+        .voteNews({
+          link: item.link,
+          vote,
+          reason,
+          title: item.title,
+          source_id: item.source_id,
+          source: item.source,
+          published: item.published,
+        })
+        .catch(() => {
+          // Roll back the optimistic update if the server rejected the vote.
+          setNews((prev) =>
+            prev.map((n) =>
+              n.link === item.link ? { ...n, vote: item.vote ?? null } : n,
+            ),
+          );
+        });
+    },
+    [],
+  );
+
+  // Keep/Dismiss one of today's suggested sources.
+  const actDiscovery = useCallback(
+    (id: string, action: "keep" | "dismiss") => {
+      setDiscovery((prev) => prev.filter((s) => s.id !== id));
+      api
+        .actNewsDiscovery(id, action)
+        .then((r) => {
+          if (action === "keep") {
+            // Adopt the server's source list; the prefs change re-fetches the
+            // feed with the kept source as a regular (un-badged) one.
+            setPrefs((p) => (p ? { ...p, news_sources: r.news_sources } : p));
+          } else {
+            refreshNews();
+          }
+        })
+        .catch(() => undefined);
+    },
+    [refreshNews],
+  );
 
   // Reset + load the first page whenever the news selection changes.
   useEffect(() => {
@@ -200,17 +294,11 @@ export default function HomePage() {
     return () => obs.disconnect();
   }, [loadMoreNews]);
 
-  // Action items: pending/edited drafts, flattened.
+  // Drafts feed the Action Items card.
   useEffect(() => {
     if (!prefs || !actionsOn) return;
-    setDraftsError(null);
-    api
-      .inboxListDrafts("pending,edited", 200)
-      .then((r) => setDrafts(r.drafts))
-      .catch((e: unknown) =>
-        setDraftsError(e instanceof Error ? e.message : "Failed to load inbox."),
-      );
-  }, [prefs, actionsOn]);
+    loadDrafts();
+  }, [prefs, actionsOn, loadDrafts]);
 
   const actionItems = useMemo(
     () =>
@@ -237,10 +325,12 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
-      {/* Daily Brief — Top of Mind (Gmail) · On Your Calendar · FYI (Kanban) */}
+      {/* Daily Brief — Top of Mind (ranked emails) · On Your Calendar · FYI */}
       {briefOn && (
         <DailyBrief
           brief={brief}
+          ranking={ranking}
+          rankingError={rankingError}
           fyiTasks={fyiTasks}
           boardLoaded={board != null || boardError != null}
           loading={briefLoading}
@@ -290,15 +380,21 @@ export default function HomePage() {
         </Card>
       )}
 
+      {/* Job Outcomes — recent completed agent-job runs, expandable */}
+      <JobOutcomes />
+
       {/* Google News — infinite top-stories feed */}
       {newsOn && (
         <GoogleNews
           news={news}
+          discovery={discovery}
           loading={newsLoading}
           error={newsError}
           hasMore={hasMore}
           onRetry={() => void loadMoreNews()}
           onRefresh={refreshNews}
+          onVote={voteNews}
+          onDiscoveryAct={actDiscovery}
           sentinelRef={sentinelRef}
         />
       )}
@@ -331,6 +427,8 @@ interface FyiTask {
 
 function DailyBrief({
   brief,
+  ranking,
+  rankingError,
   fyiTasks,
   boardLoaded,
   loading,
@@ -339,6 +437,8 @@ function DailyBrief({
   view,
 }: {
   brief: DigestBrief | null;
+  ranking: InboxRanking | null;
+  rankingError: string | null;
   fyiTasks: FyiTask[];
   boardLoaded: boolean;
   loading: boolean;
@@ -348,8 +448,6 @@ function DailyBrief({
 }) {
   const weekday = new Date().toLocaleDateString(undefined, { weekday: "long" });
   const connected = brief?.connected ?? false;
-  const emails = brief?.gmail.messages ?? [];
-  const gmailError = brief?.gmail.error ?? null;
   const events = brief?.calendar.events ?? [];
   const calError = brief?.calendar.error ?? null;
   const firstLoad = loading && brief == null;
@@ -400,26 +498,34 @@ function DailyBrief({
           </div>
         ) : (
           <>
-            {/* Top of Mind + On Your Calendar both need a connected Google.
-                The Combined / per-account view comes from the global header
-                selector (shared across every account-aware tab). */}
+            {/* Only "On Your Calendar" needs a connected Google now — Top of
+                Mind ranks the local ingested inboxes. The Combined / per-account
+                view comes from the global header selector. */}
             {!connected && <ConnectGoogle />}
 
-            {connected && (
-              <BriefSection icon={<Mail className="h-4 w-4" />} title="Top of Mind">
-                {gmailError ? (
-                  <SectionNote tone="warn">{gmailError}</SectionNote>
-                ) : emails.length === 0 ? (
-                  <SectionNote>Inbox zero — nothing unread right now.</SectionNote>
-                ) : (
-                  <ul className="flex flex-col divide-y divide-border">
-                    {emails.map((m) => (
-                      <EmailRow key={m.id} email={m} showAccount={showAccountTag} />
-                    ))}
-                  </ul>
-                )}
-              </BriefSection>
-            )}
+            {/* Top of Mind = a best-guess at the few most important emails in
+                each inbox (cheap heuristic shortlist → one model pick per inbox).
+                Rows with a drafted reply deep-link to the review panel; the rest
+                open in Gmail. */}
+            <BriefSection icon={<Mail className="h-4 w-4" />} title="Top of Mind">
+              {rankingError ? (
+                <SectionNote tone="warn">{rankingError}</SectionNote>
+              ) : ranking == null ? (
+                <Loading />
+              ) : ranking.inboxes.length === 0 ? (
+                <SectionNote>No inboxes connected yet.</SectionNote>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {ranking.inboxes.map((g) => (
+                    <InboxRankGroupView
+                      key={g.account_id}
+                      group={g}
+                      showLabel={ranking.inboxes.length > 1}
+                    />
+                  ))}
+                </div>
+              )}
+            </BriefSection>
 
             {connected && (
               <BriefSection
@@ -488,44 +594,6 @@ function BriefSection({
   );
 }
 
-function EmailRow({
-  email,
-  showAccount,
-}: {
-  email: BriefEmail;
-  showAccount: boolean;
-}) {
-  return (
-    <li className="flex gap-3 py-2.5">
-      <span
-        aria-hidden
-        className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand/70"
-      />
-      <a
-        href={email.link || undefined}
-        target="_blank"
-        rel="noreferrer"
-        className="group min-w-0 flex-1"
-      >
-        <div className="flex items-center gap-2">
-          <p className="flex-1 truncate text-sm font-medium leading-snug text-foreground group-hover:text-brand">
-            {email.subject}
-          </p>
-          {showAccount && <AccountTag account={email.account} />}
-          {email.from && (
-            <span className="shrink-0 text-xs text-text-secondary">{email.from}</span>
-          )}
-        </div>
-        {email.snippet && (
-          <p className="mt-0.5 line-clamp-1 text-sm text-muted-foreground">
-            {email.snippet}
-          </p>
-        )}
-      </a>
-    </li>
-  );
-}
-
 function EventRow({
   event,
   showAccount,
@@ -552,6 +620,93 @@ function EventRow({
   );
 }
 
+/** One inbox's top picks in the brief's Top of Mind. In combined view each group
+ *  is labelled with its account; a single-account view drops the label. */
+function InboxRankGroupView({
+  group,
+  showLabel,
+}: {
+  group: InboxRankGroup;
+  showLabel: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {showLabel && (
+        <div className="flex items-center">
+          <AccountTag account={group.account} />
+        </div>
+      )}
+      {group.error ? (
+        <SectionNote tone="warn">{group.error}</SectionNote>
+      ) : group.items.length === 0 ? (
+        <SectionNote>Nothing notable right now.</SectionNote>
+      ) : (
+        <ul className="flex flex-col divide-y divide-border">
+          {group.items.map((it) => (
+            <InboxRankRow key={it.id} item={it} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** A single ranked email. A drafted reply deep-links into the review panel
+ *  (`/inbox?draft=<id>`); otherwise the row opens the message in Gmail. */
+function InboxRankRow({ item }: { item: InboxRankItem }) {
+  const inner = (
+    <>
+      <span
+        aria-hidden
+        className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+          item.is_read ? "bg-border" : "bg-brand/70"
+        }`}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="flex-1 truncate text-sm font-medium leading-snug text-foreground group-hover:text-brand">
+            {item.subject}
+          </p>
+          {item.draft_id && <Badge tone="secondary">draft ready</Badge>}
+        </div>
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-text-secondary">
+          {item.from_addr && <span className="truncate">{item.from_addr}</span>}
+          {item.reason && (
+            <>
+              <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
+              <span className="truncate italic">{item.reason}</span>
+            </>
+          )}
+        </div>
+      </div>
+      {item.received_at && (
+        <span className="shrink-0 text-xs text-text-secondary">
+          {isoTimeAgo(item.received_at)}
+        </span>
+      )}
+    </>
+  );
+  const cls = "group flex items-start gap-3";
+  return (
+    <li className="py-2.5">
+      {item.draft_id ? (
+        <Link to={`/inbox?draft=${item.draft_id}`} className={cls}>
+          {inner}
+        </Link>
+      ) : (
+        <a
+          href={item.link || undefined}
+          target="_blank"
+          rel="noreferrer"
+          className={cls}
+        >
+          {inner}
+        </a>
+      )}
+    </li>
+  );
+}
+
 /** "Connect Google" prompt — shown when the box has no Google token yet.
  *  Mirrors the calendar-not-connected pattern; the brief lights up the moment
  *  the operator runs the google-workspace login. */
@@ -560,10 +715,10 @@ function ConnectGoogle() {
   return (
     <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-4">
       <p className="text-sm font-medium text-foreground">
-        Connect Google to see your mail and calendar
+        Connect Google to see your calendar
       </p>
       <p className="text-sm text-text-secondary">
-        Top of Mind and On Your Calendar read your Gmail and Google Calendar.
+        On Your Calendar reads your Google Calendar.
       </p>
       <Button size="sm" onClick={() => navigate("/settings/google")}>
         Connect Google accounts
@@ -590,21 +745,39 @@ function SectionNote({
 
 /* ── Google News ───────────────────────────────────────────────────────── */
 
+type VoteFn = (item: NewsItem, vote: "up" | "down" | null, reason?: string) => void;
+
+/** Downvote reason picker options ("why didn't you like this?"). Codes must
+ *  match the server's _NEWS_DOWN_REASONS. */
+const DOWN_REASONS: Array<{ code: string; label: string }> = [
+  { code: "not_interested", label: "Not interested in this topic" },
+  { code: "source", label: "Don't like this source" },
+  { code: "seen", label: "Already seen it" },
+  { code: "low_quality", label: "Sensational or low quality" },
+  { code: "other", label: "Something else" },
+];
+
 function GoogleNews({
   news,
+  discovery,
   loading,
   error,
   hasMore,
   onRetry,
   onRefresh,
+  onVote,
+  onDiscoveryAct,
   sentinelRef,
 }: {
   news: NewsItem[];
+  discovery: NewsDiscoverySource[];
   loading: boolean;
   error: string | null;
   hasMore: boolean;
   onRetry: () => void;
   onRefresh: () => void;
+  onVote: VoteFn;
+  onDiscoveryAct: (id: string, action: "keep" | "dismiss") => void;
   sentinelRef: React.RefObject<HTMLDivElement | null>;
 }) {
   // Lead = first story with an image (falls back to the first story).
@@ -620,6 +793,7 @@ function GoogleNews({
     const seen = new Set<string>();
     const out: NewsItem[] = [];
     for (const n of news) {
+      if (n.vote === "down") continue;
       if (seen.has(n.source_id)) continue;
       seen.add(n.source_id);
       out.push(n);
@@ -660,9 +834,17 @@ function GoogleNews({
             </Button>
           </div>
 
-          {lead && <LeadStory item={lead} />}
+          {discovery.length > 0 && (
+            <DiscoveryBanner sources={discovery} onAct={onDiscoveryAct} />
+          )}
+
+          {lead && <LeadStory item={lead} onVote={onVote} />}
           {rest.map((item, i) => (
-            <StoryRow key={`${item.source_id}-${i}-${item.link}`} item={item} />
+            <StoryRow
+              key={`${item.source_id}-${i}-${item.link}`}
+              item={item}
+              onVote={onVote}
+            />
           ))}
 
           {error && (
@@ -736,52 +918,187 @@ function GoogleNews({
   );
 }
 
-/** Big featured card — large image, headline, source/time. */
-function LeadStory({ item }: { item: NewsItem }) {
+/** "New sources in your feed today" — the daily discovery picks, with
+ *  Keep (joins the operator's sources) / Dismiss (never re-suggested). */
+function DiscoveryBanner({
+  sources,
+  onAct,
+}: {
+  sources: NewsDiscoverySource[];
+  onAct: (id: string, action: "keep" | "dismiss") => void;
+}) {
   return (
-    <a
-      href={item.link || undefined}
-      target="_blank"
-      rel="noreferrer"
-      className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-brand/40"
-    >
-      <StoryThumb image={item.image} className="aspect-[16/9] w-full" iconClassName="h-10 w-10" />
-      <div className="flex flex-col gap-1.5 p-4">
-        <StorySource item={item} />
-        <h4 className="text-lg font-semibold leading-snug group-hover:text-brand">
-          {item.title || "(untitled)"}
-        </h4>
-        {item.summary && (
-          <p className="line-clamp-2 text-sm text-muted-foreground">{item.summary}</p>
-        )}
+    <div className="flex flex-col gap-2 rounded-xl border border-brand/30 bg-brand/5 p-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <Sparkles className="h-4 w-4 text-brand" />
+        New sources in your feed today
       </div>
-    </a>
+      {sources.map((s) => (
+        <div key={s.id} className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <span className="text-sm font-medium">{s.label}</span>
+            {s.tags && s.tags.length > 0 && (
+              <span className="ml-2 text-xs text-text-secondary">
+                {s.tags.join(" · ")}
+              </span>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button type="button" size="sm" onClick={() => onAct(s.id, "keep")}>
+              Keep
+            </Button>
+            <Button
+              type="button"
+              ghost
+              size="sm"
+              onClick={() => onAct(s.id, "dismiss")}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      ))}
+      <p className="text-xs text-text-secondary">
+        Their stories are mixed into today's feed. Thumbs on any story teach
+        tomorrow's picks.
+      </p>
+    </div>
+  );
+}
+
+/** What a story collapses to right after a downvote. */
+function DownvotedNote({ item, onVote }: { item: NewsItem; onVote: VoteFn }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-muted/20 px-4 py-2.5">
+      <span className="min-w-0 truncate text-sm text-text-secondary">
+        Got it — you'll see less like this.
+      </span>
+      <Button type="button" ghost size="sm" onClick={() => onVote(item, null)}>
+        Undo
+      </Button>
+    </div>
+  );
+}
+
+/** Thumbs up/down. The down thumb opens the "why didn't you like this?"
+ *  reason picker; the chosen reason rides with the vote so the ranker (and
+ *  gbrain) can learn the right lesson (topic vs source vs quality). */
+function VoteControls({ item, onVote }: { item: NewsItem; onVote: VoteFn }) {
+  const [reasonsOpen, setReasonsOpen] = useState(false);
+  const up = item.vote === "up";
+  return (
+    <div className="relative flex items-center gap-0.5">
+      <button
+        type="button"
+        aria-label="More like this"
+        title="More like this"
+        aria-pressed={up}
+        onClick={() => onVote(item, up ? null : "up")}
+        className={`rounded-full p-1.5 transition-colors hover:bg-muted ${
+          up ? "text-brand" : "text-text-secondary"
+        }`}
+      >
+        <ThumbsUp className="h-4 w-4" fill={up ? "currentColor" : "none"} />
+      </button>
+      <button
+        type="button"
+        aria-label="Less like this"
+        title="Less like this"
+        aria-expanded={reasonsOpen}
+        onClick={() => setReasonsOpen((v) => !v)}
+        className="rounded-full p-1.5 text-text-secondary transition-colors hover:bg-muted"
+      >
+        <ThumbsDown className="h-4 w-4" />
+      </button>
+      {reasonsOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-10"
+            aria-hidden
+            onClick={() => setReasonsOpen(false)}
+          />
+          <div className="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-border bg-card p-1 shadow-lg">
+            <p className="px-2 py-1.5 text-xs font-medium text-text-secondary">
+              Why didn't you like this?
+            </p>
+            {DOWN_REASONS.map((r) => (
+              <button
+                key={r.code}
+                type="button"
+                className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                onClick={() => {
+                  setReasonsOpen(false);
+                  onVote(item, "down", r.code);
+                }}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Big featured card — large image, headline, source/time. */
+function LeadStory({ item, onVote }: { item: NewsItem; onVote: VoteFn }) {
+  if (item.vote === "down") return <DownvotedNote item={item} onVote={onVote} />;
+  return (
+    <div className="group flex flex-col rounded-xl border border-border bg-card transition-colors hover:border-brand/40">
+      <a
+        href={item.link || undefined}
+        target="_blank"
+        rel="noreferrer"
+        className="flex flex-col overflow-hidden rounded-t-xl"
+      >
+        <StoryThumb image={item.image} className="aspect-[16/9] w-full" iconClassName="h-10 w-10" />
+        <div className="flex flex-col gap-1.5 p-4 pb-1">
+          <StorySource item={item} />
+          <h4 className="text-lg font-semibold leading-snug group-hover:text-brand">
+            {item.title || "(untitled)"}
+          </h4>
+          {item.summary && (
+            <p className="line-clamp-2 text-sm text-muted-foreground">{item.summary}</p>
+          )}
+        </div>
+      </a>
+      <div className="flex items-center justify-end px-2 pb-1.5">
+        <VoteControls item={item} onVote={onVote} />
+      </div>
+    </div>
   );
 }
 
 /** Compact story row — thumbnail left, headline right (Google News list item). */
-function StoryRow({ item }: { item: NewsItem }) {
+function StoryRow({ item, onVote }: { item: NewsItem; onVote: VoteFn }) {
+  if (item.vote === "down") return <DownvotedNote item={item} onVote={onVote} />;
   return (
-    <a
-      href={item.link || undefined}
-      target="_blank"
-      rel="noreferrer"
-      className="group flex items-start gap-4 rounded-xl border border-border bg-card p-3 transition-colors hover:border-brand/40"
-    >
-      <div className="min-w-0 flex-1">
-        <StorySource item={item} />
-        <h4 className="mt-1 line-clamp-2 text-sm font-semibold leading-snug group-hover:text-brand">
-          {item.title || "(untitled)"}
-        </h4>
-        {item.summary && (
-          <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{item.summary}</p>
-        )}
+    <div className="group flex items-start gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:border-brand/40">
+      <a
+        href={item.link || undefined}
+        target="_blank"
+        rel="noreferrer"
+        className="flex min-w-0 flex-1 items-start gap-4"
+      >
+        <div className="min-w-0 flex-1">
+          <StorySource item={item} />
+          <h4 className="mt-1 line-clamp-2 text-sm font-semibold leading-snug group-hover:text-brand">
+            {item.title || "(untitled)"}
+          </h4>
+          {item.summary && (
+            <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{item.summary}</p>
+          )}
+        </div>
+        <StoryThumb
+          image={item.image}
+          className="h-20 w-28 rounded-lg sm:h-24 sm:w-36"
+        />
+      </a>
+      <div className="shrink-0 self-start">
+        <VoteControls item={item} onVote={onVote} />
       </div>
-      <StoryThumb
-        image={item.image}
-        className="h-20 w-28 rounded-lg sm:h-24 sm:w-36"
-      />
-    </a>
+    </div>
   );
 }
 
@@ -796,6 +1113,7 @@ function StorySource({ item }: { item: NewsItem }) {
           <span>{when}</span>
         </>
       )}
+      {item.discovery && <Badge tone="secondary">New source</Badge>}
     </div>
   );
 }
@@ -842,6 +1160,97 @@ function formatEventWhen(event: BriefEvent): string {
   const d = new Date(event.start);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/* ── Job Outcomes ──────────────────────────────────────────────────────── */
+
+function JobOutcomes() {
+  const [outputs, setOutputs] = useState<CronOutput[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    api
+      .getCronOutputs(10)
+      .then((r) => setOutputs(r.outputs))
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : "Failed to load job outcomes."),
+      );
+  }, []);
+
+  const toggle = useCallback((key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-text-secondary" />
+          <CardTitle>Job Outcomes</CardTitle>
+        </div>
+        <CardDescription>Recent completed agent job runs. Click to expand.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        {error ? (
+          <p className="text-sm text-destructive">{error}</p>
+        ) : outputs == null ? (
+          <Loading />
+        ) : outputs.length === 0 ? (
+          <Empty>No completed jobs yet.</Empty>
+        ) : (
+          outputs.map((o) => {
+            const key = `${o.profile ?? ""}:${o.job_id}:${o.timestamp}`;
+            const open = expanded.has(key);
+            const failed = o.last_status === "error";
+            return (
+              <div key={key} className="rounded border border-border bg-card">
+                <button
+                  type="button"
+                  onClick={() => toggle(key)}
+                  aria-expanded={open}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left"
+                >
+                  <ChevronRight
+                    className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                      open ? "rotate-90" : ""
+                    }`}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {o.job_name}
+                  </span>
+                  {o.ran_at && (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {isoTimeAgo(o.ran_at)}
+                    </span>
+                  )}
+                  <Badge tone={failed ? "destructive" : "success"}>
+                    {failed ? "error" : "ok"}
+                  </Badge>
+                </button>
+                {open && (
+                  <div className="border-t border-border px-3 py-3">
+                    {o.output.trim() ? (
+                      <Markdown content={o.output} />
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        (No output recorded for this run.)
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function formatDue(due: string): string {

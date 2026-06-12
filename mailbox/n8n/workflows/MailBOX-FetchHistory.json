@@ -1,34 +1,12 @@
 {
-  "active": false,
+  "active": true,
   "connections": {
-    "Webhook (mailbox-fetch-history)": {
+    "Aggregate Threads": {
       "main": [
         [
           {
             "index": 0,
-            "node": "Compute After Date",
-            "type": "main"
-          }
-        ]
-      ]
-    },
-    "Compute After Date": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "List Sent Messages",
-            "type": "main"
-          }
-        ]
-      ]
-    },
-    "List Sent Messages": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Cap Messages",
+            "node": "Respond",
             "type": "main"
           }
         ]
@@ -45,6 +23,17 @@
         ]
       ]
     },
+    "Compute After Date": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "List Sent Messages",
+            "type": "main"
+          }
+        ]
+      ]
+    },
     "Get Thread": {
       "main": [
         [
@@ -56,12 +45,23 @@
         ]
       ]
     },
-    "Aggregate Threads": {
+    "List Sent Messages": {
       "main": [
         [
           {
             "index": 0,
-            "node": "Respond",
+            "node": "Cap Messages",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Webhook (mailbox-fetch-history)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Compute After Date",
             "type": "main"
           }
         ]
@@ -75,6 +75,7 @@
     "templateCredsSetupCompleted": true
   },
   "name": "MailBOX-FetchHistory",
+  "nodeGroups": [],
   "nodes": [
     {
       "id": "fetchhistory-1111-4111-8111-webhook000001",
@@ -229,11 +230,14 @@
   ],
   "pinData": {},
   "settings": {
+    "errorWorkflow": "MlbxErrHandler01",
     "executionOrder": "v1"
   },
+  "sourceWorkflowId": null,
   "staticData": null,
   "tags": [],
-  "triggerCount": 1,
-  "updatedAt": "2026-05-02T00:00:00.000Z",
-  "versionId": "fetchhistory-1"
+  "versionMetadata": {
+    "description": null,
+    "name": null
+  }
 }

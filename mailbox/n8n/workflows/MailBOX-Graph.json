@@ -1,0 +1,400 @@
+{
+  "active": false,
+  "connections": {
+    "Account Email": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Get Graph Token",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Build Inbox Payload": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Insert Inbox (HTTP)",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Account Email",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Get Graph Token": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Graph List",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Graph List": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Split Messages",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Insert Inbox (HTTP)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Only If Newly Inserted",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Only If Newly Inserted": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Run Classify Sub",
+            "type": "main"
+          }
+        ],
+        []
+      ]
+    },
+    "Split Messages": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Build Inbox Payload",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": "MBOX-482 (P2) \u2014 Microsoft 365 / Graph ingress, token-as-data (addendum-01: HTTP providers mint per-request, NO n8n credential). Mirrors MailBOX.json's topology exactly, swapping the Gmail REST calls for Graph: Get Graph Token hits the dashboard minter (app/api/internal/graph/access-token) which client-credentials-mints an app-only bearer for THIS account from provider_secret_enc; Graph List + (split) feed raw Graph message JSON to Insert Inbox (HTTP) tagged provider:'microsoft'. The dashboard's /api/internal/inbox-messages runs MicrosoftGraphProvider.normalize() SERVER-SIDE (conversationId\u2192thread_id passthrough, nested from/toRecipients/body extraction) \u2014 n8n forwards Graph's shape verbatim. Dedup is the DB's (account_id, message_id) upsert; created=false short-circuits at Only If Newly Inserted. Classify/draft/queue/send are shared, provider-agnostic. ON IMPORT (per-account clone, addendum \u00a72 option a is for IMAP; Graph is token-as-data so a single workflow loops/serves accounts by account_email): set Account Email to THIS M365 account's address (the minter resolves it to the account_id + its BYO Azure creds). HERMES_INTERNAL_TOKEN must be set on n8n (same as the Gmail path). Graph uses $top + $filter on isRead; the polling cadence + cooldown parity with the Gmail circuit-breaker is a follow-up (Graph 429 handling lives in MicrosoftGraphProvider.parseRateLimit).",
+  "id": "MailBoxGraph00001",
+  "isArchived": false,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "name": "MailBOX-Graph",
+  "nodeGroups": [],
+  "nodes": [
+    {
+      "id": "9cb2c0c7-3477-4660-8729-e78b71189000",
+      "name": "Every 5 Minutes",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "position": [
+        0,
+        0
+      ],
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3
+    },
+    {
+      "id": "a2f1e2d3-0001-4a00-9000-000000000001",
+      "name": "Account Email",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e0000001-0000-0000-0000-000000000001",
+              "name": "account_email",
+              "type": "string",
+              "value": "microsoft@example.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        180,
+        0
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "a2f1e2d3-0002-4a00-9000-000000000002",
+      "name": "Get Graph Token",
+      "parameters": {
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Hermes-Internal-Token",
+              "value": "={{ $env.HERMES_INTERNAL_TOKEN }}"
+            }
+          ]
+        },
+        "method": "GET",
+        "options": {
+          "timeout": 5000
+        },
+        "sendHeaders": true,
+        "url": "=http://mailbox-dashboard:3001/dashboard/api/internal/graph/access-token?account_email={{ $('Account Email').item.json.account_email }}"
+      },
+      "position": [
+        360,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
+    },
+    {
+      "id": "a2f1e2d3-0003-4a00-9000-000000000003",
+      "name": "Graph List",
+      "parameters": {
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Graph Token').item.json.access_token }}"
+            }
+          ]
+        },
+        "method": "GET",
+        "options": {
+          "timeout": 10000
+        },
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "$filter",
+              "value": "isRead eq false"
+            },
+            {
+              "name": "$top",
+              "value": "25"
+            },
+            {
+              "name": "$select",
+              "value": "id,conversationId,internetMessageId,subject,from,toRecipients,receivedDateTime,bodyPreview,body,internetMessageHeaders"
+            },
+            {
+              "name": "$orderby",
+              "value": "receivedDateTime desc"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "sendQuery": true,
+        "url": "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages"
+      },
+      "position": [
+        540,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
+    },
+    {
+      "id": "a2f1e2d3-0004-4a00-9000-000000000004",
+      "name": "Split Messages",
+      "parameters": {
+        "fieldToSplitOut": "value",
+        "options": {}
+      },
+      "position": [
+        720,
+        0
+      ],
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1
+    },
+    {
+      "id": "a2f1e2d3-0005-4a00-9000-000000000005",
+      "name": "Build Inbox Payload",
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f0000001-0000-0000-0000-000000000001",
+              "name": "provider",
+              "type": "string",
+              "value": "microsoft"
+            },
+            {
+              "id": "f0000001-0000-0000-0000-000000000002",
+              "name": "account_email",
+              "type": "string",
+              "value": "={{ $('Account Email').item.json.account_email }}"
+            },
+            {
+              "id": "f0000001-0000-0000-0000-000000000003",
+              "name": "message_id",
+              "type": "string",
+              "value": "={{ $json.internetMessageId || $json.id || '' }}"
+            },
+            {
+              "id": "f0000001-0000-0000-0000-000000000004",
+              "name": "thread_id",
+              "type": "string",
+              "value": "={{ $json.conversationId || '' }}"
+            },
+            {
+              "id": "f0000001-0000-0000-0000-000000000005",
+              "name": "from_addr",
+              "type": "string",
+              "value": "={{ $json.from && $json.from.emailAddress ? $json.from.emailAddress.address : '' }}"
+            },
+            {
+              "id": "f0000001-0000-0000-0000-000000000006",
+              "name": "to_addr",
+              "type": "string",
+              "value": "={{ Array.isArray($json.toRecipients) && $json.toRecipients[0] && $json.toRecipients[0].emailAddress ? $json.toRecipients[0].emailAddress.address : '' }}"
+            },
+            {
+              "id": "f0000001-0000-0000-0000-000000000007",
+              "name": "subject",
+              "type": "string",
+              "value": "={{ $json.subject || '' }}"
+            },
+            {
+              "id": "f0000001-0000-0000-0000-000000000008",
+              "name": "received_at",
+              "type": "string",
+              "value": "={{ $json.receivedDateTime || '' }}"
+            },
+            {
+              "id": "f0000001-0000-0000-0000-000000000009",
+              "name": "snippet",
+              "type": "string",
+              "value": "={{ ($json.bodyPreview || '').substring(0, 200) }}"
+            },
+            {
+              "id": "f0000001-0000-0000-0000-00000000000a",
+              "name": "body",
+              "type": "string",
+              "value": "={{ $json.body && $json.body.content ? $json.body.content : ($json.bodyPreview || '') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "position": [
+        900,
+        0
+      ],
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4
+    },
+    {
+      "id": "a2f1e2d3-0006-4a00-9000-000000000006",
+      "name": "Insert Inbox (HTTP)",
+      "parameters": {
+        "jsonBody": "={\n  \"provider\": {{ JSON.stringify($json.provider || \"microsoft\") }},\n  \"account_email\": {{ JSON.stringify($json.account_email || \"\") }},\n  \"message_id\": {{ JSON.stringify($json.message_id || \"\") }},\n  \"thread_id\": {{ JSON.stringify($json.thread_id || \"\") }},\n  \"from_addr\": {{ JSON.stringify($json.from_addr || \"\") }},\n  \"to_addr\": {{ JSON.stringify($json.to_addr || \"\") }},\n  \"subject\": {{ JSON.stringify($json.subject || \"\") }},\n  \"received_at\": {{ JSON.stringify($json.received_at || \"\") }},\n  \"snippet\": {{ JSON.stringify($json.snippet || \"\") }},\n  \"body\": {{ JSON.stringify($json.body || \"\") }}\n}",
+        "method": "POST",
+        "options": {
+          "timeout": 5000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/inbox-messages"
+      },
+      "position": [
+        1080,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3
+    },
+    {
+      "id": "a2f1e2d3-0007-4a00-9000-000000000007",
+      "name": "Only If Newly Inserted",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1000001-0000-0000-0000-000000000001",
+              "leftValue": "={{ $json.created }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": true
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        1260,
+        0
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2
+    },
+    {
+      "id": "a2f1e2d3-0008-4a00-9000-000000000008",
+      "name": "Run Classify Sub",
+      "parameters": {
+        "options": {},
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "MlbxClsfySub0001"
+        }
+      },
+      "position": [
+        1440,
+        0
+      ],
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "errorWorkflow": "MlbxErrHandler01",
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none"
+  },
+  "sourceWorkflowId": null,
+  "staticData": {
+    "node:Every 5 Minutes": {
+      "recurrenceRules": []
+    }
+  },
+  "tags": [],
+  "versionMetadata": {
+    "description": null,
+    "name": null
+  }
+}

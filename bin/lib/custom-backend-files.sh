@@ -21,10 +21,18 @@ ABX_STOCK_IMPORT="${ABX_STOCK_IMPORT:-9a8c7c0}"
 # authoritative whenever it works.
 ABX_STATIC_BACKEND=(
   web_server.py
+  config.py
   google_brief.py
   google_accounts.py
   google_people.py
   shopify_accounts.py
+  agent_templates.py
+  mail_accounts.py
+  mail_probe.py
+  token_crypto.py
+  gemini_notes.py
+  dashboard_bridge.py
+  onboarding_state.py
   dashboard_auth/public_paths.py
 )
 
@@ -49,4 +57,35 @@ abx_custom_backend_files() {
   else
     printf '%s\n' "${ABX_STATIC_BACKEND[@]}"
   fi
+}
+
+# Non-.py custom assets that must ALSO ship to the box for features that aren't
+# pure backend Python. The git-derived backend set above is .py-only, so these
+# were silently never deployed — which is why agentbox2 shows the Brain Graph
+# "not generated yet" placeholder (the viewer bundle never arrived).
+#
+#   hermes_cli/graph_app/         the static Understand-Anything viewer bundle the
+#                                 Brain Graph tab iframes at /graph-app/.
+#   tools/gbrain-graph-export.ts  the gbrain → UA adapter the dashboard's
+#                                 "Generate Brain Graph" button runs. web_server.py
+#                                 self-installs it into $GBRAIN_DIR/src/tools/ at
+#                                 generate time (its relative imports require the
+#                                 gbrain source tree), so it only needs to LAND in
+#                                 the hermes tree — see _run_graph_export.
+#
+# Paths are relative to the hermes root (the dir containing hermes_cli/), shipped
+# preserving structure so they land in the box's runtime layout.
+ABX_CUSTOM_EXTRAS=(
+  hermes_cli/graph_app
+  tools/gbrain-graph-export.ts
+)
+
+# abx_custom_extras <vendored-hermes-root>
+#   Prints one existing extra path per line (relative to the hermes root).
+#   Silently skips any absent from the checkout (forward-compatible).
+abx_custom_extras() {
+  local hermes_root="$1" p
+  for p in "${ABX_CUSTOM_EXTRAS[@]}"; do
+    [ -e "$hermes_root/$p" ] && printf '%s\n' "$p"
+  done
 }

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run gbrain dream nightly
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=600
+Persistent=true
+Unit=gbrain-dream.service
+
+[Install]
+WantedBy=timers.target

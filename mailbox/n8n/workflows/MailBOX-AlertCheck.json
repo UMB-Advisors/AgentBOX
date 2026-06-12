@@ -23,6 +23,17 @@
         ]
       ]
     },
+    "Send Alert": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Record Send",
+            "type": "main"
+          }
+        ]
+      ]
+    },
     "Should Send?": {
       "main": [
         [
@@ -34,26 +45,16 @@
         ],
         []
       ]
-    },
-    "Send Alert": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Record Send",
-            "type": "main"
-          }
-        ]
-      ]
     }
   },
-  "description": "MBOX-185 (FR-22) — operator threshold-alert email push. Polls the dashboard alert-check route every ALERT_CHECK_INTERVAL_MIN minutes; the route returns the alarm-severity alerts not yet emailed today (same evaluateAlerts surface as /status). When should_send is true it sends a combined alert email via appliance Gmail OAuth, then records the claimed alert_keys in mailbox.alert_sends so the same red condition emails once per day, not every poll. Slack/Telegram + per-customer cadence deferred to M6.",
+  "description": "MBOX-185 (FR-22) \u2014 operator threshold-alert email push. Polls the dashboard alert-check route every ALERT_CHECK_INTERVAL_MIN minutes; the route returns the alarm-severity alerts not yet emailed today (same evaluateAlerts surface as /status). When should_send is true it sends a combined alert email via appliance Gmail OAuth, then records the claimed alert_keys in mailbox.alert_sends so the same red condition emails once per day, not every poll. Slack/Telegram + per-customer cadence deferred to M6.",
   "id": "MlbxAlertChk001",
   "isArchived": false,
   "meta": {
     "templateCredsSetupCompleted": true
   },
   "name": "MailBOX-AlertCheck",
+  "nodeGroups": [],
   "nodes": [
     {
       "id": "b2000000-0000-0000-0000-000000000001",
@@ -80,10 +81,10 @@
       "name": "Check Alerts",
       "parameters": {
         "method": "GET",
-        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/alert-check",
         "options": {
           "timeout": 15000
-        }
+        },
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/alert-check"
       },
       "position": [
         220,
@@ -97,25 +98,25 @@
       "name": "Should Send?",
       "parameters": {
         "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "b2000c01-0000-0000-0000-000000000001",
+              "leftValue": "={{ $json.should_send }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": true
+            }
+          ],
           "options": {
             "caseSensitive": true,
             "leftValue": "",
             "typeValidation": "strict",
             "version": 2
-          },
-          "conditions": [
-            {
-              "id": "b2000c01-0000-0000-0000-000000000001",
-              "leftValue": "={{ $json.should_send }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
+          }
         },
         "options": {}
       },
@@ -127,24 +128,24 @@
       "typeVersion": 2.2
     },
     {
-      "id": "b2000000-0000-0000-0000-000000000004",
-      "name": "Send Alert",
-      "parameters": {
-        "resource": "message",
-        "operation": "send",
-        "sendTo": "={{ $json.recipient }}",
-        "subject": "={{ $json.subject }}",
-        "emailType": "html",
-        "message": "={{ $json.html }}",
-        "options": {
-          "appendAttribution": false
-        }
-      },
       "credentials": {
         "gmailOAuth2": {
           "id": "vEz5mz0uaAtlK8yz",
           "name": "Gmail account"
         }
+      },
+      "id": "b2000000-0000-0000-0000-000000000004",
+      "name": "Send Alert",
+      "parameters": {
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "operation": "send",
+        "options": {
+          "appendAttribution": false
+        },
+        "resource": "message",
+        "sendTo": "={{ $json.recipient }}",
+        "subject": "={{ $json.subject }}"
       },
       "position": [
         660,
@@ -157,14 +158,14 @@
       "id": "b2000000-0000-0000-0000-000000000005",
       "name": "Record Send",
       "parameters": {
-        "method": "POST",
-        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/alert-check/record",
-        "sendBody": true,
-        "specifyBody": "json",
         "jsonBody": "={\n  \"alert_keys\": {{ JSON.stringify($('Check Alerts').item.json.alert_keys) }},\n  \"recipient\": {{ JSON.stringify($('Check Alerts').item.json.recipient || \"\") }},\n  \"subject\": {{ JSON.stringify($('Check Alerts').item.json.subject || \"\") }}\n}",
+        "method": "POST",
         "options": {
           "timeout": 5000
-        }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/alert-check/record"
       },
       "position": [
         880,
@@ -176,8 +177,18 @@
   ],
   "pinData": {},
   "settings": {
+    "errorWorkflow": "MlbxErrHandler01",
     "executionOrder": "v1"
   },
-  "staticData": null,
-  "tags": []
+  "sourceWorkflowId": null,
+  "staticData": {
+    "node:Alert Schedule": {
+      "recurrenceRules": []
+    }
+  },
+  "tags": [],
+  "versionMetadata": {
+    "description": null,
+    "name": null
+  }
 }

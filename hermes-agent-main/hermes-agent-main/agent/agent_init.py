@@ -190,6 +190,8 @@ def init_agent(
     skip_context_files: bool = False,
     load_soul_identity: bool = False,
     skip_memory: bool = False,
+    memory_context: str = "primary",
+    memory_source: str = None,
     session_db=None,
     parent_session_id: str = None,
     iteration_budget: "IterationBudget" = None,
@@ -248,6 +250,13 @@ def init_agent(
         load_soul_identity (bool): If True, still use ~/.hermes/SOUL.md as the primary
             identity even when skip_context_files=True. Project context files from the cwd
             remain skipped.
+        memory_context (str): Memory scoping context passed to memory providers as
+            agent_context ("primary", "cron", "subagent"). Non-primary contexts keep the
+            builtin MEMORY.md/USER.md store off; providers self-gate writes (read-only recall).
+        memory_source (str): Optional per-session entity/source binding passed to memory
+            providers as memory_source. Providers that scope recall by source (gbrain)
+            use it to override their configured source for this session only (e.g. a
+            cron job's memory_entity field). None/empty = provider config applies.
     """
     _install_safe_stdio()
 
@@ -1067,9 +1076,11 @@ def init_agent(
     agent._memory_nudge_interval = 10
     agent._turns_since_memory = 0
     agent._iters_since_skill = 0
-    if not skip_memory:
+    mem_config = _agent_cfg.get("memory", {})
+    # Builtin store stays primary-only: cron/subagent system prompts would
+    # corrupt user representations (MEMORY.md/USER.md).
+    if not skip_memory and memory_context == "primary":
         try:
-            mem_config = _agent_cfg.get("memory", {})
             agent._memory_enabled = mem_config.get("memory_enabled", False)
             agent._user_profile_enabled = mem_config.get("user_profile_enabled", False)
             agent._memory_nudge_interval = int(mem_config.get("nudge_interval", 10))
@@ -1104,8 +1115,12 @@ def init_agent(
                         "session_id": agent.session_id,
                         "platform": platform or "cli",
                         "hermes_home": str(get_hermes_home()),
-                        "agent_context": "primary",
+                        "agent_context": memory_context,
                     }
+                    # Per-session entity binding (Phase 5): thread an explicit
+                    # source override to providers that scope recall by source.
+                    if memory_source and str(memory_source).strip():
+                        _init_kwargs["memory_source"] = str(memory_source).strip()
                     # Thread session title for memory provider scoping
                     # (e.g. honcho uses this to derive chat-scoped session keys)
                     if agent._session_db:

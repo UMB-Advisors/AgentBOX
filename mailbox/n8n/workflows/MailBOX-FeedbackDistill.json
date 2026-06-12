@@ -1,0 +1,113 @@
+{
+  "active": true,
+  "connections": {
+    "Distill Feedback to Prompt Rules": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Prune Old Feedback Rules",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Distill Feedback to Prompt Rules",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "description": "Deterministic learning from rejected drafts: copies reviewer free-text feedback verbatim into prompt_rules (scope=avoid), deduped by feedback id, pruned to newest 15 per account. No LLM involved.",
+  "id": "MlbxFbckDistill1",
+  "isArchived": false,
+  "meta": null,
+  "name": "MailBOX-FeedbackDistill",
+  "nodeGroups": [],
+  "nodes": [
+    {
+      "id": "fd000000-0000-0000-0000-000000000001",
+      "name": "Every 15 Minutes",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "position": [
+        0,
+        0
+      ],
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
+      "id": "fd000000-0000-0000-0000-000000000002",
+      "name": "Distill Feedback to Prompt Rules",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "INSERT INTO mailbox.prompt_rules (account_id, scope, rule, rationale, created_by) SELECT d.account_id, 'avoid', 'Operator rejected a ' || coalesce(d.classification_category, 'previous') || ' draft to ' || coalesce(d.from_addr, 'a sender') || ' (reason: ' || df.reason_code || '). Operator note: ' || trim(df.free_text), 'feedback#' || df.id, 'feedback-distiller' FROM mailbox.draft_feedback df JOIN mailbox.drafts d ON d.id = df.draft_id WHERE df.reason_code IN ('wrong_tone','factually_inaccurate','missing_context','other') AND coalesce(trim(df.free_text),'') <> '' AND NOT EXISTS (SELECT 1 FROM mailbox.prompt_rules pr WHERE pr.rationale = 'feedback#' || df.id)"
+      },
+      "position": [
+        220,
+        0
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "MailBox Postgres"
+        }
+      },
+      "id": "fd000000-0000-0000-0000-000000000003",
+      "name": "Prune Old Feedback Rules",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "DELETE FROM mailbox.prompt_rules pr WHERE pr.created_by = 'feedback-distiller' AND pr.id NOT IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY account_id ORDER BY id DESC) AS rn FROM mailbox.prompt_rules WHERE created_by = 'feedback-distiller') t WHERE t.rn <= 15)"
+      },
+      "position": [
+        440,
+        0
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "errorWorkflow": "MlbxErrHandler01",
+    "executionOrder": "v1"
+  },
+  "sourceWorkflowId": null,
+  "staticData": {
+    "node:Every 15 Minutes": {
+      "recurrenceRules": []
+    }
+  },
+  "tags": [],
+  "versionMetadata": {
+    "description": null,
+    "name": null
+  }
+}
