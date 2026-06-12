@@ -1,3 +1,11 @@
+> # ⚠️ DEPRECATED — STALE DUPLICATE (2026-06-12)
+>
+> **Do not build here.** This web tree is frozen. The canonical AgentBOX dashboard
+> source is **`agentbox-sidecar/web`** in `UMB-Advisors/agentbox-sidecar` (served by
+> the sidecar FastAPI app at `/` on `:9200`). This copy is kept for git
+> history/rollback only — do not edit; do not open PRs against it.
+> See `../../DEPRECATED.md`.
+
 # Hermes Agent — Web UI
 
 Browser-based dashboard for managing Hermes Agent configuration, API keys, and monitoring active sessions.
