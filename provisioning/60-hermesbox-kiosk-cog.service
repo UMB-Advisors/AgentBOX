@@ -1,5 +1,5 @@
 # hermesBOX — Phase 6: PRIMARY kiosk session (Xorg + matchbox + cog/WPE).
-# User service. Renders http://127.0.0.1:9119 fullscreen, GPU compositing capped.
+# User service. Renders http://127.0.0.1:9200 (agentbox-sidecar) fullscreen, GPU compositing capped.
 # Enable EXACTLY ONE kiosk unit (cog XOR chromium). Spec: DR-005 · Linear UMB-385.
 [Unit]
 Description=hermesBOX kiosk — cog/WPE dashboard (PRIMARY renderer)
@@ -14,7 +14,7 @@ Type=simple
 # Own a real console VT so Xorg can take the display.
 TTYPath=/dev/tty1
 PAMName=login
-Environment=HERMESBOX_DASH_URL=http://127.0.0.1:9119/
+Environment=HERMESBOX_DASH_URL=http://127.0.0.1:9200/
 Environment=HERMESBOX_DISPLAY=:0
 ExecStart=%h/.local/bin/hermesbox-kiosk-cog.sh
 Restart=always

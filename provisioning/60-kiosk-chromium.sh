@@ -16,7 +16,7 @@
 set -euo pipefail
 . "${HOME}/.hermesbox_env.sh" 2>/dev/null || true
 
-DASH_URL="${HERMESBOX_DASH_URL:-http://127.0.0.1:9119/}"
+DASH_URL="${HERMESBOX_DASH_URL:-http://127.0.0.1:9200/}"
 DISPLAY_NUM="${HERMESBOX_DISPLAY:-:0}"
 export DISPLAY="$DISPLAY_NUM"
 PROFILE_DIR="${HOME}/.cache/hermesbox-kiosk-chromium"
