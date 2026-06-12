@@ -310,8 +310,8 @@ export function defaultReadUsedMemGiB(): number {
     const totalMatch = meminfo.match(/^MemTotal:\s+(\d+)\s+kB$/m);
     const availMatch = meminfo.match(/^MemAvailable:\s+(\d+)\s+kB$/m);
     if (!totalMatch || !availMatch) return 0;
-    const totalKb = Number.parseInt(totalMatch[1]!, 10);
-    const availKb = Number.parseInt(availMatch[1]!, 10);
+    const totalKb = Number.parseInt(totalMatch[1] ?? '', 10);
+    const availKb = Number.parseInt(availMatch[1] ?? '', 10);
     if (!Number.isFinite(totalKb) || !Number.isFinite(availKb)) return 0;
     const usedKb = totalKb - availKb;
     return usedKb < 0 ? 0 : usedKb / KB_PER_GIB;

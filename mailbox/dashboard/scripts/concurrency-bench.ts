@@ -40,7 +40,6 @@ import {
   type AccountConfig,
   type BenchMode,
   type ConcurrencyBenchResult,
-  evaluateS1Verdict,
   runConcurrencyBench,
 } from '../lib/eval/concurrency-bench';
 import {

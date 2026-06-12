@@ -5,7 +5,7 @@
 // shells out to `git` via execFile; tests inject a `runner` mock so we don't
 // spawn subprocesses or depend on the host filesystem layout.
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { type GitRunner, getGitState } from '@/lib/queries-git';
 
 // Build a runner that maps git arg-prefix → response, with optional throws.
