@@ -16,6 +16,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import secrets
 import stat
 import subprocess
@@ -1339,8 +1340,61 @@ _NEWS_SOURCES: List[Dict[str, str]] = [
     {"id": "wsj", "label": "WSJ — World", "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml"},
     {"id": "espn", "label": "ESPN", "url": "https://www.espn.com/espn/rss/news"},
 ]
-_NEWS_SOURCE_BY_ID: Dict[str, Dict[str, str]] = {s["id"]: s for s in _NEWS_SOURCES}
+# Discovery catalog: additional curated feeds the daily source-discovery
+# picker can surface (and the settings picker can select). Same posture as
+# _NEWS_SOURCES — a server-side whitelist, never client-supplied URLs.
+_NEWS_CATALOG: List[Dict[str, str]] = [
+    {"id": "wired", "label": "WIRED", "url": "https://www.wired.com/feed/rss"},
+    {"id": "mittr", "label": "MIT Technology Review", "url": "https://www.technologyreview.com/feed/"},
+    {"id": "venturebeat", "label": "VentureBeat", "url": "https://venturebeat.com/feed/"},
+    {"id": "theregister", "label": "The Register", "url": "https://www.theregister.com/headlines.atom"},
+    {"id": "krebs", "label": "Krebs on Security", "url": "https://krebsonsecurity.com/feed/"},
+    {"id": "schneier", "label": "Schneier on Security", "url": "https://www.schneier.com/feed/atom/"},
+    {"id": "engadget", "label": "Engadget", "url": "https://www.engadget.com/rss.xml"},
+    {"id": "cnbc", "label": "CNBC Top News", "url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"},
+    {"id": "fooddive", "label": "Food Dive", "url": "https://www.fooddive.com/feeds/news/"},
+    {"id": "grocerydive", "label": "Grocery Dive", "url": "https://www.grocerydive.com/feeds/news/"},
+    {"id": "sciam", "label": "Scientific American", "url": "http://rss.sciam.com/ScientificAmerican-Global"},
+    {"id": "nature", "label": "Nature News", "url": "https://www.nature.com/nature.rss"},
+    {"id": "npr", "label": "NPR News", "url": "https://feeds.npr.org/1001/rss.xml"},
+    {"id": "aljazeera", "label": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml"},
+    {"id": "politico", "label": "Politico", "url": "https://rss.politico.com/politics-news.xml"},
+    {"id": "axios", "label": "Axios", "url": "https://api.axios.com/feed/"},
+]
+_NEWS_SOURCE_BY_ID: Dict[str, Dict[str, str]] = {
+    s["id"]: s for s in [*_NEWS_SOURCES, *_NEWS_CATALOG]
+}
 _DEFAULT_NEWS_IDS: List[str] = ["hn", "ars", "verge", "bbc"]
+
+# Topic tags per source — drive the discovery picker's relevance scoring
+# (votes on a source's articles speak for the source's tags).
+_NEWS_SOURCE_TAGS: Dict[str, Tuple[str, ...]] = {
+    "hn": ("tech", "programming", "startups"),
+    "ars": ("tech", "science"),
+    "verge": ("tech", "gadgets", "culture"),
+    "techcrunch": ("tech", "startups", "business"),
+    "bbc": ("world",),
+    "nyt": ("world", "us"),
+    "guardian": ("world", "culture"),
+    "wsj": ("world", "business", "finance"),
+    "espn": ("sports",),
+    "wired": ("tech", "culture"),
+    "mittr": ("tech", "ai", "science"),
+    "venturebeat": ("tech", "ai", "business"),
+    "theregister": ("tech", "security"),
+    "krebs": ("security",),
+    "schneier": ("security",),
+    "engadget": ("tech", "gadgets"),
+    "cnbc": ("business", "finance"),
+    "fooddive": ("cpg", "food", "business"),
+    "grocerydive": ("cpg", "retail", "business"),
+    "sciam": ("science",),
+    "nature": ("science",),
+    "npr": ("world", "us"),
+    "aljazeera": ("world",),
+    "politico": ("politics", "us"),
+    "axios": ("news", "business", "politics"),
+}
 
 _NEWS_CACHE: Dict[str, Dict[str, Any]] = {}  # source id -> {ts, items}
 _NEWS_TTL_SECONDS = 600.0
@@ -1418,8 +1472,10 @@ def _custom_source_label(url: str) -> str:
 
 
 def _resolve_sources(prefs: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
-    """Combined id -> {id,label,url} map of built-in + the prefs' custom feeds."""
-    resolved: Dict[str, Dict[str, str]] = {s["id"]: dict(s) for s in _NEWS_SOURCES}
+    """Combined id -> {id,label,url} map of built-in + catalog + custom feeds."""
+    resolved: Dict[str, Dict[str, str]] = {
+        s["id"]: dict(s) for s in [*_NEWS_SOURCES, *_NEWS_CATALOG]
+    }
     for c in prefs.get("custom_sources", []):
         if isinstance(c, dict) and c.get("id") and c.get("url"):
             resolved[c["id"]] = {
@@ -1465,6 +1521,286 @@ def _read_digest_prefs() -> Dict[str, Any]:
 def _write_digest_prefs(prefs: Dict[str, Any]) -> None:
     _DIGEST_PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
     _DIGEST_PREFS_FILE.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
+
+
+# ── News feedback: per-article thumbs + learned reranking ────────────────
+#
+# Votes land in a small JSON ledger under HERMES_HOME: ``votes`` is the
+# current per-article state (link-keyed) that reranks the feed; ``events``
+# is an append-only id-stamped log consumed by
+# gbrain-ingest/ingest_news_feedback.py (integer watermark), which turns
+# votes into recallable gbrain taste pages.
+
+_NEWS_FEEDBACK_FILE = get_hermes_home() / "news-feedback.json"
+_NEWS_FEEDBACK_LOCK = threading.Lock()
+_NEWS_FEEDBACK_MAX_EVENTS = 2000
+_NEWS_DOWN_REASONS = ("not_interested", "source", "seen", "low_quality", "other")
+
+# Rerank weights, expressed in seconds of feed recency: the feed stays a
+# recency feed, feedback just warps article timestamps up/down the page.
+_NEWS_W_SOURCE = 1800.0      # per net source vote (clamped ±4 → ±2h)
+_NEWS_W_DOWN_TOKEN = 2700.0  # per disliked-topic token hit (≤3 → ≤2.25h down)
+_NEWS_W_UP_TOKEN = 1200.0    # per liked-topic token hit (≤2 → ≤40min up)
+_NEWS_SOURCE_MUTE_DOWNS = 3  # "don't like this source" downvotes to mute it
+
+
+def _read_news_feedback() -> Dict[str, Any]:
+    data: Dict[str, Any] = {"next_id": 1, "events": [], "votes": {}}
+    try:
+        if _NEWS_FEEDBACK_FILE.exists():
+            raw = json.loads(_NEWS_FEEDBACK_FILE.read_text("utf-8"))
+            if isinstance(raw, dict):
+                if isinstance(raw.get("next_id"), int) and raw["next_id"] >= 1:
+                    data["next_id"] = raw["next_id"]
+                if isinstance(raw.get("events"), list):
+                    data["events"] = [e for e in raw["events"] if isinstance(e, dict)]
+                if isinstance(raw.get("votes"), dict):
+                    data["votes"] = {
+                        str(k): v
+                        for k, v in raw["votes"].items()
+                        if isinstance(v, dict)
+                    }
+    except Exception:
+        _log.warning("failed to read news feedback; starting fresh", exc_info=True)
+    return data
+
+
+def _write_news_feedback(data: Dict[str, Any]) -> None:
+    _NEWS_FEEDBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    # with_name, not with_suffix: multi-dot suffixes raise on Python 3.12+.
+    tmp = _NEWS_FEEDBACK_FILE.with_name(_NEWS_FEEDBACK_FILE.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(_NEWS_FEEDBACK_FILE)
+
+
+def _record_news_feedback(
+    link: str, vote: Optional[str], reason: Optional[str], meta: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Upsert an article's current vote + append an event for gbrain ingest.
+
+    ``vote=None`` clears a prior vote (the Undo path); the clear is still
+    logged as an event so the brain can unlearn it.
+    """
+    keys = ("title", "source_id", "source", "published")
+    with _NEWS_FEEDBACK_LOCK:
+        data = _read_news_feedback()
+        event = {
+            "id": data["next_id"],
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "link": link,
+            "vote": vote or "none",
+            "reason": reason,
+            **{k: meta.get(k) for k in keys},
+        }
+        data["next_id"] += 1
+        data["events"].append(event)
+        # Cap the ledger; the ingest watermark only moves forward, so dropping
+        # old (already-ingested) events is safe.
+        if len(data["events"]) > _NEWS_FEEDBACK_MAX_EVENTS:
+            data["events"] = data["events"][-_NEWS_FEEDBACK_MAX_EVENTS:]
+        if vote is None:
+            data["votes"].pop(link, None)
+        else:
+            data["votes"][link] = {
+                "vote": vote,
+                "reason": reason,
+                "ts": event["ts"],
+                **{k: meta.get(k) for k in keys},
+            }
+        _write_news_feedback(data)
+    return event
+
+
+_NEWS_TOKEN_RE = re.compile(r"[a-z0-9]{4,}")
+_NEWS_STOPWORDS = frozenset(
+    "this that with from have will your according report reports says said "
+    "could would should about after before because being other their there "
+    "these those what when where which while world today year years week "
+    "month every still more most some just over under into onto than then "
+    "them they were going first last next best worst really only also been "
+    "between against during make makes made take takes news show shows here "
+    "want wants amid says".split()
+)
+
+
+def _news_title_tokens(title: str) -> set:
+    return {
+        t
+        for t in _NEWS_TOKEN_RE.findall((title or "").lower())
+        if t not in _NEWS_STOPWORDS
+    }
+
+
+def _news_feedback_stats() -> Dict[str, Any]:
+    """Aggregate the vote ledger into rerank inputs (cheap; runs per request).
+
+    Reads without _NEWS_FEEDBACK_LOCK on purpose: the writer lands the file
+    via an atomic rename, so a reader always sees a complete old/new file.
+    """
+    votes = _read_news_feedback()["votes"]
+    hidden: set = set()
+    source_net: Dict[str, int] = {}
+    source_strikes: Dict[str, int] = {}
+    down_tokens: Dict[str, int] = {}
+    up_tokens: Dict[str, int] = {}
+    for link, v in votes.items():
+        sid = str(v.get("source_id") or "")
+        vote = v.get("vote")
+        reason = v.get("reason")
+        tokens = _news_title_tokens(str(v.get("title") or ""))
+        if vote == "up":
+            if sid:
+                source_net[sid] = source_net.get(sid, 0) + 1
+            for t in tokens:
+                up_tokens[t] = up_tokens.get(t, 0) + 1
+        elif vote == "down":
+            hidden.add(link)
+            if sid:
+                # "Don't like this source" weighs harder than a generic down.
+                source_net[sid] = source_net.get(sid, 0) - (
+                    3 if reason == "source" else 1
+                )
+                if reason == "source":
+                    source_strikes[sid] = source_strikes.get(sid, 0) + 1
+            # "source"/"seen" downvotes say nothing about the topic itself.
+            if reason not in ("source", "seen"):
+                for t in tokens:
+                    down_tokens[t] = down_tokens.get(t, 0) + 1
+    muted = {s for s, n in source_strikes.items() if n >= _NEWS_SOURCE_MUTE_DOWNS}
+    return {
+        "votes": votes,
+        "hidden": hidden,
+        "source_net": source_net,
+        "muted": muted,
+        "down_tokens": down_tokens,
+        "up_tokens": up_tokens,
+    }
+
+
+def _news_rank_adjust(item: Dict[str, Any], stats: Dict[str, Any]) -> float:
+    """Seconds to add to an article's published_ts when sorting the feed."""
+    net = max(-4, min(4, stats["source_net"].get(item.get("source_id") or "", 0)))
+    adjust = net * _NEWS_W_SOURCE
+    tokens = _news_title_tokens(item.get("title") or "")
+    down_hits = sum(1 for t in tokens if t in stats["down_tokens"])
+    up_hits = sum(1 for t in tokens if t in stats["up_tokens"])
+    adjust -= min(down_hits, 3) * _NEWS_W_DOWN_TOKEN
+    adjust += min(up_hits, 2) * _NEWS_W_UP_TOKEN
+    return adjust
+
+
+# ── Daily source discovery ────────────────────────────────────────────────
+#
+# Each day the digest surfaces two catalog sources the operator hasn't
+# selected, ranked by tag affinity learned from their votes. Suggestions ride
+# along in the feed (badged client-side) until kept (joins news_sources) or
+# dismissed (never re-suggested).
+
+_NEWS_DISCOVERY_FILE = get_hermes_home() / "news-discovery.json"
+_NEWS_DISCOVERY_LOCK = threading.Lock()
+_NEWS_DISCOVERY_COUNT = 2
+_NEWS_DISCOVERY_COOLDOWN_DAYS = 14
+
+
+def _read_news_discovery() -> Dict[str, Any]:
+    data: Dict[str, Any] = {
+        "date": "",
+        "suggestions": [],
+        "history": {},
+        "dismissed": [],
+        "kept": [],
+    }
+    try:
+        if _NEWS_DISCOVERY_FILE.exists():
+            raw = json.loads(_NEWS_DISCOVERY_FILE.read_text("utf-8"))
+            if isinstance(raw, dict):
+                for k, default in data.items():
+                    if isinstance(raw.get(k), type(default)):
+                        data[k] = raw[k]
+    except Exception:
+        _log.warning("failed to read news discovery state; resetting", exc_info=True)
+    return data
+
+
+def _write_news_discovery(data: Dict[str, Any]) -> None:
+    _NEWS_DISCOVERY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _NEWS_DISCOVERY_FILE.with_name(_NEWS_DISCOVERY_FILE.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(_NEWS_DISCOVERY_FILE)
+
+
+def _todays_news_discovery(prefs: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The day's suggested sources — computed once per day, then persisted.
+
+    Candidates: whitelist + catalog sources the operator hasn't selected,
+    dismissed, muted, or been shown within the cooldown window. Ranked by
+    tag affinity from votes; a deterministic date-hash tiebreak rotates the
+    picks day-to-day while there's no feedback signal yet.
+    """
+    import datetime as _dt
+    import hashlib
+
+    today = time.strftime("%Y-%m-%d")
+    selected = set(prefs.get("news_sources") or [])
+    with _NEWS_DISCOVERY_LOCK:
+        state = _read_news_discovery()
+        if state["date"] != today:
+            stats = _news_feedback_stats()
+            tag_score: Dict[str, float] = {}
+            for sid, net in stats["source_net"].items():
+                for tag in _NEWS_SOURCE_TAGS.get(sid, ()):
+                    tag_score[tag] = tag_score.get(tag, 0.0) + net
+            cutoff = (
+                _dt.date.today()
+                - _dt.timedelta(days=_NEWS_DISCOVERY_COOLDOWN_DAYS)
+            ).isoformat()
+            dismissed = set(state["dismissed"])
+            # kept normally implies selected (keep writes news_sources), but
+            # guard on it directly so a failed prefs write can't re-expose a
+            # kept source to the picker.
+            kept = set(state["kept"])
+            candidates: List[Tuple[float, int, str]] = []
+            for sid in _NEWS_SOURCE_BY_ID:
+                if (
+                    sid in selected
+                    or sid in kept
+                    or sid in dismissed
+                    or sid in stats["muted"]
+                ):
+                    continue
+                if str(state["history"].get(sid, "")) >= cutoff:
+                    continue
+                affinity = sum(
+                    tag_score.get(t, 0.0) for t in _NEWS_SOURCE_TAGS.get(sid, ())
+                )
+                tiebreak = int(
+                    hashlib.sha1(f"{today}:{sid}".encode()).hexdigest()[:8], 16
+                )
+                candidates.append((-affinity, tiebreak, sid))
+            candidates.sort()
+            state["date"] = today
+            state["suggestions"] = [
+                sid for _, _, sid in candidates[:_NEWS_DISCOVERY_COUNT]
+            ]
+            for sid in state["suggestions"]:
+                state["history"][sid] = today
+            _write_news_discovery(state)
+        suggestions = list(state["suggestions"])
+    out: List[Dict[str, Any]] = []
+    for sid in suggestions:
+        src = _NEWS_SOURCE_BY_ID.get(sid)
+        # A kept suggestion is in news_sources now — it's a regular source,
+        # so it drops out of the banner/badging.
+        if not src or sid in selected:
+            continue
+        out.append(
+            {
+                "id": sid,
+                "label": src["label"],
+                "tags": list(_NEWS_SOURCE_TAGS.get(sid, ())),
+            }
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1514,6 +1850,147 @@ def _read_tasks_prefs() -> Dict[str, Any]:
 def _write_tasks_prefs(prefs: Dict[str, Any]) -> None:
     _TASKS_PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
     _TASKS_PREFS_FILE.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Kanban Linear-UX sidecar metadata (docs/kanban-linear-ux.v0.1.0.md §2.2).
+# Linear-only fields the kanban plugin DB doesn't model -- due dates, labels,
+# estimates, cycles, saved views -- live in ~/.hermes/kanban-meta.json, served
+# by the /api/tasks/meta endpoints below. Read/merge/write mirrors the digest
+# prefs pattern; single-operator appliance, so no locking beyond the atomic
+# tmp+rename write. The plugin Board UI never sees these fields (accepted);
+# they render in our web/src views only.
+# ---------------------------------------------------------------------------
+
+_KANBAN_META_FILE = get_hermes_home() / "kanban-meta.json"
+_DEFAULT_KANBAN_META: Dict[str, Any] = {
+    "version": 1,
+    "tasks": {},  # task id -> {due_at?, labels?, estimate?, cycle_id?}
+    "labels": [],  # [{id, name, color}]
+    "cycles": [],  # [{id, name, start, end}]
+    "views": [],  # [{id, name, filters: FilterState}]
+}
+_KANBAN_TASK_META_FIELDS = ("due_at", "labels", "estimate", "cycle_id")
+# Mirrors the frontend FilterState (PRD §2.1): key -> default. Saved views
+# persist exactly this shape.
+_KANBAN_FILTER_DEFAULTS: Dict[str, Any] = {
+    "statuses": [],
+    "assignees": [],
+    "tenants": [],
+    "labels": [],
+    "cycleId": None,
+    "text": "",
+    "overdueOnly": False,
+}
+
+
+def _valid_iso_date(value: Any) -> bool:
+    """Strict YYYY-MM-DD naming a real calendar day (rejects 2026-02-31)."""
+    from datetime import date as _date
+
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return False
+    try:
+        _date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _valid_hex_color(value: Any) -> bool:
+    return isinstance(value, str) and bool(re.fullmatch(r"#[0-9a-fA-F]{6}", value))
+
+
+def _str_list(value: Any) -> Optional[List[str]]:
+    """``value`` as a list of strings, or None when malformed."""
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        return None
+    return list(value)
+
+
+def _clean_filter_state(value: Any) -> Optional[Dict[str, Any]]:
+    """Validate a saved view's FilterState: unknown keys rejected (None),
+    missing keys filled with defaults, wrong-typed values rejected."""
+    if not isinstance(value, dict):
+        return None
+    if set(value) - set(_KANBAN_FILTER_DEFAULTS):
+        return None
+    out = json.loads(json.dumps(_KANBAN_FILTER_DEFAULTS))
+    for key in ("statuses", "assignees", "tenants", "labels"):
+        if key in value:
+            lst = _str_list(value[key])
+            if lst is None:
+                return None
+            out[key] = lst
+    if "cycleId" in value:
+        if value["cycleId"] is not None and not isinstance(value["cycleId"], str):
+            return None
+        out["cycleId"] = value["cycleId"]
+    if "text" in value:
+        if not isinstance(value["text"], str):
+            return None
+        out["text"] = value["text"]
+    if "overdueOnly" in value:
+        if not isinstance(value["overdueOnly"], bool):
+            return None
+        out["overdueOnly"] = value["overdueOnly"]
+    return out
+
+
+def _clean_task_meta_entry(value: Any) -> Dict[str, Any]:
+    """Best-effort sanitize of one stored task entry (reads stay tolerant --
+    a hand-edited bad field drops out instead of poisoning the doc)."""
+    entry: Dict[str, Any] = {}
+    if not isinstance(value, dict):
+        return entry
+    if _valid_iso_date(value.get("due_at")):
+        entry["due_at"] = value["due_at"]
+    labels = _str_list(value.get("labels"))
+    if labels:
+        entry["labels"] = labels
+    est = value.get("estimate")
+    if isinstance(est, int) and not isinstance(est, bool) and 0 <= est <= 100:
+        entry["estimate"] = est
+    if isinstance(value.get("cycle_id"), str) and value["cycle_id"]:
+        entry["cycle_id"] = value["cycle_id"]
+    return entry
+
+
+def _read_kanban_meta() -> Dict[str, Any]:
+    """Load the sidecar doc merged over defaults; a corrupt file logs and
+    falls back to defaults (same posture as ``_read_digest_prefs``)."""
+    meta = json.loads(json.dumps(_DEFAULT_KANBAN_META))
+    try:
+        if _KANBAN_META_FILE.exists():
+            data = json.loads(_KANBAN_META_FILE.read_text("utf-8"))
+            if isinstance(data, dict):
+                tasks = data.get("tasks")
+                if isinstance(tasks, dict):
+                    for tid, raw in tasks.items():
+                        entry = _clean_task_meta_entry(raw)
+                        if isinstance(tid, str) and tid and entry:
+                            meta["tasks"][tid] = entry
+                for key in ("labels", "cycles", "views"):
+                    items = data.get(key)
+                    if isinstance(items, list):
+                        meta[key] = [
+                            i
+                            for i in items
+                            if isinstance(i, dict)
+                            and isinstance(i.get("id"), str)
+                            and i["id"]
+                        ]
+    except Exception:
+        _log.warning("failed to read kanban meta; using defaults", exc_info=True)
+    return meta
+
+
+def _write_kanban_meta(meta: Dict[str, Any]) -> None:
+    """Atomic write: tmp + rename, so a crash never half-writes the doc."""
+    _KANBAN_META_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _KANBAN_META_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    tmp.replace(_KANBAN_META_FILE)
 
 
 def _linear_api_key() -> Optional[str]:
@@ -1859,10 +2336,11 @@ def _enrich_images(items: List[Dict[str, Any]]) -> None:
 
 @app.get("/api/digest/news/sources")
 async def get_news_sources():
-    """Selectable news feeds: built-in whitelist + operator custom feeds."""
+    """Selectable news feeds: built-in whitelist + catalog + custom feeds."""
     prefs = _read_digest_prefs()
     builtin = [
-        {"id": s["id"], "label": s["label"], "custom": False} for s in _NEWS_SOURCES
+        {"id": s["id"], "label": s["label"], "custom": False}
+        for s in [*_NEWS_SOURCES, *_NEWS_CATALOG]
     ]
     custom = [
         {"id": c["id"], "label": c["label"], "url": c["url"], "custom": True}
@@ -1880,6 +2358,11 @@ async def get_news(
     ``sources`` is a CSV of source ids (unknown ids ignored); empty → the saved
     prefs' selection (or defaults). Drives the digest's infinite scroll.
     ``refresh`` bypasses the per-feed TTL cache (the "Refresh feed" button).
+
+    Feedback-aware: today's discovery suggestions ride along in the fetch
+    set, downvoted articles and muted sources are dropped, and the recency
+    sort is warped by learned source/topic affinity (_news_rank_adjust).
+    Each item is annotated with the operator's current ``vote``.
     """
     prefs = _read_digest_prefs()
     resolved = _resolve_sources(prefs)
@@ -1890,22 +2373,43 @@ async def get_news(
         ids = [i for i in ids if i in resolved]
     offset = max(0, offset)
     limit = max(1, min(limit, 50))
-    src_list = [resolved[i] for i in ids]
     loop = asyncio.get_running_loop()
+    discovery = await loop.run_in_executor(None, _todays_news_discovery, prefs)
+    discovery_ids = [
+        d["id"] for d in discovery if d["id"] not in ids and d["id"] in resolved
+    ]
+    src_list = [resolved[i] for i in [*ids, *discovery_ids]]
     all_items = await loop.run_in_executor(
         None, lambda: _collect_news(src_list, force=bool(refresh))
     )
-    # Copy each item without the internal sort key (don't mutate the cache).
-    page = [
-        {k: v for k, v in it.items() if k != "published_ts"}
-        for it in all_items[offset : offset + limit]
+    stats = await loop.run_in_executor(None, _news_feedback_stats)
+    visible = [
+        it
+        for it in all_items
+        if it.get("link") not in stats["hidden"]
+        and it.get("source_id") not in stats["muted"]
     ]
+    visible.sort(
+        key=lambda it: it.get("published_ts", 0.0) + _news_rank_adjust(it, stats),
+        reverse=True,
+    )
+    discovery_set = set(discovery_ids)
+    # Copy each item without the internal sort key (don't mutate the cache).
+    page = []
+    for it in visible[offset : offset + limit]:
+        out = {k: v for k, v in it.items() if k != "published_ts"}
+        cur = stats["votes"].get(it.get("link") or "")
+        out["vote"] = cur.get("vote") if cur else None
+        if it.get("source_id") in discovery_set:
+            out["discovery"] = True
+        page.append(out)
     # Backfill thumbnails from article og:image for feeds without inline images.
     await loop.run_in_executor(None, _enrich_images, page)
     return {
         "items": page,
-        "total": len(all_items),
-        "has_more": offset + limit < len(all_items),
+        "total": len(visible),
+        "has_more": offset + limit < len(visible),
+        "discovery": discovery,
     }
 
 
@@ -1954,6 +2458,85 @@ async def put_digest_prefs(body: DigestPrefsBody):
     return prefs
 
 
+class NewsFeedbackBody(BaseModel):
+    link: str
+    vote: Optional[str] = None  # "up" | "down" | None (clear a prior vote)
+    reason: Optional[str] = None
+    title: Optional[str] = None
+    source_id: Optional[str] = None
+    source: Optional[str] = None
+    published: Optional[str] = None
+
+
+@app.post("/api/digest/news/feedback")
+async def post_news_feedback(body: NewsFeedbackBody):
+    """Record a thumbs up/down on a news article (vote=null clears it).
+
+    The vote reranks the feed on the next fetch (see get_news) and is
+    ingested into gbrain as a taste page by ingest_news_feedback.py.
+    """
+    link = (body.link or "").strip()[:2048]
+    if not link.lower().startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="link must be an http(s) URL")
+    if body.vote not in ("up", "down", None):
+        raise HTTPException(
+            status_code=400, detail="vote must be 'up', 'down' or null"
+        )
+    reason = (body.reason or "").strip() or None
+    if body.vote != "down":
+        reason = None
+    elif reason is not None and reason not in _NEWS_DOWN_REASONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"reason must be one of {list(_NEWS_DOWN_REASONS)}",
+        )
+    meta = {
+        "title": (body.title or "")[:300],
+        "source_id": (body.source_id or "")[:64],
+        "source": (body.source or "")[:100],
+        "published": (body.published or "")[:64],
+    }
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(
+        None, lambda: _record_news_feedback(link, body.vote, reason, meta)
+    )
+    return {"ok": True, "vote": body.vote}
+
+
+class NewsDiscoveryActBody(BaseModel):
+    id: str
+    action: str  # "keep" | "dismiss"
+
+
+@app.post("/api/digest/news/discovery")
+async def act_news_discovery(body: NewsDiscoveryActBody):
+    """Keep (add to news_sources) or dismiss (never re-suggest) a suggestion."""
+    sid = (body.id or "").strip()
+    if sid not in _NEWS_SOURCE_BY_ID:
+        raise HTTPException(status_code=400, detail="unknown source id")
+    if body.action not in ("keep", "dismiss"):
+        raise HTTPException(
+            status_code=400, detail="action must be 'keep' or 'dismiss'"
+        )
+    with _NEWS_DISCOVERY_LOCK:
+        state = _read_news_discovery()
+        if body.action == "keep":
+            if sid not in state["kept"]:
+                state["kept"].append(sid)
+            if sid in state["dismissed"]:
+                state["dismissed"].remove(sid)
+        else:
+            if sid not in state["dismissed"]:
+                state["dismissed"].append(sid)
+            state["suggestions"] = [s for s in state["suggestions"] if s != sid]
+        _write_news_discovery(state)
+    prefs = _read_digest_prefs()
+    if body.action == "keep" and sid not in prefs["news_sources"]:
+        prefs["news_sources"].append(sid)
+        _write_digest_prefs(prefs)
+    return {"ok": True, "news_sources": prefs["news_sources"]}
+
+
 @app.get("/api/tasks/prefs")
 async def get_tasks_prefs():
     prefs = _read_tasks_prefs()
@@ -1982,6 +2565,244 @@ async def put_tasks_prefs(body: TasksPrefsBody):
     _write_tasks_prefs(prefs)
     prefs["linear_configured"] = _linear_api_key() is not None
     return prefs
+
+
+@app.get("/api/tasks/meta")
+async def get_kanban_meta():
+    """Kanban sidecar metadata doc: due dates, labels, cycles, saved views."""
+    return _read_kanban_meta()
+
+
+@app.put("/api/tasks/meta")
+async def put_kanban_meta(body: Dict[str, Any]):
+    """Replace top-level meta arrays (+ optional lazy prune of task entries).
+
+    Each provided key among ``labels`` / ``cycles`` / ``views`` is a
+    full-array replace, validated; omitted keys are untouched. Task entries
+    referencing labels/cycles that just disappeared are scrubbed (same
+    keep-selections-valid pattern as digest news_sources).
+
+    GC (PRD §2.2, "keep it simple"): the client passes
+    ``prune_missing: true`` + ``live_task_ids`` (every id on the board it
+    just fetched) and the server drops task entries not in that list. Lazy
+    and client-triggered -- the server never scans the plugin DB. Note the
+    board payload excludes archived tasks, so archiving a task sheds its
+    sidecar meta on the next prune (accepted; due dates on archived tasks
+    are dead weight).
+    """
+    allowed = {"labels", "cycles", "views", "prune_missing", "live_task_ids"}
+    unknown = sorted(set(body) - allowed)
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"unknown keys: {unknown}")
+    meta = _read_kanban_meta()
+
+    if "labels" in body:
+        if not isinstance(body["labels"], list):
+            raise HTTPException(status_code=400, detail="labels must be a list")
+        labels: List[Dict[str, Any]] = []
+        seen_labels: set = set()
+        for raw in body["labels"]:
+            if not isinstance(raw, dict) or set(raw) - {"id", "name", "color"}:
+                raise HTTPException(
+                    status_code=400, detail="each label must be {id, name, color}"
+                )
+            lid, name, color = raw.get("id"), raw.get("name"), raw.get("color")
+            if not (isinstance(lid, str) and lid):
+                raise HTTPException(status_code=400, detail="label id required")
+            if not (isinstance(name, str) and name.strip()):
+                raise HTTPException(status_code=400, detail="label name required")
+            if not _valid_hex_color(color):
+                raise HTTPException(
+                    status_code=400, detail="label color must be #rrggbb"
+                )
+            if lid in seen_labels:
+                raise HTTPException(
+                    status_code=400, detail=f"duplicate label id {lid!r}"
+                )
+            seen_labels.add(lid)
+            labels.append({"id": lid, "name": name.strip(), "color": color})
+        meta["labels"] = labels
+
+    if "cycles" in body:
+        if not isinstance(body["cycles"], list):
+            raise HTTPException(status_code=400, detail="cycles must be a list")
+        cycles: List[Dict[str, Any]] = []
+        seen_cycles: set = set()
+        for raw in body["cycles"]:
+            if not isinstance(raw, dict) or set(raw) - {"id", "name", "start", "end"}:
+                raise HTTPException(
+                    status_code=400,
+                    detail="each cycle must be {id, name, start, end}",
+                )
+            cid, name = raw.get("id"), raw.get("name")
+            start, end = raw.get("start"), raw.get("end")
+            if not (isinstance(cid, str) and cid):
+                raise HTTPException(status_code=400, detail="cycle id required")
+            if not (isinstance(name, str) and name.strip()):
+                raise HTTPException(status_code=400, detail="cycle name required")
+            if not _valid_iso_date(start) or not _valid_iso_date(end):
+                raise HTTPException(
+                    status_code=400,
+                    detail="cycle start/end must be ISO dates (YYYY-MM-DD)",
+                )
+            if end < start:  # ISO dates compare lexicographically
+                raise HTTPException(
+                    status_code=400, detail="cycle end must not precede start"
+                )
+            if cid in seen_cycles:
+                raise HTTPException(
+                    status_code=400, detail=f"duplicate cycle id {cid!r}"
+                )
+            seen_cycles.add(cid)
+            cycles.append({"id": cid, "name": name.strip(), "start": start, "end": end})
+        meta["cycles"] = cycles
+
+    if "views" in body:
+        if not isinstance(body["views"], list):
+            raise HTTPException(status_code=400, detail="views must be a list")
+        views: List[Dict[str, Any]] = []
+        seen_views: set = set()
+        for raw in body["views"]:
+            if not isinstance(raw, dict) or set(raw) - {"id", "name", "filters"}:
+                raise HTTPException(
+                    status_code=400, detail="each view must be {id, name, filters}"
+                )
+            vid, name = raw.get("id"), raw.get("name")
+            if not (isinstance(vid, str) and vid):
+                raise HTTPException(status_code=400, detail="view id required")
+            if not (isinstance(name, str) and name.strip()):
+                raise HTTPException(status_code=400, detail="view name required")
+            filters = _clean_filter_state(raw.get("filters"))
+            if filters is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"view {name!r} has an invalid filters object "
+                    f"(allowed keys: {sorted(_KANBAN_FILTER_DEFAULTS)})",
+                )
+            if vid in seen_views:
+                raise HTTPException(
+                    status_code=400, detail=f"duplicate view id {vid!r}"
+                )
+            seen_views.add(vid)
+            views.append({"id": vid, "name": name.strip(), "filters": filters})
+        meta["views"] = views
+
+    # Scrub task entries against the (possibly shrunk) label/cycle universe.
+    label_ids = {l["id"] for l in meta["labels"]}
+    cycle_ids = {c["id"] for c in meta["cycles"]}
+    for tid in list(meta["tasks"]):
+        entry = meta["tasks"][tid]
+        if "labels" in entry:
+            kept = [l for l in entry["labels"] if l in label_ids]
+            if kept:
+                entry["labels"] = kept
+            else:
+                entry.pop("labels")
+        if "cycle_id" in entry and entry["cycle_id"] not in cycle_ids:
+            entry.pop("cycle_id")
+        if not entry:
+            meta["tasks"].pop(tid)
+
+    if "prune_missing" in body and not isinstance(body["prune_missing"], bool):
+        raise HTTPException(status_code=400, detail="prune_missing must be a bool")
+    if body.get("prune_missing"):
+        live = _str_list(body.get("live_task_ids"))
+        if live is None:
+            raise HTTPException(
+                status_code=400,
+                detail="prune_missing requires live_task_ids: string[]",
+            )
+        live_set = set(live)
+        meta["tasks"] = {t: e for t, e in meta["tasks"].items() if t in live_set}
+
+    _write_kanban_meta(meta)
+    return meta
+
+
+@app.patch("/api/tasks/meta/tasks/{task_id}")
+async def patch_kanban_task_meta(task_id: str, body: Dict[str, Any]):
+    """Merge one task's sidecar entry (PRD §2.2 schema).
+
+    ``null`` clears a field (so does ``labels: []``); the whole entry is
+    removed once every field is cleared. Returns the resulting entry
+    (``{}`` when removed). Plain dict body instead of a pydantic model:
+    absent-vs-null must be distinguishable and unknown keys must 400.
+    """
+    # kanban_db ids are always "t_" + 4-byte hex (``_new_task_id``; callers
+    # can't supply their own), so anything else is garbage — reject it before
+    # it becomes a JSON dict key in the sidecar doc, where malformed keys
+    # (huge strings, control chars) could corrupt the file in subtle ways.
+    if not re.fullmatch(r"t_[0-9a-f]{8}", task_id):
+        raise HTTPException(status_code=400, detail="invalid task id")
+    unknown = sorted(set(body) - set(_KANBAN_TASK_META_FIELDS))
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"unknown keys: {unknown}")
+    meta = _read_kanban_meta()
+    entry: Dict[str, Any] = dict(meta["tasks"].get(task_id) or {})
+
+    if "due_at" in body:
+        due = body["due_at"]
+        if due is None:
+            entry.pop("due_at", None)
+        elif _valid_iso_date(due):
+            entry["due_at"] = due
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="due_at must be an ISO date (YYYY-MM-DD) or null",
+            )
+
+    if "labels" in body:
+        raw = body["labels"]
+        if raw is None:
+            entry.pop("labels", None)
+        else:
+            labels = _str_list(raw)
+            if labels is None:
+                raise HTTPException(
+                    status_code=400, detail="labels must be a list of label ids or null"
+                )
+            known = {l["id"] for l in meta["labels"]}
+            bad = sorted(set(labels) - known)
+            if bad:
+                raise HTTPException(
+                    status_code=400, detail=f"unknown label ids: {bad}"
+                )
+            deduped = list(dict.fromkeys(labels))
+            if deduped:
+                entry["labels"] = deduped
+            else:
+                entry.pop("labels", None)
+
+    if "estimate" in body:
+        est = body["estimate"]
+        if est is None:
+            entry.pop("estimate", None)
+        elif isinstance(est, int) and not isinstance(est, bool) and 0 <= est <= 100:
+            entry["estimate"] = est
+        else:
+            raise HTTPException(
+                status_code=400, detail="estimate must be an int 0-100 or null"
+            )
+
+    if "cycle_id" in body:
+        cid = body["cycle_id"]
+        if cid is None:
+            entry.pop("cycle_id", None)
+        elif isinstance(cid, str) and any(c["id"] == cid for c in meta["cycles"]):
+            entry["cycle_id"] = cid
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="cycle_id must reference an existing cycle or be null",
+            )
+
+    if entry:
+        meta["tasks"][task_id] = entry
+    else:
+        meta["tasks"].pop(task_id, None)
+    _write_kanban_meta(meta)
+    return entry
 
 
 @app.get("/api/tasks/linear/teams")
@@ -2039,6 +2860,121 @@ async def get_linear_board(team: Optional[str] = None, refresh: bool = False):
             return cached["data"]
         return {"connected": False, "reason": str(exc), "columns": []}
     _LINEAR_CACHE[cache_key] = {"ts": mono, "data": payload}
+    return payload
+
+
+class LinearIssueBody(BaseModel):
+    team_id: str
+    title: str
+    description: Optional[str] = None
+    # Linear priority scale: 0 none, 1 urgent, 2 high, 3 medium, 4 low.
+    priority: Optional[int] = None
+
+
+@app.post("/api/tasks/linear/issues")
+async def create_linear_issue(body: LinearIssueBody):
+    """Create a Linear issue (gbrain task miner v1 write path; also usable by
+    the dashboard). Issues land in the team's default (Triage) state on
+    purpose — the miner is propose-only; see docs/gbrain-task-miner.v0.1.0.md.
+    """
+    key = _linear_api_key()
+    if not key:
+        raise HTTPException(status_code=409, detail="LINEAR_API_KEY not set")
+    team_id = body.team_id.strip()
+    title = body.title.strip()
+    if not team_id or not title:
+        raise HTTPException(status_code=400, detail="team_id and title are required")
+    if body.priority is not None and body.priority not in range(0, 5):
+        raise HTTPException(status_code=400, detail="priority must be 0-4")
+    issue_input: Dict[str, Any] = {"teamId": team_id, "title": title}
+    if body.description:
+        issue_input["description"] = body.description
+    if body.priority is not None:
+        issue_input["priority"] = body.priority
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(
+            None,
+            _linear_graphql,
+            key,
+            """
+            mutation CreateIssue($input: IssueCreateInput!) {
+              issueCreate(input: $input) {
+                success
+                issue { id identifier url }
+              }
+            }
+            """,
+            {"input": issue_input},
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("Linear issue create failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+    result = (data.get("issueCreate") or {})
+    issue = result.get("issue") or {}
+    if not result.get("success") or not issue.get("id"):
+        raise HTTPException(status_code=502, detail="Linear rejected the issue")
+    # Bust the board cache so the Tasks tab shows the new issue immediately.
+    _LINEAR_CACHE.pop(team_id, None)
+    _LINEAR_CACHE.pop("_all", None)
+    return {
+        "id": str(issue.get("id")),
+        "identifier": str(issue.get("identifier") or ""),
+        "url": str(issue.get("url") or ""),
+    }
+
+
+# --- Operations > Conversations (Gemini meeting notes) -----------------------
+
+_CONVERSATIONS_SENDER = "gemini-notes@google.com"
+_CONVERSATIONS_LIMIT = 50
+_CONVERSATIONS_TTL_SECONDS = 60.0
+_CONVERSATIONS_CACHE: Dict[str, Any] = {}
+
+
+def _fetch_gemini_note_rows() -> List[Dict[str, Any]]:
+    """Gemini meeting-notes emails across all inboxes, newest first. The
+    sender literal is a module constant (no user input reaches the SQL)."""
+    sql = (
+        "SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.received_at DESC), "
+        "'[]') FROM (SELECT m.id, m.subject, m.body, m.received_at, "
+        "a.email_address AS account FROM inbox_messages m "
+        "JOIN accounts a ON a.id = m.account_id "
+        f"WHERE m.from_addr ILIKE '%{_CONVERSATIONS_SENDER}%' "
+        "AND m.deleted_at IS NULL "
+        f"ORDER BY m.received_at DESC LIMIT {_CONVERSATIONS_LIMIT}) t"
+    )
+    return _mbox_psql_json(sql) or []
+
+
+@app.get("/api/conversations")
+async def get_conversations(refresh: bool = False):
+    """Parsed Gemini meeting notes for the Operations > Conversations tab."""
+    from hermes_cli.gemini_notes import parse_gemini_note
+
+    mono = time.monotonic()
+    cached = _CONVERSATIONS_CACHE.get("all")
+    if cached and not refresh and mono - cached["ts"] < _CONVERSATIONS_TTL_SECONDS:
+        return cached["data"]
+    loop = asyncio.get_running_loop()
+    try:
+        rows = await loop.run_in_executor(None, _fetch_gemini_note_rows)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("conversations fetch failed: %s", exc)
+        if cached:  # serve stale rather than blanking the tab
+            return cached["data"]
+        return {"conversations": [], "reason": str(exc)}
+    conversations = []
+    for r in rows:
+        parsed = parse_gemini_note(r.get("subject") or "", r.get("body") or "")
+        parsed.update({
+            "id": r.get("id"),
+            "account": r.get("account"),
+            "received_at": r.get("received_at"),
+        })
+        conversations.append(parsed)
+    payload = {"conversations": conversations}
+    _CONVERSATIONS_CACHE["all"] = {"ts": mono, "data": payload}
     return payload
 
 

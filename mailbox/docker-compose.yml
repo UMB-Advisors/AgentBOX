@@ -16,6 +16,11 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    # 8GB Jetson: bound every non-inference service so a runaway here gets
+    # itself killed/restarted instead of triggering a kernel OOM that can
+    # take down ollama/llama-cpp. Values are generous first cuts — validate
+    # against `docker stats` baselines on agentbox1 and revisit. (plans/007)
+    mem_limit: 1.5g
     restart: unless-stopped
   qdrant:
     image: qdrant/qdrant:v1.17.1
@@ -36,9 +41,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    mem_limit: 768m
     restart: unless-stopped
   ollama:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    # Pinned to match agentbox2 as of 2026-06-11 — bump deliberately (plans/012).
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.23.0}
     runtime: nvidia
     environment:
       # 5m (was 24h): let nomic-embed-text unload between RAG calls so the
@@ -158,6 +165,14 @@ services:
       # unset). The call stays on the docker network — no host-gateway, no Caddy
       # route. Reference the secret from the env; never hardcode a value.
       HERMES_INTERNAL_TOKEN: ${HERMES_INTERNAL_TOKEN}
+      # MailBOX-ErrorHandler (PR #88) — alert recipient + per-workflow throttle,
+      # read via $env in the error workflow's Code node. Recipient resolution:
+      # ERROR_ALERT_RECIPIENT → MAILBOX_OPERATOR_EMAIL → computes-but-skips send.
+      # Without these forwards the .env values never reach the n8n container
+      # (this environment: block is an explicit allowlist).
+      ERROR_ALERT_RECIPIENT: ${ERROR_ALERT_RECIPIENT:-}
+      ERROR_ALERT_THROTTLE_MIN: ${ERROR_ALERT_THROTTLE_MIN:-60}
+      MAILBOX_OPERATOR_EMAIL: ${MAILBOX_OPERATOR_EMAIL:-}
     volumes:
     - n8n_data:/home/node/.n8n
     healthcheck:
@@ -171,6 +186,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    mem_limit: 1g
     restart: unless-stopped
   caddy:
     build: ./caddy
@@ -200,6 +216,7 @@ services:
     depends_on:
       n8n:
         condition: service_healthy
+    mem_limit: 256m
     restart: unless-stopped
   mailbox-dashboard:
     build:
@@ -458,6 +475,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    mem_limit: 1g
   mailbox-migrate:
     profiles: ["migrate"]
     image: node:20-alpine

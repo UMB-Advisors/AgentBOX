@@ -34,7 +34,8 @@ export const dynamic = 'force-dynamic';
 // future status-touching write joins this transaction.
 const OVERRIDE_MODEL_VERSION = 'operator-override';
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, idParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

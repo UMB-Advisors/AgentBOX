@@ -24,7 +24,7 @@ dbDescribe('operator preferences route handlers — real Postgres', () => {
 
   it('GET returns 404 when no preference is persisted', async () => {
     const { GET } = await import('@/app/api/operator/preferences/[key]/route');
-    const res = await GET(fakeRequest(), { params: { key: 'queue.filters' } });
+    const res = await GET(fakeRequest(), { params: Promise.resolve({ key: 'queue.filters' }) });
     expect(res.status).toBe(404);
   });
 
@@ -39,14 +39,14 @@ dbDescribe('operator preferences route handlers — real Postgres', () => {
     };
 
     const putRes = await PUT(fakeRequest({ body: { value } }), {
-      params: { key: 'queue.filters' },
+      params: Promise.resolve({ key: 'queue.filters' }),
     });
     expect(putRes.status).toBe(200);
     const putBody = (await putRes.json()) as { key: string; value: typeof value };
     expect(putBody.key).toBe('queue.filters');
     expect(putBody.value).toEqual(value);
 
-    const getRes = await GET(fakeRequest(), { params: { key: 'queue.filters' } });
+    const getRes = await GET(fakeRequest(), { params: Promise.resolve({ key: 'queue.filters' }) });
     expect(getRes.status).toBe(200);
     const getBody = (await getRes.json()) as { key: string; value: typeof value };
     expect(getBody.value).toEqual(value);
@@ -65,10 +65,10 @@ dbDescribe('operator preferences route handlers — real Postgres', () => {
     const { PUT } = await import('@/app/api/operator/preferences/[key]/route');
 
     await PUT(fakeRequest({ body: { value: { mode: 'newest' } } }), {
-      params: { key: 'queue.sort' },
+      params: Promise.resolve({ key: 'queue.sort' }),
     });
     const second = await PUT(fakeRequest({ body: { value: { mode: 'urgency' } } }), {
-      params: { key: 'queue.sort' },
+      params: Promise.resolve({ key: 'queue.sort' }),
     });
     expect(second.status).toBe(200);
     const body = (await second.json()) as { value: { mode: string } };
@@ -85,7 +85,7 @@ dbDescribe('operator preferences route handlers — real Postgres', () => {
   it('PUT rejects a malformed key param (zod 400)', async () => {
     const { PUT } = await import('@/app/api/operator/preferences/[key]/route');
     const res = await PUT(fakeRequest({ body: { value: { x: 1 } } }), {
-      params: { key: 'Queue Filters!' },
+      params: Promise.resolve({ key: 'Queue Filters!' }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
@@ -95,7 +95,7 @@ dbDescribe('operator preferences route handlers — real Postgres', () => {
   it('PUT rejects a non-object/array value (zod 400)', async () => {
     const { PUT } = await import('@/app/api/operator/preferences/[key]/route');
     const res = await PUT(fakeRequest({ body: { value: 'not-an-object' } }), {
-      params: { key: 'queue.filters' },
+      params: Promise.resolve({ key: 'queue.filters' }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
@@ -105,7 +105,7 @@ dbDescribe('operator preferences route handlers — real Postgres', () => {
   it('PUT rejects a missing value field (zod 400)', async () => {
     const { PUT } = await import('@/app/api/operator/preferences/[key]/route');
     const res = await PUT(fakeRequest({ body: {} }), {
-      params: { key: 'queue.filters' },
+      params: Promise.resolve({ key: 'queue.filters' }),
     });
     expect(res.status).toBe(400);
   });

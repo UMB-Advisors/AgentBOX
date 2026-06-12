@@ -37,10 +37,10 @@
 
 import { type NextRequest, NextResponse } from 'next/server';
 import { authorized } from '@/lib/internal-auth';
+import { parseJson } from '@/lib/middleware/validate';
 import { encryptToken } from '@/lib/oauth/google';
 import { registerTransportAccount } from '@/lib/queries-accounts';
 import { accountRegisterBodySchema } from '@/lib/schemas/internal';
-import { parseJson } from '@/lib/middleware/validate';
 
 export const dynamic = 'force-dynamic';
 

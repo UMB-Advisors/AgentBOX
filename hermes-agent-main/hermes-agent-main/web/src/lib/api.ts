@@ -240,13 +240,101 @@ export const api = {
     if (refresh) qs.set("refresh", "1");
     return fetchJSON<NewsResponse>(`/api/digest/news?${qs.toString()}`);
   },
-  /** Kanban board (digest Tasks module). */
+  /** Thumbs up/down on a news article; vote=null clears a prior vote (Undo). */
+  voteNews: (body: {
+    link: string;
+    vote: "up" | "down" | null;
+    reason?: string;
+    title?: string;
+    source_id?: string;
+    source?: string;
+    published?: string;
+  }) =>
+    fetchJSON<{ ok: boolean; vote: "up" | "down" | null }>(
+      "/api/digest/news/feedback",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  /** Keep (add to sources) or dismiss (never re-suggest) a discovery pick. */
+  actNewsDiscovery: (id: string, action: "keep" | "dismiss") =>
+    fetchJSON<{ ok: boolean; news_sources: string[] }>(
+      "/api/digest/news/discovery",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action }),
+      },
+    ),
+  /** Kanban board (digest Tasks module + Org Chart Tasks list view). */
   getKanbanBoard: () => fetchJSON<KanbanBoard>("/api/plugins/kanban/board"),
+  /** Create a native kanban task. May carry a dispatcher-presence warning. */
+  createKanbanTask: (body: KanbanCreateTaskBody) =>
+    fetchJSON<{ task: KanbanTask | null; warning?: string }>(
+      "/api/plugins/kanban/tasks",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  /** Patch one kanban task (status / assignee / priority / title / body). */
+  updateKanbanTask: (id: string, body: KanbanUpdateTaskBody) =>
+    fetchJSON<{ task: KanbanTask | null }>(
+      `/api/plugins/kanban/tasks/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+  /** Apply the same patch to many kanban tasks (per-id outcomes). */
+  bulkUpdateKanbanTasks: (body: KanbanBulkUpdateBody) =>
+    fetchJSON<KanbanBulkUpdateResponse>("/api/plugins/kanban/tasks/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  /** Known kanban assignees: profiles on disk + names in use on the board. */
+  getKanbanAssignees: () =>
+    fetchJSON<{ assignees: KanbanAssignee[] }>("/api/plugins/kanban/assignees"),
+  /** Append a comment to a kanban task (server defaults author to "dashboard"). */
+  addKanbanComment: (id: string, body: string, author?: string) =>
+    fetchJSON<{ ok: boolean }>(
+      `/api/plugins/kanban/tasks/${encodeURIComponent(id)}/comments`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(author ? { body, author } : { body }),
+      },
+    ),
   /** Org Chart Tasks: which task provider to show (native kanban vs Linear). */
   getTasksPrefs: () => fetchJSON<TasksPrefs>("/api/tasks/prefs"),
   setTasksPrefs: (body: { provider?: TaskProviderId; linear_team_id?: string }) =>
     fetchJSON<TasksPrefs>("/api/tasks/prefs", {
       method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  /** Kanban Linear-UX sidecar meta: due dates, labels, cycles, saved views
+   * (PRD docs/kanban-linear-ux.v0.1.0.md §2.2 — ~/.hermes/kanban-meta.json,
+   * NOT the plugin DB; the plugin Board never renders these fields). */
+  getKanbanMeta: () => fetchJSON<KanbanMeta>("/api/tasks/meta"),
+  /** Full-array replace of any provided key; also carries the lazy
+   * sidecar GC (`prune_missing` + `live_task_ids`). Returns the doc. */
+  putKanbanMeta: (body: KanbanMetaPut) =>
+    fetchJSON<KanbanMeta>("/api/tasks/meta", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  /** Merge one task's sidecar entry; `null` clears a field. Returns the
+   * resulting entry (`{}` once everything is cleared). */
+  patchKanbanTaskMeta: (id: string, body: KanbanTaskMetaPatch) =>
+    fetchJSON<KanbanTaskMeta>(`/api/tasks/meta/tasks/${encodeURIComponent(id)}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
@@ -260,6 +348,11 @@ export const api = {
     const s = qs.toString();
     return fetchJSON<LinearBoard>(`/api/tasks/linear/board${s ? `?${s}` : ""}`);
   },
+  /** Operations > Conversations: parsed Gemini meeting notes. */
+  getConversations: (refresh = false) =>
+    fetchJSON<ConversationsResponse>(
+      `/api/conversations${refresh ? "?refresh=1" : ""}`,
+    ),
   /** Today's calendar events for the digest (placeholder until calendar wired). */
   getDigestCalendar: () => fetchJSON<DigestCalendar>("/api/digest/calendar"),
   getDigestBrief: (account?: string) =>
@@ -1736,18 +1829,109 @@ export interface DigestPrefs {
   custom_sources: CustomNewsSource[];
 }
 
-/** Kanban board shape (digest Tasks module). Loose — only a few fields read. */
+/** Derived age metrics attached to each board task (seconds, or null when
+ *  the underlying timestamp is unset). See ``kanban_db.task_age``. */
+export interface KanbanTaskAge {
+  created_age_seconds: number | null;
+  started_age_seconds: number | null;
+  time_to_complete_seconds: number | null;
+}
+
+/** Native kanban task (``GET /api/plugins/kanban/board`` + task endpoints).
+ *
+ *  Priority semantics — VERIFIED against ``hermes_cli/kanban_db.py``: plain
+ *  integer where HIGHER = MORE URGENT. The canonical "priority" sort is
+ *  ``priority DESC, created_at ASC`` (``VALID_SORT_ORDERS``) and the
+ *  dispatcher claims work ``ORDER BY priority DESC``; default is ``0``.
+ *  Note this is the OPPOSITE direction of Linear's scale (``LinearIssue``
+ *  above, where 1 = urgent).
+ *
+ *  Typed fields cover what our views read; the plugin attaches more
+ *  (diagnostics, progress, workflow fields…) kept reachable through the
+ *  index signature for forward-compat. */
 export interface KanbanTask {
   id: string;
-  title?: string;
-  status?: string;
-  assignee?: string;
+  title: string;
+  status: string;
+  priority: number;
+  assignee: string | null;
+  tenant: string | null;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  body?: string | null;
+  age?: KanbanTaskAge;
+  /** ~200-char preview of the latest run summary (board payload only). */
+  latest_summary?: string | null;
+  comment_count?: number;
+  link_counts?: { parents: number; children: number };
+  /** Legacy digest fields (HomePage FYI section). */
   profile?: string;
   owner?: string;
   [k: string]: unknown;
 }
 export interface KanbanBoard {
   columns: Array<{ name: string; tasks: KanbanTask[] }>;
+  tenants: string[];
+  assignees: string[];
+  latest_event_id: number;
+  now: number;
+}
+
+/** ``POST /api/plugins/kanban/tasks`` (plugin ``CreateTaskBody``). */
+export interface KanbanCreateTaskBody {
+  title: string;
+  body?: string;
+  assignee?: string;
+  tenant?: string;
+  /** Higher = more urgent (see {@link KanbanTask}); server default 0. */
+  priority?: number;
+  workspace_kind?: string;
+  workspace_path?: string;
+  parents?: string[];
+  triage?: boolean;
+  idempotency_key?: string;
+  max_runtime_seconds?: number;
+  skills?: string[];
+}
+
+/** ``PATCH /api/plugins/kanban/tasks/:id`` (plugin ``UpdateTaskBody``).
+ *  ``assignee: ""`` unassigns. The API rejects ``status: "running"``
+ *  (dispatcher-owned) and doesn't accept ``"review"`` as a target. */
+export interface KanbanUpdateTaskBody {
+  status?: string;
+  assignee?: string;
+  priority?: number;
+  title?: string;
+  body?: string;
+  result?: string;
+  block_reason?: string;
+  summary?: string;
+}
+
+/** ``POST /api/plugins/kanban/tasks/bulk`` (plugin ``BulkTaskBody``).
+ *  Per-id outcomes — one bad id doesn't abort siblings. */
+export interface KanbanBulkUpdateBody {
+  ids: string[];
+  status?: string;
+  /** ``""`` unassigns. */
+  assignee?: string;
+  priority?: number;
+  archive?: boolean;
+  reclaim_first?: boolean;
+}
+export interface KanbanBulkUpdateResponse {
+  results: Array<{ id: string; ok: boolean; error?: string }>;
+}
+
+/** One entry from ``GET /api/plugins/kanban/assignees``
+ *  (``kanban_db.known_assignees``): every configured profile on disk plus
+ *  any name holding a non-archived task. */
+export interface KanbanAssignee {
+  name: string;
+  on_disk: boolean;
+  /** Non-archived task counts keyed by status. */
+  counts: Record<string, number>;
 }
 
 /** Org Chart Tasks provider selection (persisted server-side). */
@@ -1770,6 +1954,85 @@ export interface LinearTeamsResponse {
   reason?: string;
 }
 
+/** Client-side filter model for the native Tasks list (PRD §2.1). Saved
+ *  views persist exactly this shape in the sidecar meta store, so the
+ *  backend validates against the same key set. */
+export interface KanbanFilterState {
+  /** Status names; empty = all (same empty-means-all rule per list). */
+  statuses: string[];
+  assignees: string[];
+  tenants: string[];
+  /** Label ids (filterable from Phase 3). */
+  labels: string[];
+  /** Cycle id (filterable from Phase 3). */
+  cycleId: string | null;
+  /** Case-insensitive substring over title + id. */
+  text: string;
+  overdueOnly: boolean;
+}
+
+/** One task's sidecar entry (``kanban-meta.json`` ``tasks`` values).
+ *  Absent field = unset — the store never persists nulls. */
+export interface KanbanTaskMeta {
+  /** ISO date (YYYY-MM-DD), no time component, local-tz semantics. */
+  due_at?: string;
+  labels?: string[];
+  /** Points, int 0–100. */
+  estimate?: number;
+  cycle_id?: string;
+}
+
+export interface KanbanLabel {
+  id: string;
+  name: string;
+  /** #rrggbb. */
+  color: string;
+}
+
+export interface KanbanCycle {
+  id: string;
+  name: string;
+  /** ISO dates; start <= end (server-enforced). */
+  start: string;
+  end: string;
+}
+
+export interface KanbanSavedView {
+  id: string;
+  name: string;
+  filters: KanbanFilterState;
+}
+
+/** ``GET /api/tasks/meta`` — the whole sidecar doc, defaults merged. */
+export interface KanbanMeta {
+  version: number;
+  tasks: Record<string, KanbanTaskMeta>;
+  labels: KanbanLabel[];
+  cycles: KanbanCycle[];
+  views: KanbanSavedView[];
+}
+
+/** ``PATCH /api/tasks/meta/tasks/:id`` — ``null`` clears a field; the
+ *  entry disappears once every field is cleared. */
+export interface KanbanTaskMetaPatch {
+  due_at?: string | null;
+  labels?: string[] | null;
+  estimate?: number | null;
+  cycle_id?: string | null;
+}
+
+/** ``PUT /api/tasks/meta``: each provided array fully replaces the stored
+ *  one. ``prune_missing`` + ``live_task_ids`` is the lazy GC (PRD §2.2):
+ *  the server drops task entries whose id isn't in the live list the
+ *  client just fetched from the board. */
+export interface KanbanMetaPut {
+  labels?: KanbanLabel[];
+  cycles?: KanbanCycle[];
+  views?: KanbanSavedView[];
+  prune_missing?: boolean;
+  live_task_ids?: string[];
+}
+
 export interface LinearIssue {
   id: string;
   identifier: string;
@@ -1787,6 +2050,32 @@ export interface LinearBoard {
   reason?: string;
   team?: string | null;
   columns: Array<{ name: string; issues: LinearIssue[] }>;
+}
+
+/** Operations > Conversations: parsed Gemini meeting-notes emails. */
+export interface ConversationStep {
+  owners: string[];
+  title: string;
+  text: string;
+}
+export interface ConversationSection {
+  heading: string;
+  text: string;
+}
+export interface Conversation {
+  id: number;
+  account: string;
+  received_at: string | null;
+  title: string;
+  /** Human date string from the subject line, e.g. "Jun 10, 2026". */
+  meeting_date: string;
+  summary: string;
+  sections: ConversationSection[];
+  next_steps: ConversationStep[];
+}
+export interface ConversationsResponse {
+  conversations: Conversation[];
+  reason?: string;
 }
 
 export interface CalendarEvent {
@@ -1960,12 +2249,25 @@ export interface NewsItem {
   source_id: string;
   /** Best-effort thumbnail URL (Media RSS / enclosure / inline <img>); "" when none. */
   image?: string;
+  /** The operator's current thumbs vote on this article (server-annotated). */
+  vote?: "up" | "down" | null;
+  /** True when the article comes from one of today's discovery suggestions. */
+  discovery?: boolean;
+}
+
+/** One of today's suggested-new-source picks (daily discovery). */
+export interface NewsDiscoverySource {
+  id: string;
+  label: string;
+  tags?: string[];
 }
 
 export interface NewsResponse {
   items: NewsItem[];
   total: number;
   has_more: boolean;
+  /** Today's suggested sources (already merged into the feed, badged). */
+  discovery?: NewsDiscoverySource[];
 }
 
 /** Per-call overrides for {@link fetchJSON}. */

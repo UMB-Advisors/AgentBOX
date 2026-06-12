@@ -14,6 +14,16 @@
 #                 and DO NOT decommission a co-resident hermesBOX/OpenClaw
 #                 (stop-only, restorable). Production omits this flag.
 set -euo pipefail
+# ── DEPRECATED (2026-06-11) ───────────────────────────────────────────────
+# This script predates the monorepo's canonical installer and is MISSING
+# STAGE 0.1 (MAXN power mode, LUKS, nvidia-ctk runtime registration): running
+# it on a fresh box silently breaks GPU inference. Use:
+#     install/agentbox-install.sh [--prototype]
+# Kept for the DR-63..66 prototype-install history only.
+if [ "${ABX_ALLOW_DEPRECATED:-0}" != "1" ]; then
+  echo "DEPRECATED: use install/agentbox-install.sh (see header). Set ABX_ALLOW_DEPRECATED=1 to override." >&2
+  exit 64
+fi
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 PROTOTYPE=0; [ "${1:-}" = "--prototype" ] && PROTOTYPE=1

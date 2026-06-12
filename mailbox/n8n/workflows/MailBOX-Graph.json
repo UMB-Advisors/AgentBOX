@@ -91,7 +91,7 @@
       ]
     }
   },
-  "description": "MBOX-482 (P2) — Microsoft 365 / Graph ingress, token-as-data (addendum-01: HTTP providers mint per-request, NO n8n credential). Mirrors MailBOX.json's topology exactly, swapping the Gmail REST calls for Graph: Get Graph Token hits the dashboard minter (app/api/internal/graph/access-token) which client-credentials-mints an app-only bearer for THIS account from provider_secret_enc; Graph List + (split) feed raw Graph message JSON to Insert Inbox (HTTP) tagged provider:'microsoft'. The dashboard's /api/internal/inbox-messages runs MicrosoftGraphProvider.normalize() SERVER-SIDE (conversationId→thread_id passthrough, nested from/toRecipients/body extraction) — n8n forwards Graph's shape verbatim. Dedup is the DB's (account_id, message_id) upsert; created=false short-circuits at Only If Newly Inserted. Classify/draft/queue/send are shared, provider-agnostic. ON IMPORT (per-account clone, addendum §2 option a is for IMAP; Graph is token-as-data so a single workflow loops/serves accounts by account_email): set Account Email to THIS M365 account's address (the minter resolves it to the account_id + its BYO Azure creds). HERMES_INTERNAL_TOKEN must be set on n8n (same as the Gmail path). Graph uses $top + $filter on isRead; the polling cadence + cooldown parity with the Gmail circuit-breaker is a follow-up (Graph 429 handling lives in MicrosoftGraphProvider.parseRateLimit).",
+  "description": "MBOX-482 (P2) \u2014 Microsoft 365 / Graph ingress, token-as-data (addendum-01: HTTP providers mint per-request, NO n8n credential). Mirrors MailBOX.json's topology exactly, swapping the Gmail REST calls for Graph: Get Graph Token hits the dashboard minter (app/api/internal/graph/access-token) which client-credentials-mints an app-only bearer for THIS account from provider_secret_enc; Graph List + (split) feed raw Graph message JSON to Insert Inbox (HTTP) tagged provider:'microsoft'. The dashboard's /api/internal/inbox-messages runs MicrosoftGraphProvider.normalize() SERVER-SIDE (conversationId\u2192thread_id passthrough, nested from/toRecipients/body extraction) \u2014 n8n forwards Graph's shape verbatim. Dedup is the DB's (account_id, message_id) upsert; created=false short-circuits at Only If Newly Inserted. Classify/draft/queue/send are shared, provider-agnostic. ON IMPORT (per-account clone, addendum \u00a72 option a is for IMAP; Graph is token-as-data so a single workflow loops/serves accounts by account_email): set Account Email to THIS M365 account's address (the minter resolves it to the account_id + its BYO Azure creds). HERMES_INTERNAL_TOKEN must be set on n8n (same as the Gmail path). Graph uses $top + $filter on isRead; the polling cadence + cooldown parity with the Gmail circuit-breaker is a follow-up (Graph 429 handling lives in MicrosoftGraphProvider.parseRateLimit).",
   "id": "MailBoxGraph00001",
   "isArchived": false,
   "meta": {
@@ -387,7 +387,11 @@
     "saveDataSuccessExecution": "none"
   },
   "sourceWorkflowId": null,
-  "staticData": null,
+  "staticData": {
+    "node:Every 5 Minutes": {
+      "recurrenceRules": []
+    }
+  },
   "tags": [],
   "versionMetadata": {
     "description": null,

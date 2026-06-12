@@ -6,10 +6,6 @@ const nextConfig = {
   // sets BASE_PATH=/dashboard so the app serves under Caddy's /dashboard prefix
   // without a separate handle_path strip.
   basePath: process.env.BASE_PATH || '',
-  experimental: {
-    // Required for instrumentation.ts (in-process classify-sweeper boot hook).
-    instrumentationHook: true,
-  },
 };
 
 module.exports = nextConfig;

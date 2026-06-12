@@ -12,12 +12,12 @@
 // `limit` parameter via expression binding.
 
 import { NextResponse } from 'next/server';
+import { getDefaultAccountEmail } from '@/lib/queries-accounts';
 import {
   GMAIL_GET_LIMIT_BOOTSTRAP,
   GMAIL_GET_LIMIT_STEADY,
   getBootstrapState,
 } from '@/lib/queries-system-state';
-import { getDefaultAccountEmail } from '@/lib/queries-accounts';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,10 +30,7 @@ export async function GET(): Promise<NextResponse> {
   // inbox to ingest is the default/primary mailbox.accounts row (null while it
   // still holds the sentinel — n8n's Get Gmail Token then 404s and the cycle
   // no-ops rather than ingesting under the placeholder identity).
-  const [state, accountEmail] = await Promise.all([
-    getBootstrapState(),
-    getDefaultAccountEmail(),
-  ]);
+  const [state, accountEmail] = await Promise.all([getBootstrapState(), getDefaultAccountEmail()]);
   return NextResponse.json({
     bootstrap_complete: state.complete,
     gmail_get_limit: state.complete ? GMAIL_GET_LIMIT_STEADY : GMAIL_GET_LIMIT_BOOTSTRAP,

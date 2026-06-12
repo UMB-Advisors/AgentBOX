@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic';
 // client-side from the chosen preset). Appliance-LOCAL only: Gmail has no snooze
 // API, so there is no webhook fan-out. The row is hidden until snooze_until
 // passes, then the queue predicate resurfaces it automatically.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, idParamSchema);
   if (!p.ok) return p.response;
   const { id } = p.data;

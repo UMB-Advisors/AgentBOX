@@ -12,8 +12,9 @@ function msg(e: unknown): string {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  props: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
+  const params = await props.params;
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'bad id' }, { status: 400 });
   try {
@@ -29,8 +30,9 @@ export async function PATCH(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } },
+  props: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
+  const params = await props.params;
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'bad id' }, { status: 400 });
   try {

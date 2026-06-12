@@ -10,7 +10,8 @@ import { preferenceKeyParamSchema, preferenceUpdateSchema } from '@/lib/schemas/
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(_req: NextRequest, { params }: { params: { key: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ key: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, preferenceKeyParamSchema);
   if (!p.ok) return p.response;
   const { key } = p.data;
@@ -31,7 +32,8 @@ export async function GET(_req: NextRequest, { params }: { params: { key: string
   }
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { key: string } }) {
+export async function PUT(request: NextRequest, props: { params: Promise<{ key: string }> }) {
+  const params = await props.params;
   const p = parseParams(params, preferenceKeyParamSchema);
   if (!p.ok) return p.response;
   const { key } = p.data;

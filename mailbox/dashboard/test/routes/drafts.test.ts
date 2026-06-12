@@ -45,14 +45,14 @@ dbDescribe('drafts route handlers — real Postgres', () => {
     it('returns 404 for nonexistent draft', async () => {
       const { GET } = await import('@/app/api/drafts/[id]/route');
       const res = await GET(fakeRequest(), {
-        params: { id: '999999999' },
+        params: Promise.resolve({ id: '999999999' }),
       });
       expect(res.status).toBe(404);
     });
 
     it('returns 400 for non-numeric id', async () => {
       const { GET } = await import('@/app/api/drafts/[id]/route');
-      const res = await GET(fakeRequest(), { params: { id: 'abc' } });
+      const res = await GET(fakeRequest(), { params: Promise.resolve({ id: 'abc' }) });
       expect(res.status).toBe(400);
       const body = await res.json();
       expect(body.error).toBe('validation_failed');
@@ -65,7 +65,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/approve/route');
         const res = await POST(fakeRequest(), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(200);
         const row = await getDraftRow(seed.draftId);
@@ -80,7 +80,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/approve/route');
         const res = await POST(fakeRequest(), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(409);
         const row = await getDraftRow(seed.draftId);
@@ -103,7 +103,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
           fakeRequest({
             body: { reason_code: 'wrong_tone', free_text: '  too formal  ' },
           }),
-          { params: { id: String(seed.draftId) } },
+          { params: Promise.resolve({ id: String(seed.draftId) }) },
         );
         expect(res.status).toBe(200);
         const row = await getDraftRow(seed.draftId);
@@ -132,7 +132,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/reject/route');
         const res = await POST(fakeRequest({ body: { reason_code: 'other' } }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(400);
         const row = await getDraftRow(seed.draftId);
@@ -147,7 +147,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/reject/route');
         const res = await POST(fakeRequest({ body: {} }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(400);
       } finally {
@@ -160,7 +160,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/reject/route');
         const res = await POST(fakeRequest({ body: { reason_code: 'wrong_tone' } }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(409);
       } finally {
@@ -181,7 +181,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
               draft_subject: 'Re: edited',
             },
           }),
-          { params: { id: String(seed.draftId) } },
+          { params: Promise.resolve({ id: String(seed.draftId) }) },
         );
         expect(res.status).toBe(200);
         const row = await getDraftRow(seed.draftId);
@@ -198,7 +198,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/edit/route');
         const res = await POST(fakeRequest({ body: { draft_body: '   ' } }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(400);
       } finally {
@@ -213,7 +213,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/edit/route');
         const res = await POST(fakeRequest({ body: { draft_body: 'any body' } }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(409);
       } finally {
@@ -231,7 +231,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/retry/route');
         const res = await POST(fakeRequest(), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(200);
         const row = await getDraftRow(seed.draftId);
@@ -247,7 +247,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/retry/route');
         const res = await POST(fakeRequest(), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(409);
       } finally {
@@ -267,7 +267,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/retry/route');
         const res = await POST(fakeRequest(), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(429);
         const body = (await res.json()) as { error: string; next_retry_at: string };
@@ -301,7 +301,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
         );
         const { POST } = await import('@/app/api/drafts/[id]/retry/route');
         const res = await POST(fakeRequest(), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(429);
         const body = (await res.json()) as { error: string; next_retry_at: string };
@@ -319,7 +319,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/retry/route');
         const res = await POST(fakeRequest(), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(200);
         const pool = getTestPool();
@@ -346,7 +346,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/retry/route');
         const res = await POST(fakeRequest(), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(502);
         const body = (await res.json()) as { success: boolean; error: string };
@@ -453,7 +453,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
         // First reject so we have a row in draft_feedback to remove.
         const { POST: rejectPOST } = await import('@/app/api/drafts/[id]/reject/route');
         const rejectRes = await rejectPOST(fakeRequest({ body: { reason_code: 'wrong_tone' } }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(rejectRes.status).toBe(200);
         const afterReject = await getDraftRow(seed.draftId);
@@ -469,7 +469,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
 
         const { POST: undoPOST } = await import('@/app/api/drafts/[id]/undo-reject/route');
         const undoRes = await undoPOST(fakeRequest({ body: {} }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(undoRes.status).toBe(200);
         const afterUndo = await getDraftRow(seed.draftId);
@@ -491,7 +491,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST } = await import('@/app/api/drafts/[id]/undo-reject/route');
         const res = await POST(fakeRequest({ body: {} }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(409);
         const row = await getDraftRow(seed.draftId);
@@ -515,11 +515,11 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST: rejectPOST } = await import('@/app/api/drafts/[id]/reject/route');
         await rejectPOST(fakeRequest({ body: { reason_code: 'wrong_tone' } }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         const { POST: undoPOST } = await import('@/app/api/drafts/[id]/undo-reject/route');
         const res = await undoPOST(fakeRequest({ body: {} }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(res.status).toBe(200);
 
@@ -539,15 +539,15 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       try {
         const { POST: rejectPOST } = await import('@/app/api/drafts/[id]/reject/route');
         await rejectPOST(fakeRequest({ body: { reason_code: 'wrong_tone' } }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         const { POST: undoPOST } = await import('@/app/api/drafts/[id]/undo-reject/route');
         const first = await undoPOST(fakeRequest({ body: {} }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(first.status).toBe(200);
         const second = await undoPOST(fakeRequest({ body: {} }), {
-          params: { id: String(seed.draftId) },
+          params: Promise.resolve({ id: String(seed.draftId) }),
         });
         expect(second.status).toBe(409);
 
@@ -575,7 +575,7 @@ dbDescribe('drafts route handlers — real Postgres', () => {
   describe('GET /api/drafts/[id]/rag-refs', () => {
     it('returns 404 for nonexistent draft', async () => {
       const { GET } = await import('@/app/api/drafts/[id]/rag-refs/route');
-      const res = await GET(fakeRequest(), { params: { id: '999999999' } });
+      const res = await GET(fakeRequest(), { params: Promise.resolve({ id: '999999999' }) });
       expect(res.status).toBe(404);
       const body = await res.json();
       expect(body.error).toBe('draft_not_found');
@@ -588,7 +588,9 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       const callsBefore = fetchSpy.mock.calls.length;
       try {
         const { GET } = await import('@/app/api/drafts/[id]/rag-refs/route');
-        const res = await GET(fakeRequest(), { params: { id: String(seed.draftId) } });
+        const res = await GET(fakeRequest(), {
+          params: Promise.resolve({ id: String(seed.draftId) }),
+        });
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.reason).toBe('no_hits');
@@ -652,7 +654,9 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       );
       try {
         const { GET } = await import('@/app/api/drafts/[id]/rag-refs/route');
-        const res = await GET(fakeRequest(), { params: { id: String(seed.draftId) } });
+        const res = await GET(fakeRequest(), {
+          params: Promise.resolve({ id: String(seed.draftId) }),
+        });
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.reason).toBe('ok');
@@ -679,7 +683,9 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       );
       try {
         const { GET } = await import('@/app/api/drafts/[id]/rag-refs/route');
-        const res = await GET(fakeRequest(), { params: { id: String(seed.draftId) } });
+        const res = await GET(fakeRequest(), {
+          params: Promise.resolve({ id: String(seed.draftId) }),
+        });
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.refs).toEqual([]);
@@ -742,7 +748,9 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       );
       try {
         const { GET } = await import('@/app/api/drafts/[id]/rag-refs/route');
-        const res = await GET(fakeRequest(), { params: { id: String(seed.draftId) } });
+        const res = await GET(fakeRequest(), {
+          params: Promise.resolve({ id: String(seed.draftId) }),
+        });
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.reason).toBe('no_hits'); // email reason carried through
@@ -829,7 +837,9 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       });
       try {
         const { GET } = await import('@/app/api/drafts/[id]/rag-refs/route');
-        const res = await GET(fakeRequest(), { params: { id: String(seed.draftId) } });
+        const res = await GET(fakeRequest(), {
+          params: Promise.resolve({ id: String(seed.draftId) }),
+        });
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.reason).toBe('ok');
