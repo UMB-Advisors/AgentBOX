@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+echo "DECOMMISSIONED 2026-06-12 — custom features moved to UMB-Advisors/agentbox-sidecar." >&2
+echo "Deploys follow agentbox-sidecar/docs/update-runbook.md. This script targets the retired" >&2
+echo "hermes_cli-overlay architecture (rollback checkout ~/.hermes/hermes-agent)." >&2
+[ "${ABX_LEGACY_DEPLOY:-}" = "1" ] || exit 1
 #
 # Re-deploy the AgentBOX dashboard (frontend + custom backend) to an appliance.
 #
@@ -8,8 +12,8 @@
 #   replaces the custom AgentBOX backend (digest endpoint, /dashboard inbox proxy,
 #   theme registry, Google/Shopify connect routes) with the stock backend. The
 #   stock backend has NO /api/google/* or /api/shopify/* endpoints, so the
-#   "Connect Google account" page 404s. Run this after any hermes update, and as
-#   the final step of provisioning a NEW box, to install the AgentBOX dashboard.
+#   "Connect Google account" page 404s. NEVER run after a hermes update — hermes
+#   update is now a runbook procedure (agentbox-sidecar/docs/update-runbook.md).
 #
 # WHAT IT DOES
 #   1. builds web/ (unless --no-build / --backend-only)

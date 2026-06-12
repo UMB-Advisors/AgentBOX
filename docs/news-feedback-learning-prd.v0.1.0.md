@@ -113,3 +113,11 @@ the draft-feedback ingest), serialized by the shared flock.
 - Ingest: scp `ingest_news_feedback.py` + tests + the two systemd units,
   `systemctl --user daemon-reload && systemctl --user enable --now
   gbrain-ingest-news-feedback.timer`, then `--backfill --dry-run` → `--backfill`.
+
+## Addendum-01 (2026-06-12) — Deploy notes superseded
+
+Never patch `web_server.py` (the box runs stock upstream hermes v0.16.0). The
+news/feedback routes must be ported into **agentbox-sidecar** and deployed per
+`agentbox-sidecar/docs/update-runbook.md`. Before deploying, verify whether the
+PR #98/#99 features were carried into the sidecar during the cutover (see U9 in
+the post-sidecar audit).

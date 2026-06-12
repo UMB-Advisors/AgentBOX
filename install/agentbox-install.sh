@@ -275,6 +275,14 @@ if ! docker compose --profile n8n-verify run --rm mailbox-n8n-verify; then
 fi
 log "  NOTE: live Gmail triage needs Gmail OAuth (MANUAL browser consent, per inbox) — not bench-automatable."
 
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ WARNING (2026-06-12): STAGES 7/7.5/7.6 provision the PRE-SIDECAR          ║
+# ║ architecture (v0.15.1 pin + hermes_cli overlay, no sidecar). A box built  ║
+# ║ from this will NOT match live agentbox2. See the agentbox-sidecar         ║
+# ║ decoupling PRD (docs/agentbox-sidecar-decoupling.prd.v0.1.0.md in the     ║
+# ║ AgentBOX docs tree) + agentbox-sidecar/docs/update-runbook.md before      ║
+# ║ running. Full rework tracked under MBOX-428.                              ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
 # ── STAGE 7: Hermes (v0.15.1 pin) + gbrain memory ─────────────────────────
 # Native (not containerized). Codifies the validated JP7.2 sequence (2026-06-06).
 # Idempotent: each step is guarded so re-runs converge.
@@ -334,6 +342,8 @@ else
   log "  MANUAL: gbrain not set up (need bun + ~/gbrain-src) — see docs/agentbox-jp72-reproduction"
 fi
 # 7.5 build + install the dashboard web dist (the :9119 service runs --skip-build).
+# WARNING (2026-06-12): PRE-SIDECAR architecture — live agentbox2 serves the UI from
+# agentbox-sidecar (:9200); this stage will not reproduce it.
 # Prefer the vendored CUSTOM web (Carbon reskin, Settings→Google page); fall back
 # to the stock build only if the custom build is unavailable/fails. web_dist is a
 # gitignored build artifact, so it must be built here — it never ships in the repo.
@@ -361,6 +371,8 @@ if [ -x "$HBIN" ] && [ ! -d "$INSTALL_CLI/web_dist" ]; then
 fi
 
 # ── STAGE 7.6: AgentBOX custom dashboard BACKEND overlay (DR: 2026-06-06) ──
+# WARNING (2026-06-12): PRE-SIDECAR architecture — live agentbox2 serves custom
+# features from agentbox-sidecar (:9200); this overlay will not reproduce it.
 # STAGE 7 installs/pins STOCK upstream hermes. Stock has NO /api/google/* or
 # /api/shopify/* routes (so "Connect Google account" 404s), and its auth allowlist
 # doesn't cover the OAuth callbacks. Overlay the AgentBOX-custom backend — the *.py
@@ -422,7 +434,7 @@ if [ -f "$REPO/bin/lib/custom-backend-files.sh" ] && [ -d "$ABX_HERMES/hermes_cl
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
   systemctl --user restart hermes-dashboard.service >/dev/null 2>&1 || true
 else
-  log "  WARN: custom backend overlay skipped (missing bin/lib/custom-backend-files.sh or install dir) — run bin/deploy-dashboard.sh"
+  log "  WARN: custom backend overlay skipped (missing bin/lib/custom-backend-files.sh or install dir) — see agentbox-sidecar/docs/update-runbook.md"
 fi
 
 # ── STAGE 8: boot-to-ready systemd (SM-100) ───────────────────────────────
@@ -447,14 +459,19 @@ fi
 log "STAGE 9 — verify"
 docker compose ps --format '{{.Name}}\t{{.Status}}'
 PSQL -tAc "select 'drafts:'||(to_regclass('mailbox.drafts') is not null)::text;"
-# Custom dashboard backend live? /api/google/auth/start is an AgentBOX-only route
-# (3xx redirect to Google). Stock backend lacks it -> 401/404 = overlay didn't take.
+# Sidecar live? The user-facing UI + custom routes (incl. /api/google/auth/start)
+# are served by agentbox-sidecar on :9200 (current architecture, 2026-06-12).
 sleep 3
 PYBIN="$HH/hermes-agent/venv/bin/python3"; [ -x "$PYBIN" ] || PYBIN="python3"
-GCODE="$("$PYBIN" -c "import http.client as h; c=h.HTTPConnection('127.0.0.1',9119,timeout=10); c.request('GET','/api/google/auth/start'); print(c.getresponse().status)" 2>/dev/null || echo ERR)"
+HCODE="$("$PYBIN" -c "import http.client as h; c=h.HTTPConnection('127.0.0.1',9200,timeout=10); c.request('GET','/healthz'); print(c.getresponse().status)" 2>/dev/null || echo ERR)"
+GCODE="$("$PYBIN" -c "import http.client as h; c=h.HTTPConnection('127.0.0.1',9200,timeout=10); c.request('GET','/api/google/auth/start'); print(c.getresponse().status)" 2>/dev/null || echo ERR)"
+case "$HCODE" in
+  200) log "  sidecar OK — :9200/healthz -> $HCODE" ;;
+  *) log "  WARN: sidecar NOT live (:9200/healthz -> $HCODE). Install/repair per agentbox-sidecar/docs/update-runbook.md" ;;
+esac
 case "$GCODE" in
-  301|302|303|307|308|200) log "  custom backend OK — /api/google/auth/start -> $GCODE" ;;
-  *) log "  WARN: custom backend NOT live (/api/google/auth/start -> $GCODE). Google connect will 404. Re-run STAGE 7.6 or: bin/deploy-dashboard.sh" ;;
+  301|302|303|307|308|200) log "  google routes OK — /api/google/auth/start -> $GCODE" ;;
+  *) log "  WARN: google routes NOT live (:9200/api/google/auth/start -> $GCODE). Google connect will 404. See agentbox-sidecar/docs/update-runbook.md" ;;
 esac
 log "AgentBOX install complete. Smokes: inject inbound -> draft appears; 'hermes -z' replies;"
 log "re-run the SM-97 spike (spike-hermes-mailbox/12-worstcase-turn.sh) to spot-check the envelope."
