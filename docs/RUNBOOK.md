@@ -1,3 +1,8 @@
+> **SUPERSEDED 2026-06-12** — describes the pre-AgentBOX hermesBOX/mailbox2
+> architecture. Current architecture = the sidecar decoupling PRD
+> (`docs/agentbox-sidecar-decoupling.prd.v0.1.0.md` + addendum, AgentBOX docs tree);
+> operative runbook = `agentbox-sidecar/docs/update-runbook.md`.
+
 # hermesBOX — Operator Runbook (one-pager)
 
 **Appliance:** Jetson Orin Nano 8 GB · JetPack 6.2 · headless · kiosk-only screen
