@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Single source of truth for the AgentBOX-custom dashboard BACKEND file set.
+# DECOMMISSIONED 2026-06-12 — custom features moved to UMB-Advisors/agentbox-sidecar.
+# Deploys follow agentbox-sidecar/docs/update-runbook.md. This library serves the retired
+# hermes_cli-overlay architecture (rollback checkout ~/.hermes/hermes-agent) only.
+#
+# HISTORICAL: single source of truth for the AgentBOX-custom dashboard BACKEND file set.
 #
 # Both the remote-push deploy (bin/deploy-dashboard.sh) and the on-box installer
 # (install/agentbox-install.sh STAGE 7.6) consume this so they can never drift.
@@ -8,8 +12,9 @@
 # /api/google/auth/* OAuth callbacks past the dashboard auth gate), so the route
 # 401'd even though web_server.py defined it.
 #
-# The set is everything under hermes_cli/*.py that diverges from the stock upstream
-# import — derived from git so new custom modules are picked up automatically.
+# HISTORICAL list — these features now live in agentbox-sidecar. The set was
+# everything under hermes_cli/*.py that diverged from the stock upstream
+# import — derived from git so new custom modules were picked up automatically.
 # Falls back to a static list when git history isn't available (e.g. a tarball
 # checkout on the box).
 
