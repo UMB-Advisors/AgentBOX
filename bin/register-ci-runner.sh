@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 #
-# One-time: register a GitHub Actions SELF-HOSTED runner on THIS workstation so
-# the "Deploy dashboard" workflow (.github/workflows/deploy-dashboard.yml) can
-# build + deploy on every merge to main. Run this ONCE per workstation.
+# DECOMMISSIONED (2026-06-12, MBOX-492): the "Deploy dashboard" workflow
+# (.github/workflows/deploy-dashboard.yml) and its deploy script
+# (bin/deploy-dashboard.sh) were removed with the stale hermes_cli-overlay
+# architecture. Custom features now deploy from the agentbox-sidecar repo
+# (see agentbox-sidecar/docs/update-runbook.md), so this monorepo no longer needs
+# a self-hosted deploy runner. This script is kept only for reference/history.
 #
 # WHY a self-hosted runner: it runs as YOU, where Tailscale SSH to the boxes,
 # your SSH keys, and the npm build env already work — so no SSH/Tailscale
@@ -57,8 +60,9 @@ cat <<EOF
 
 ==> Done. Runner '$(hostname)-agentbox' is online with label '$LABEL'.
     Verify: GitHub repo -> Settings -> Actions -> Runners (should show "Idle").
-    From now on, merging to main triggers .github/workflows/deploy-dashboard.yml,
-    which builds + deploys via bin/deploy-dashboard.sh. Stop deploying by hand.
+    NOTE (2026-06-12): the deploy-dashboard workflow/script this runner served were
+    DECOMMISSIONED — dashboard deploys now happen from the agentbox-sidecar repo.
+    This runner is no longer required by this monorepo.
 
     To remove later:  cd "$DIR" && sudo ./svc.sh stop && sudo ./svc.sh uninstall \\
                       && ./config.sh remove --token <new-removal-token>

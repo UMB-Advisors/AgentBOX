@@ -3,7 +3,7 @@
 Project-level instructions for Claude Code in this repo. Auto-loaded each session.
 Extends the global `~/.claude/CLAUDE.md`.
 
-> **⚠️ Build target (updated 2026-06-12).** The operator UI + ALL custom features live in **`UMB-Advisors/agentbox-sidecar`** (FastAPI `:9200`, systemd `agentbox-sidecar.service`; vendored UI at `web/` served at `/`; stock hermes demoted to `/hermes/`). Tunnel `:9120` → `:9200`. **NEVER add features to hermes `web_server.py`/`hermes_cli`** — use the sidecar or `~/.hermes/plugins`. `hermes-agent-main/` in this repo is a **STALE DUPLICATE** (history/rollback only).
+> **⚠️ Build target (updated 2026-06-12).** The operator UI + ALL custom features live in **`UMB-Advisors/agentbox-sidecar`** (FastAPI `:9200`, systemd `agentbox-sidecar.service`; vendored UI at `web/` served at `/`; stock hermes demoted to `/hermes/`). Tunnel `:9120` → `:9200`. **NEVER add features to hermes `web_server.py`/`hermes_cli`** — use the sidecar or `~/.hermes/plugins`. The stale `hermes-agent-main/` vendored tree was **removed** (MBOX-492, 2026-06-12); recover from git history or the `UMB-Advisors/agentbox-hermes-patches` archive if ever needed.
 >
 > **⚠️ Two "dashboards" — don't confuse them (MBOX-469).** The vendored **`mailbox/dashboard/`** (Next.js `mailbox-dashboard` container, `:3001`) is the **headless MailBox pipeline backend** behind the hermes proxy (`/dashboard/*` → `:3001`): it serves n8n's ~33 `/api/internal/*` routes + proxied JSON, but its UI is retired. "Retiring mailbox-dashboard" = retiring its UI, **not** deleting the service. Don't rename the docker service (load-bearing DNS in 8 n8n workflows). See the `[STATE]` on MBOX-469.
 
@@ -35,7 +35,7 @@ No unified test framework — this is an appliance/install repo (bash + vendored
 
 ```bash
 # "Tests": syntax-check the install/deploy scripts (must pass before commit)
-bash -n install/agentbox-install.sh bin/deploy-dashboard.sh bin/lib/custom-backend-files.sh
+bash -n install/agentbox-install.sh
 
 # Build/provision a fresh box (run ON the Jetson, from a clean checkout)
 install/agentbox-install.sh --prototype          # bench: throwaway secrets, skip caddy
@@ -51,10 +51,10 @@ curl -s localhost:9120/healthz     # via the tunnel
 ## Deploys (updated 2026-06-12)
 
 This monorepo **no longer deploys the dashboard**. `bin/deploy-dashboard.sh` and
-`.github/workflows/deploy-dashboard.yml` are **DECOMMISSIONED** (tombstone-gated /
-`workflow_dispatch`-only; they targeted the retired hermes_cli-overlay architecture
-and the rollback-only checkout `~/.hermes/hermes-agent`). Custom-feature deploys
-happen from the **agentbox-sidecar** repo per its `docs/update-runbook.md`.
+`.github/workflows/deploy-dashboard.yml` were **REMOVED** (MBOX-492, 2026-06-12;
+they targeted the retired hermes_cli-overlay architecture and the rollback-only
+checkout `~/.hermes/hermes-agent`). Custom-feature deploys happen from the
+**agentbox-sidecar** repo per its `docs/update-runbook.md`.
 
 <details>
 <summary>History — old single-deployer protocol (pre-sidecar, for the record)</summary>
@@ -74,14 +74,12 @@ The lesson ("one deployer, always from main") carries over to the sidecar repo.
 
 ## Layout
 
-- `install/agentbox-install.sh` — canonical fresh-box bring-up (staged). STAGE 7.6 overlays
-  the AgentBOX-custom Hermes dashboard backend onto the stock install.
-- `bin/deploy-dashboard.sh` — push the custom dashboard (frontend + backend) to a running box.
-- `bin/lib/custom-backend-files.sh` — **single source of truth** for the custom-backend
-  file set (git-derived). Consumed by both the installer and the deploy script.
-- `hermes-agent-main/hermes-agent-main/` — **stale duplicate of the UI source** (vendored
-  custom Hermes fork, history/rollback only). Source of truth = `agentbox-sidecar/web`;
-  the custom `hermes_cli` overlay pattern is dead.
+- `install/agentbox-install.sh` — canonical fresh-box bring-up (staged). STAGE 7.6's
+  custom-backend overlay was retired (MBOX-492); custom features ship from agentbox-sidecar.
+- Custom UI + backend live in the **`agentbox-sidecar`** repo (`agentbox-sidecar/web`),
+  deployed per `agentbox-sidecar/docs/update-runbook.md`. The old in-repo deploy script
+  (`bin/deploy-dashboard.sh`), its file-set SoT (`bin/lib/custom-backend-files.sh`), and the
+  vendored `hermes-agent-main/` tree were **removed** — the `hermes_cli` overlay pattern is dead.
 - `mailbox/` — vendored MailBOX email stack (compose, dashboard, n8n).
 - `gbrain-master/gbrain-master/` — vendored gBrain memory layer.
 - `provisioning/`, `systemd/`, `config/` — staged provisioning steps, boot units, templates.
