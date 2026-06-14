@@ -41,7 +41,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "X-Dispatch-Token", "value": "={{ $env.DISPATCH_TOKEN }}" }
+            { "name": "X-Dispatch-Token", "value": "={{ $env.AGENT_DISPATCH_TOKEN }}" }
           ]
         },
         "options": { "timeout": 60000 }
@@ -132,7 +132,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "X-Dispatch-Token", "value": "={{ $env.DISPATCH_TOKEN }}" }
+            { "name": "X-Dispatch-Token", "value": "={{ $env.AGENT_DISPATCH_TOKEN }}" }
           ]
         },
         "sendBody": true,
