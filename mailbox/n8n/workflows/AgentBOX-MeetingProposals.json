@@ -1,0 +1,154 @@
+{
+  "id": "AgbxMeetPropos1",
+  "active": false,
+  "name": "AgentBOX-MeetingProposals",
+  "description": "Meeting-Notes → Proposals agent. Polls new Gemini meeting-note next-steps from the sidecar candidates feed (via the agent-dispatch proxy), classifies each on the local model (qwen3) as proposal / not-proposal, and dispatches proposal-type steps to the `proposals` hermes profile (tenant agent:proposals) which auto-drafts a versioned proposal. See agentbox-sidecar docs/meeting-proposals-agent.prd.v0.1.0.md.",
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "MlbxErrHandler01"
+  },
+  "meta": {},
+  "pinData": {},
+  "tags": [],
+  "staticData": null,
+  "nodes": [
+    {
+      "id": "mp-sched",
+      "name": "Every 20 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [-360, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": "={{ Number($env.MEETING_PROPOSALS_INTERVAL_MIN ?? 20) }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mp-getcand",
+      "name": "Get Candidates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [-160, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ \"http://host.docker.internal:9210/candidates?limit=20&since_id=\" + ($getWorkflowStaticData('global').proposalsLastId || 0) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Dispatch-Token", "value": "={{ $env.DISPATCH_TOKEN }}" }
+          ]
+        },
+        "options": { "timeout": 60000 }
+      }
+    },
+    {
+      "id": "mp-emit",
+      "name": "Save Watermark + Emit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 0],
+      "parameters": {
+        "jsCode": "// Advance the watermark past every note seen, then fan out one item per\n// candidate next-step. No candidates => no downstream items (loop idles).\nconst data = $input.first().json;\nconst sd = $getWorkflowStaticData('global');\nif (typeof data.max_id === 'number' && data.max_id > (sd.proposalsLastId || 0)) {\n  sd.proposalsLastId = data.max_id;\n}\nreturn (data.candidates || []).map((c) => ({ json: c }));\n"
+      }
+    },
+    {
+      "id": "mp-buildp",
+      "name": "Build Gate Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0],
+      "parameters": {
+        "jsCode": "// One local-model classification prompt per candidate next-step.\nreturn $input.all().map((it) => {\n  const c = it.json;\n  const prompt = [\n    'You classify a single meeting NEXT-STEP. Decide if acting on it requires drafting a business PROPOSAL (partnership, client/SOW, pricing, or M&A).',\n    'NOT proposals: scheduling/calendar, internal research, data pulls, simple replies or follow-ups, status updates.',\n    '',\n    'Meeting: ' + (c.meeting_title || ''),\n    'Summary: ' + (c.summary || ''),\n    'Next-step: ' + (c.step_title || ''),\n    (c.step_text || ''),\n    '',\n    'Return ONLY JSON: {\"is_proposal\": true|false, \"confidence\": 0.0-1.0, \"entity\": \"<slug or null>\", \"why\": \"<short>\"}'\n  ].join('\\n');\n  return { json: { ...c, model: 'qwen3:4b-instruct', prompt } };\n});\n"
+      }
+    },
+    {
+      "id": "mp-classify",
+      "name": "Classify (qwen3)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [440, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "http://mailbox-dashboard:3001/dashboard/api/internal/llm/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": {{ JSON.stringify($json.model) }},\n  \"prompt\": {{ JSON.stringify($json.prompt) }},\n  \"stream\": false,\n  \"format\": \"json\",\n  \"think\": false,\n  \"options\": { \"temperature\": 0, \"num_predict\": 128 }\n}",
+        "options": { "timeout": 180000 }
+      }
+    },
+    {
+      "id": "mp-parse",
+      "name": "Parse Verdict",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 0],
+      "parameters": {
+        "jsCode": "// Pair each qwen3 response with its candidate (1:1 by index) and parse the\n// JSON verdict. Build the self-contained proposal task body here too.\nreturn $input.all().map((it, i) => {\n  const src = $('Build Gate Prompt').all()[i].json;\n  let v = {};\n  try { v = JSON.parse(it.json.response || it.json.text || '{}'); } catch (e) { v = {}; }\n  const entity = v.entity || src.entity || '';\n  const task_body = [\n    'Draft a business proposal for this meeting next-step.',\n    '',\n    'Meeting: ' + (src.meeting_title || ''),\n    'Summary: ' + (src.summary || ''),\n    'Entity: ' + entity,\n    'Owners: ' + ((src.owners || []).join(', ')),\n    '',\n    'Next-step: ' + (src.step_title || ''),\n    (src.step_text || ''),\n    '',\n    \"Recall the closest example from gbrain source 'proposal-templates' and follow its structure. Produce a versioned markdown DRAFT (no send); mark anything needing human approval or legal review. Emit run-metadata: artifact, proposal_title, entity, recommendation.\"\n  ].join('\\n');\n  return { json: {\n    meeting_id: src.meeting_id,\n    step_index: src.step_index,\n    step_title: src.step_title,\n    is_proposal: v.is_proposal === true,\n    confidence: Number(v.confidence) || 0,\n    entity,\n    why: v.why || '',\n    task_body\n  } };\n});\n"
+      }
+    },
+    {
+      "id": "mp-if",
+      "name": "Is Proposal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [840, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "mp-cond-isproposal",
+              "leftValue": "={{ $json.is_proposal }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            },
+            {
+              "id": "mp-cond-conf",
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": "={{ Number($env.MEETING_PROPOSALS_THRESHOLD ?? 0.6) }}",
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "mp-dispatch",
+      "name": "Dispatch to Proposals",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [1060, -80],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:9210/dispatch",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Dispatch-Token", "value": "={{ $env.DISPATCH_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"title\": {{ JSON.stringify(\"Proposal: \" + ($json.step_title || \"\").slice(0, 100)) }},\n  \"body\": {{ JSON.stringify($json.task_body) }},\n  \"assignee\": \"proposals\",\n  \"tenant\": \"agent:proposals\",\n  \"ready\": true,\n  \"idempotency_key\": {{ JSON.stringify(\"proposal:\" + $json.meeting_id + \":\" + $json.step_index) }},\n  \"created_by\": \"n8n-meeting-proposals\"\n}",
+        "options": { "timeout": 60000 }
+      }
+    }
+  ],
+  "connections": {
+    "Every 20 Minutes": { "main": [[{ "node": "Get Candidates", "type": "main", "index": 0 }]] },
+    "Get Candidates": { "main": [[{ "node": "Save Watermark + Emit", "type": "main", "index": 0 }]] },
+    "Save Watermark + Emit": { "main": [[{ "node": "Build Gate Prompt", "type": "main", "index": 0 }]] },
+    "Build Gate Prompt": { "main": [[{ "node": "Classify (qwen3)", "type": "main", "index": 0 }]] },
+    "Classify (qwen3)": { "main": [[{ "node": "Parse Verdict", "type": "main", "index": 0 }]] },
+    "Parse Verdict": { "main": [[{ "node": "Is Proposal?", "type": "main", "index": 0 }]] },
+    "Is Proposal?": { "main": [[{ "node": "Dispatch to Proposals", "type": "main", "index": 0 }], []] }
+  }
+}
