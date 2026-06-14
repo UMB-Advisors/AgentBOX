@@ -30,6 +30,16 @@
       }
     },
     {
+      "id": "mp-readwm",
+      "name": "Read Watermark",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-260, 0],
+      "parameters": {
+        "jsCode": "// $getWorkflowStaticData is only available in Code nodes, so read the\n// watermark here and hand since_id to the HTTP node as item data.\nconst sd = $getWorkflowStaticData('global');\nreturn [{ json: { since_id: sd.proposalsLastId || 0 } }];\n"
+      }
+    },
+    {
       "id": "mp-getcand",
       "name": "Get Candidates",
       "type": "n8n-nodes-base.httpRequest",
@@ -37,7 +47,7 @@
       "position": [-160, 0],
       "parameters": {
         "method": "GET",
-        "url": "={{ \"http://host.docker.internal:9210/candidates?limit=20&since_id=\" + ($getWorkflowStaticData('global').proposalsLastId || 0) }}",
+        "url": "={{ \"http://host.docker.internal:9210/candidates?limit=20&since_id=\" + $json.since_id }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -143,7 +153,8 @@
     }
   ],
   "connections": {
-    "Every 20 Minutes": { "main": [[{ "node": "Get Candidates", "type": "main", "index": 0 }]] },
+    "Every 20 Minutes": { "main": [[{ "node": "Read Watermark", "type": "main", "index": 0 }]] },
+    "Read Watermark": { "main": [[{ "node": "Get Candidates", "type": "main", "index": 0 }]] },
     "Get Candidates": { "main": [[{ "node": "Save Watermark + Emit", "type": "main", "index": 0 }]] },
     "Save Watermark + Emit": { "main": [[{ "node": "Build Gate Prompt", "type": "main", "index": 0 }]] },
     "Build Gate Prompt": { "main": [[{ "node": "Classify (qwen3)", "type": "main", "index": 0 }]] },
