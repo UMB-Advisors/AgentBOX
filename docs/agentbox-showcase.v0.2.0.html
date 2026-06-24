@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentBOX — Technical Deep Dive</title>
+
+<!-- reveal.js core (CDN). To present offline, vendor these locally first. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:#0A0E13; --bg2:#0E141C; --surface:#131C26; --surface2:#18232F;
+  --line:#243240; --text:#E8EEF4; --muted:#8A99A8; --faint:#5E6E7D;
+  --green:#3DDC97; --green-dim:#1f6b4d; --blue:#5B8DEF; --amber:#F2B66B; --red:#F2778B;
+  --r:16px;
+}
+.reveal { font-family:'Inter',system-ui,sans-serif; color:var(--text); font-size:32px; letter-spacing:-0.01em; }
+.reveal-viewport {
+  background:
+    radial-gradient(1200px 700px at 80% -10%, rgba(61,220,151,0.09), transparent 60%),
+    radial-gradient(1000px 700px at 0% 110%, rgba(91,141,239,0.09), transparent 55%),
+    var(--bg);
+}
+.reveal .slides { text-align:left; }
+.reveal .slides section { height:100%; }
+.reveal h1,.reveal h2,.reveal h3 { font-family:'Inter',sans-serif; color:var(--text); text-transform:none; letter-spacing:-0.035em; line-height:1.06; margin:0 0 0.4em 0; font-weight:800; }
+.reveal h1 { font-size:2.0em; }
+.reveal h2 { font-size:1.35em; }
+.reveal h3 { font-size:1.0em; font-weight:700; }
+.reveal p { line-height:1.45; }
+.reveal strong { color:#fff; font-weight:700; }
+.reveal em { color:var(--green); font-style:normal; font-weight:600; }
+.reveal a { color:var(--green); }
+
+.kicker { font-family:'JetBrains Mono',monospace; font-size:0.48em; font-weight:500; letter-spacing:0.3em; text-transform:uppercase; color:var(--green); margin-bottom:1.1em; display:block; }
+.lead { font-size:1.0em; color:var(--muted); line-height:1.5; max-width:24em; }
+.center { display:flex; flex-direction:column; justify-content:center; height:100%; }
+.footer-id { position:absolute; bottom:0; left:0; font-family:'JetBrains Mono',monospace; font-size:0.4em; color:var(--faint); letter-spacing:0.1em; }
+
+.reveal ul { list-style:none; margin:0; padding:0; }
+.reveal ul li { position:relative; padding:0.3em 0 0.3em 1.4em; margin:0.12em 0; line-height:1.4; }
+.reveal ul li::before { content:""; position:absolute; left:0; top:0.72em; width:0.45em; height:0.45em; border-radius:2px; background:var(--green); box-shadow:0 0 12px rgba(61,220,151,0.55); }
+
+.cards { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; margin-top:0.3em; }
+.card { background:linear-gradient(160deg,var(--surface),var(--bg2)); border:1px solid var(--line); border-radius:var(--r); padding:24px 22px; }
+.card .tag { font-family:'JetBrains Mono',monospace; font-size:0.44em; letter-spacing:0.16em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:0.5em; }
+.card h3 { font-size:1.05em; margin-bottom:0.25em; }
+.card p { font-size:0.58em; color:var(--muted); line-height:1.45; margin:0; }
+
+.stats { display:grid; grid-template-columns:repeat(4,1fr); gap:18px; margin-top:0.5em; }
+.stat { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:22px 18px; }
+.stat .num { font-weight:900; font-size:1.5em; line-height:1; color:var(--green); letter-spacing:-0.04em; }
+.stat .num.blue { color:var(--blue); } .stat .num.red { color:var(--red); } .stat .num.amber{color:var(--amber);}
+.stat .lbl { font-size:0.46em; color:var(--muted); margin-top:0.6em; line-height:1.4; }
+
+/* data table */
+table.data { width:100%; border-collapse:collapse; margin-top:0.4em; font-size:0.62em; }
+table.data th { text-align:left; color:var(--faint); font-family:'JetBrains Mono',monospace; font-weight:500; font-size:0.85em; letter-spacing:0.08em; text-transform:uppercase; padding:0.5em 0.7em; border-bottom:1px solid var(--line); }
+table.data td { padding:0.55em 0.7em; border-bottom:1px solid var(--line); }
+table.data tr:last-child td { border-bottom:none; }
+table.data .mono { font-family:'JetBrains Mono',monospace; }
+table.data .hi { color:var(--green); font-weight:700; }
+table.data .warn { color:var(--red); font-weight:700; }
+table.data tr.gate td { background:rgba(61,220,151,0.06); }
+
+/* code / config block */
+pre.code { background:#0A1118; border:1px solid var(--line); border-left:3px solid var(--green); border-radius:10px; padding:18px 22px; font-family:'JetBrains Mono',monospace; font-size:0.5em; line-height:1.55; color:#C8D6E2; overflow:auto; margin:0.4em 0; box-shadow:none; }
+pre.code .c { color:var(--faint); }           /* comment */
+pre.code .k { color:var(--blue); }             /* keyword */
+pre.code .g { color:var(--green); }            /* value/accent */
+pre.code .r { color:var(--red); }              /* bad/removed */
+
+/* two-up problem/fix */
+.pf { display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-top:0.4em; }
+.pf .box { border:1px solid var(--line); border-radius:var(--r); padding:22px 24px; background:var(--surface); }
+.pf .box.prob { border-left:3px solid var(--red); }
+.pf .box.fix  { border-left:3px solid var(--green); }
+.pf .box .h { font-family:'JetBrains Mono',monospace; font-size:0.42em; letter-spacing:0.18em; text-transform:uppercase; margin-bottom:0.7em; }
+.pf .box.prob .h { color:var(--red); } .pf .box.fix .h { color:var(--green); }
+.pf .box p, .pf .box li { font-size:0.58em; color:var(--text); line-height:1.45; }
+.pf .box ul li::before { background:currentColor; opacity:0.5; }
+.pf .box.prob ul li::before { background:var(--red); }
+
+/* flow diagram (email) */
+.flow { display:flex; flex-direction:column; gap:9px; margin-top:0.2em; font-size:0.95em; }
+.frow { display:flex; align-items:center; gap:12px; }
+.fnode { border:1px solid var(--line); border-radius:11px; padding:11px 16px; background:var(--surface); font-size:0.5em; flex:1; }
+.fnode b { color:#fff; } .fnode .m { color:var(--muted); }
+.fnode.local { border-left:3px solid var(--green); }
+.fnode.cloud { border-left:3px solid var(--blue); }
+.fnode.human { border-left:3px solid var(--amber); }
+.farrow { color:var(--faint); font-family:'JetBrains Mono',monospace; font-size:0.42em; text-align:center; letter-spacing:0.15em; }
+.fsplit { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+/* topology */
+.topo { border:1px solid var(--line); border-radius:var(--r); overflow:hidden; margin-top:0.3em; }
+.topo .hdr { background:var(--surface2); padding:10px 18px; font-family:'JetBrains Mono',monospace; font-size:0.46em; letter-spacing:0.12em; color:var(--green); border-bottom:1px solid var(--line); }
+.topo .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); }
+.topo .svc { background:var(--bg2); padding:14px 16px; }
+.topo .svc .n { font-family:'JetBrains Mono',monospace; font-size:0.5em; color:#fff; font-weight:700; }
+.topo .svc .d { font-size:0.42em; color:var(--muted); margin-top:0.3em; line-height:1.35; }
+
+.title-wrap { display:flex; flex-direction:column; justify-content:center; height:100%; }
+.title-wrap h1 { font-size:3.2em; font-weight:900; letter-spacing:-0.05em; }
+.title-wrap h1 .g { color:var(--green); }
+.title-wrap .tagline { font-size:0.95em; color:var(--text); font-weight:600; margin-top:0.1em; }
+.title-wrap .desc { color:var(--muted); font-size:0.62em; max-width:26em; margin-top:0.8em; line-height:1.5; }
+.title-wrap .who { margin-top:1.4em; font-family:'JetBrains Mono',monospace; font-size:0.5em; color:var(--faint); letter-spacing:0.15em; }
+.pillbar { display:flex; gap:9px; flex-wrap:wrap; margin-top:1.1em; }
+.pill { font-family:'JetBrains Mono',monospace; font-size:0.42em; letter-spacing:0.1em; border:1px solid var(--line); border-radius:999px; padding:0.5em 1em; color:var(--muted); }
+.pill b { color:var(--green); font-weight:700; }
+
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:34px; align-items:center; height:100%; }
+.demo-splash { display:flex; flex-direction:column; justify-content:center; align-items:center; height:100%; text-align:center; }
+.demo-splash .big { font-size:3.2em; font-weight:900; letter-spacing:-0.05em; }
+.demo-splash .big .g { color:var(--green); }
+.demo-splash .sub { margin-top:0.6em; color:var(--muted); font-family:'JetBrains Mono',monospace; font-size:0.55em; letter-spacing:0.25em; text-transform:uppercase; }
+.pulse { width:13px; height:13px; border-radius:50%; background:var(--green); display:inline-block; box-shadow:0 0 0 0 rgba(61,220,151,0.7); animation:pulse 1.8s infinite; }
+@keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(61,220,151,0.6);} 70%{box-shadow:0 0 0 16px rgba(61,220,151,0);} 100%{box-shadow:0 0 0 0 rgba(61,220,151,0);} }
+
+.reveal .progress { color:var(--green); height:4px; }
+.reveal .controls { color:var(--green); }
+.bignum { color:var(--green); font-weight:900; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<!-- 1 · TITLE -->
+<section data-background-color="#0A0E13">
+  <div class="title-wrap">
+    <span class="kicker">Community Friday Call · Technical Deep Dive</span>
+    <h1>Agent<span class="g">BOX</span></h1>
+    <div class="tagline">An AI back-office as an appliance — engineered into 8&nbsp;GB.</div>
+    <div class="desc">Why we built it, how we fit it on the hardware, and what actually ships.
+      A local agent, its memory, and an email pipeline co-resident on one Jetson.</div>
+    <div class="pillbar">
+      <span class="pill"><b>Jetson</b> Orin Nano Super</span>
+      <span class="pill"><b>8 GB</b> unified</span>
+      <span class="pill"><b>Qwen3-4B</b> local</span>
+      <span class="pill"><b>n8n</b> + Postgres + Qdrant</span>
+    </div>
+    <div class="who">[ YOUR NAME ] · 2026</div>
+  </div>
+  <aside class="notes">
+    [0:00–0:45] Frame the talk as engineering, not pitch. "I'm going to walk three
+    things: why an appliance, how we fit a full agent stack into 8 GB, and what we
+    actually shipped. The 8 GB number is the whole story — every decision falls out
+    of it." Set expectation: war stories, real numbers.
+  </aside>
+</section>
+
+<!-- 2 · WHY -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Why we built it</span>
+  <h2>Two forces pushed the AI off the cloud and onto a box.</h2>
+  <div class="pf" style="margin-top:0.6em;">
+    <div class="box prob">
+      <div class="h">Privacy</div>
+      <p>An email assistant means handing a vendor your <strong>entire inbox</strong>.
+      For the customers we target, that's a non-starter. Content has to stay on hardware they own.</p>
+    </div>
+    <div class="box fix">
+      <div class="h">Economics</div>
+      <p>Routing every inference to the cloud is a recurring per-seat bill.
+      A <strong>~$500 one-time board</strong> beats 12 months of cloud escalation —
+      the margin only works on hardware.</p>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:1em; max-width:32em;">
+    So the design target was fixed up front: <em>the agent, its memory, and the
+    pipeline all run on one local box.</em> No cloud account required to operate it.</p>
+  <aside class="notes">
+    [0:45–2:15] WHY — 90s. Two forces: privacy (the felt one) and unit economics
+    (the structural one). Land the thesis: this is an appliance, not a service.
+    That single choice is what makes the rest hard — which is the next slide.
+  </aside>
+</section>
+
+<!-- 3 · THE CONSTRAINT -->
+<section data-background-color="#0A0E13">
+  <div class="two-col">
+    <div>
+      <span class="kicker">The constraint that defines everything</span>
+      <h2 style="font-size:1.5em;">8&nbsp;GB.<br>Unified. Shared.<br>That's the whole budget.</h2>
+      <p class="lead" style="margin-top:0.7em;">CPU and GPU draw from <em>one</em> 8&nbsp;GB pool.
+      The local LLM, embeddings, Postgres, the vector DB, n8n, Docker, and the OS
+      all live in it at once.</p>
+    </div>
+    <div>
+      <pre class="code"><span class="c"># everything competes for one pool</span>
+Qwen3-4B (Q4_K_M)   <span class="g">~2.7 GB</span>
+nomic-embed-text    <span class="g">~0.3 GB</span>
+postgres + qdrant   <span class="g">~0.8 GB</span>
+n8n + dashboard     <span class="g">~1.0 GB</span>
+docker + OS         <span class="g">~1.5 GB</span>
+<span class="c">────────────────────────────</span>
+<span class="k">headroom for a heavy</span>
+<span class="k">agent turn:</span>        <span class="r">razor thin</span></pre>
+      <p style="font-size:0.46em; color:var(--faint); margin-top:0.6em;">A 7B model (~4.5 GB alone) doesn't fit. Dual model runtimes don't fit. Every byte is contested.</p>
+    </div>
+  </div>
+  <aside class="notes">
+    [2:15–3:45] THE CONSTRAINT — 90s. This is the spine. Make them feel it:
+    "It's not 8 GB of VRAM plus system RAM — it's ONE 8 GB pool for GPU and CPU.
+    A 7B model alone is 4.5 GB. So before we wrote a line, the model was chosen for
+    us, and dual-anything was off the table." Everything later refers back here.
+  </aside>
+</section>
+
+<!-- 4 · WHAT WE BUILT (topology) -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">What we actually built</span>
+  <h2 style="font-size:1.2em;">One box. Three layers. Shared substrate.</h2>
+  <div class="topo">
+    <div class="hdr">JETSON ORIN NANO SUPER · 8 GB UNIFIED · &lt;25W</div>
+    <div class="grid">
+      <div class="svc"><div class="n">MailBOX</div><div class="d">n8n (5 workflows) + Next.js dashboard. Email pipeline: classify → draft → approve → send.</div></div>
+      <div class="svc"><div class="n">Hermes</div><div class="d">The agent surface. Chat, tools, cron automations. Pinned v0.15.1. Reads/writes memory.</div></div>
+      <div class="svc"><div class="n">gBrain</div><div class="d">Postgres + vector memory, entity-scoped. The "learns your business" layer.</div></div>
+      <div class="svc"><div class="n">ollama</div><div class="d">ONE instance — Qwen3-4B (draft/classify) + nomic embeddings, shared by all three.</div></div>
+      <div class="svc"><div class="n">postgres + qdrant</div><div class="d">Operational DB, n8n state, and the RAG vector store.</div></div>
+      <div class="svc"><div class="n">one dashboard</div><div class="d">Operator surface on :9119 (loopback + SSH tunnel / Tailscale).</div></div>
+    </div>
+  </div>
+  <p style="font-size:0.5em; color:var(--muted); margin-top:0.7em;">Decision: AgentBOX <em>absorbs</em> MailBOX into one monorepo — so a single commit pins Hermes, the stack, and gBrain together, and a single installer brings it all up.</p>
+  <aside class="notes">
+    [3:45–5:30] WHAT — 105s. The component map. Emphasize "shared substrate" — ONE
+    ollama serves all three layers; that consolidation is what bought the headroom
+    (covered next). Mention the monorepo absorb: unified versioning + one install
+    path = reproducible boxes. Don't deep-dive yet; this is the map for the flow.
+  </aside>
+</section>
+
+<!-- 5 · EMAIL DATA FLOW -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">How it works · one email, end to end</span>
+  <div class="flow">
+    <div class="fnode"><b>Inbound (Gmail)</b> <span class="m">— n8n polls every 5 min, dedupe by message_id, ingest</span></div>
+    <div class="farrow">▼ &nbsp; classify (Qwen3-4B @ 4096 ctx, local) &nbsp; ▼</div>
+    <div class="fsplit">
+      <div class="fnode local"><b>conf ≥ 0.75 + routine</b> <span class="m">→ LOCAL draft (Qwen3 + sender-scoped RAG)</span></div>
+      <div class="fnode cloud"><b>conf &lt; 0.75 / escalate</b> <span class="m">→ CLOUD draft (gpt-oss:120b)</span></div>
+    </div>
+    <div class="farrow">▼ &nbsp; draft lands in queue, status = pending &nbsp; ▼</div>
+    <div class="fnode human"><b>Human approves</b> <span class="m">— edit / approve / reject in the dashboard (no autonomous send)</span></div>
+    <div class="farrow">▼ &nbsp; CAS lock on send_attempt_at (idempotent) &nbsp; ▼</div>
+    <div class="fnode"><b>Gmail Reply</b> <span class="m">— thread-preserved, then outbound is embedded back into RAG</span></div>
+  </div>
+  <aside class="notes">
+    [5:30–7:30] THE FLOW — 2 min. Walk ONE email top to bottom. Hit the design
+    choices: (1) classify locally first; (2) confidence-gated routing — local for
+    routine, cloud only for the uncertain tail; (3) RAG is SENDER-SCOPED (don't
+    answer Alice with Bob's history); (4) human-in-the-loop is a hard rule;
+    (5) the send is idempotent via a CAS lock so a retry can't double-send.
+  </aside>
+</section>
+
+<!-- 6 · WAR STORY 1: MEMORY -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Engineering problem 1 · fitting it in 8 GB</span>
+  <h2 style="font-size:1.1em;">We stress-tested the worst case on real hardware.</h2>
+  <table class="data">
+    <tr><th>State</th><th>Peak RAM</th><th>Free</th><th></th></tr>
+    <tr><td>S0 — idle stack</td><td class="mono">1,592 MB</td><td class="mono">6,015 MB</td><td>baseline</td></tr>
+    <tr><td>S1 — Qwen3 drafting alone</td><td class="mono">5,339 MB</td><td class="mono">2,268 MB</td><td>local draft path</td></tr>
+    <tr class="gate"><td>S2 — drafting ∥ heavy agent turn</td><td class="mono hi">5,797 MB</td><td class="mono hi">1,810 MB</td><td class="hi">worst case · PASS</td></tr>
+  </table>
+  <div class="pf" style="margin-top:0.7em;">
+    <div class="box prob"><div class="h">What broke first</div>
+      <p>Two ollama instances + a second runtime → contention on the shared pool → <strong class="warn">138 container restarts</strong> in one soak window (CUDA alloc failures, not clean OOM).</p></div>
+    <div class="box fix"><div class="h">How we fixed it</div>
+      <p><strong>Consolidate to one ollama</strong> for both draft + embeddings. Add a preflight: any backfill checks <span class="mono" style="font-size:0.9em;">MemAvailable ≥ 1.5 GiB</span> or it refuses to run.</p></div>
+  </div>
+  <aside class="notes">
+    [7:30–9:30] WAR STORY 1 — 2 min. The headline engineering result. Read the
+    table: even worst case (local model drafting WHILE the agent runs a heavy turn)
+    left 1.8 GB free — ~3.6× our 500 MB safety bar. Then the failure: dual runtimes
+    caused 138 restarts — not clean OOM kills, CUDA-side alloc failures cascading
+    into restart loops. Fix: one ollama + a memory preflight guard so backfills
+    can't stampede the pool. This is the "every byte matters" proof.
+  </aside>
+</section>
+
+<!-- 7 · WAR STORY 2: MODEL / CONTEXT -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Engineering problem 2 · the model &amp; context tradeoff</span>
+  <div class="two-col">
+    <div>
+      <h2 style="font-size:1.15em;">A 4B model can't reason in a 64K window.</h2>
+      <ul style="font-size:0.82em;">
+        <li>Qwen3-4B @ <em>4096</em> ctx — the Goldilocks point: deep enough to see the email + persona, shallow enough that KV cache doesn't blow latency</li>
+        <li>Hermes 0.16 enforces a <em>≥64K</em> context floor → KV cache exceeds the model weights → OOM / timeout on 4B</li>
+        <li>So we <em>pin Hermes to v0.15.1</em> and accept 4096</li>
+      </ul>
+    </div>
+    <div>
+      <pre class="code"><span class="c"># custom Modelfile — never the bare alias</span>
+<span class="k">FROM</span> qwen3:4b-instruct
+<span class="k">PARAMETER</span> num_ctx <span class="g">4096</span>
+
+<span class="c"># consequence: injected memory is</span>
+<span class="c"># token-budgeted into the 4096 window</span>
+4096 - email(~200) - draft(~200)
+     - <span class="g">memory(capped)</span> = reasoning room</pre>
+      <p style="font-size:0.44em; color:var(--faint); margin-top:0.5em;">Footgun fixed: the bare <span class="mono">qwen3:4b</span> alias silently flipped to a thinking variant emitting scratchwork instead of clean JSON. Pin the digest.</p>
+    </div>
+  </div>
+  <aside class="notes">
+    [9:30–11:15] WAR STORY 2 — 105s. The version-pin nobody expects. 0.16 sounds
+    like an upgrade but its 64K context floor is incompatible with a 4B model — the
+    KV cache alone would exceed the weights. So we pin 0.15.1 and live at 4096.
+    Consequence: every injected memory token steals from reasoning room, so memory
+    recall is hard-capped + word-safe truncated. The footgun (bare alias flipping
+    to a thinking model that emitted scratchpad noise instead of JSON) is a great
+    "pin your model digests" lesson.
+  </aside>
+</section>
+
+<!-- 8 · WAR STORY 3: ROUTING -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Engineering problem 3 · local vs cloud routing</span>
+  <h2 style="font-size:1.1em;">Confidence decides where the work runs.</h2>
+  <pre class="code" style="font-size:0.56em;"><span class="k">route(email)</span>:
+  spam_marketing            <span class="c">→</span> <span class="r">drop</span>            <span class="c"># no draft at all</span>
+  confidence &lt; <span class="g">0.75</span>          <span class="c">→</span> <span class="k">CLOUD</span>           <span class="c"># safety net for the uncertain tail</span>
+  reorder|scheduling|...    <span class="c">→</span> <span class="g">LOCAL</span> (Qwen3-4B) <span class="c"># routine, drafts well on-device</span>
+  escalate|unknown          <span class="c">→</span> <span class="k">CLOUD</span> (gpt-oss:120b)</pre>
+  <p class="lead" style="margin-top:0.8em; max-width:34em;">
+    The classifier's top-1 probability is the lever. Below <em>0.75</em>, a misdraft
+    costs more than a ~$0.001 cloud call — so we pay it. Above it, routine mail stays
+    <em>100% on-device</em>. Threshold tuned on the live customer dataset.</p>
+  <aside class="notes">
+    [11:15–12:45] WAR STORY 3 — 90s. The cost/quality dial. Key insight: use the
+    classifier's own confidence as the router. Cheap, routine, high-confidence mail
+    drafts locally (free, private). The long tail — low confidence, unusual
+    categories — goes to a 120B cloud model. 0.75 was tuned empirically, not picked
+    from the air. Result: most volume never leaves the box; you only pay cloud for
+    the cases where being wrong is expensive.
+  </aside>
+</section>
+
+<!-- 9 · WAR STORY 4: DEPLOY RACE -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Engineering problem 4 · the deploy race</span>
+  <div class="pf">
+    <div class="box prob"><div class="h">The incident · 2026-06-09</div>
+      <ul>
+        <li>Two agents, one box. <span class="mono">deploy</span> did <span class="mono">rsync --delete</span> with no lock, no freshness check</li>
+        <li>A peer built <strong>stale code</strong> and overwrote a fresh deploy — <strong class="warn">silently reverted</strong> a shipped feature</li>
+        <li>Client-side reload meant nobody noticed for hours</li>
+      </ul>
+    </div>
+    <div class="box fix"><div class="h">The fix · structural, not discipline</div>
+      <ul>
+        <li><strong>git freshness</strong> — refuse if HEAD is behind origin/main</li>
+        <li><strong>flock</strong> per-box deploy lock — one deployer at a time</li>
+        <li><strong>DEPLOY_META</strong> provenance stamp — forward-only guard</li>
+        <li><strong>CI is the deployer</strong> — self-hosted runner, merge-to-main only</li>
+      </ul>
+    </div>
+  </div>
+  <p style="font-size:0.5em; color:var(--muted); margin-top:0.8em;">Lesson: "be careful when you deploy" is not a control. <em>Make the unsafe path impossible.</em></p>
+  <aside class="notes">
+    [12:45–14:15] WAR STORY 4 — 90s. The ops war story engineers love. A shared
+    appliance + a last-writer-wins rsync = a peer's stale build silently reverted a
+    feature, undetected for hours because the dash reloads client-side. The fix
+    isn't a wiki rule — it's four structural guards ending in CI-as-deployer so the
+    only way to ship is merge-to-main. "Make the unsafe path impossible" is the
+    takeaway. (If short on time, this is the slide to compress.)
+  </aside>
+</section>
+
+<!-- 10 · REPRODUCIBILITY -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">What we built · reproducibility</span>
+  <h2 style="font-size:1.15em;">Bare Jetson → green box, one idempotent script.</h2>
+  <table class="data" style="font-size:0.56em;">
+    <tr><th>Stage</th><th>What it does</th></tr>
+    <tr><td class="mono hi">0–1</td><td>Preconditions, MAXN power, optional LUKS, Tailscale SSH, secrets from 1Password</td></tr>
+    <tr><td class="mono hi">2–3</td><td>Base services up; apply <em>canonical schema</em> (CI-verified SoT, not hand migrations)</td></tr>
+    <tr><td class="mono hi">4</td><td>Pull + build models — custom <span class="mono">qwen3:4b-ctx4k</span> Modelfile, pinned digest</td></tr>
+    <tr><td class="mono hi">5–6</td><td>Stack up; import + <em>activate</em> n8n workflows behind a verify gate (all core active)</td></tr>
+    <tr><td class="mono hi">7 / 7.6</td><td>Install + pin Hermes; overlay custom backend (git-derived file list); build web</td></tr>
+  </table>
+  <p style="font-size:0.5em; color:var(--muted); margin-top:0.7em;">Every stage self-guards — run it twice, same result. Only unavoidable manual step: <em>Gmail OAuth consent</em> (browser, once per inbox).</p>
+  <aside class="notes">
+    [14:15–15:45] REPRODUCIBILITY — 90s. Why this matters: a one-off hand-built box
+    can't be a product. The installer is idempotent and self-guarding at every
+    stage. Two design choices to call out: (1) STAGE 3 applies a CI-verified
+    canonical schema, not a pile of hand migrations — so new boxes are
+    production-ready without manual SQL; (2) STAGE 6 hard-gates on n8n workflows
+    being ACTIVE (we'd been bitten by silently-inactive workflows). One manual step
+    survives: Gmail OAuth — Google requires human browser consent, not automatable.
+  </aside>
+</section>
+
+<!-- 11 · WHAT SHIPPED -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">What actually ships</span>
+  <h2 style="font-size:1.2em;">Live in production — not a prototype.</h2>
+  <div class="stats">
+    <div class="stat"><div class="num">1,810 MB</div><div class="lbl">free at peak — 3.6× the safety bar, no OOM</div></div>
+    <div class="stat"><div class="num blue">5</div><div class="lbl">n8n workflows, ~33 internal API routes</div></div>
+    <div class="stat"><div class="num">&lt;25W</div><div class="lbl">sustained, ~$500 one-time hardware</div></div>
+    <div class="stat"><div class="num blue">1</div><div class="lbl">customer live in production today</div></div>
+  </div>
+  <ul style="font-size:0.74em; margin-top:0.9em;">
+    <li>Email pipeline <em>live</em> — classify → draft → approve → send, on-device</li>
+    <li>Dashboard shipped — queue, status, classifications, Org Chart, Tasks (Linear)</li>
+    <li>CI gate: <span class="mono" style="font-size:0.85em;">bash -n</span> + typecheck + biome + pytest + vitest; trigger-based audit log on every state change</li>
+  </ul>
+  <aside class="notes">
+    [15:45–17:00] WHAT SHIPPED — 75s. Land credibility with the numbers that are
+    solid. The headline: it runs in production for a real customer. Be honest about
+    scope — the email money-path is hardened; deeper gBrain memory integration and
+    customer #2 are in flight. The audit log (DB trigger on every status change) is
+    a nice "we take correctness seriously" detail for an engineering crowd.
+  </aside>
+</section>
+
+<!-- 12 · LESSONS / NEXT -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">What we learned · what's next</span>
+  <div class="two-col">
+    <div>
+      <h3 style="color:var(--green); margin-bottom:0.5em;">Lessons</h3>
+      <ul style="font-size:0.72em;">
+        <li>The hardware constraint is the architect — pick the model first</li>
+        <li>Pin everything: model digests, agent version, image shas</li>
+        <li>Make unsafe ops impossible, don't document them away</li>
+        <li>Idempotent install or it isn't a product</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="color:var(--blue); margin-bottom:0.5em;">Next</h3>
+      <ul style="font-size:0.72em;">
+        <li>gBrain memory wired into every draft (token-budgeted)</li>
+        <li>Unified inbox — social/DMs through the same pipeline</li>
+        <li>Onboarding wizard + branded URL</li>
+        <li>Golden-image clone → fleet of boxes</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">
+    [17:00–18:15] LESSONS / NEXT — 75s. The engineering takeaways generalize beyond
+    this project — that's what makes them worth a technical audience's time. Then
+    three honest forward buckets (deepen memory, broaden to unified inbox,
+    productize toward a fleet). Don't commit dates.
+  </aside>
+</section>
+
+<!-- 13 · CLOSE -->
+<section data-background-color="#080B10">
+  <div class="center">
+    <span class="kicker">Questions / get involved</span>
+    <h2 style="font-size:1.5em;">A full AI back-office,<br>engineered into 8&nbsp;GB.</h2>
+    <ul style="font-size:0.86em; margin-top:0.4em;">
+      <li>Want a walkthrough on a live box? Grab me after</li>
+      <li>Edge-AI / Jetson folks — let's compare notes on the envelope</li>
+      <li>Send me the hard email cases that break naive triage</li>
+    </ul>
+    <p class="lead" style="margin-top:1.2em;"><strong style="color:var(--green);">[ your contact ]</strong></p>
+  </div>
+  <div class="footer-id">AGENTBOX · TECHNICAL DEEP DIVE</div>
+  <aside class="notes">
+    [18:15–20:00] CLOSE + Q&A. One-line restatement of the thesis, three concrete
+    asks, open the floor. Q&A prep (cost, model choice, offline behavior,
+    human-in-the-loop, headroom, why not 7B) is in the .md companion.
+  </aside>
+</section>
+
+</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script>
+  Reveal.initialize({
+    hash:true, transition:'fade', transitionSpeed:'fast', backgroundTransition:'fade',
+    controls:true, progress:true, center:false, width:1280, height:720, margin:0.06,
+    plugins:[ RevealNotes ]
+  });
+</script>
+</body>
+</html>

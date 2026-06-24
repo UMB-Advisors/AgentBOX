@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentBOX — Community Friday Call</title>
+
+<!-- reveal.js core (CDN). If presenting offline, vendor these locally first. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:        #0A0E13;
+  --bg2:       #0E141C;
+  --surface:   #131C26;
+  --surface2:  #18232F;
+  --line:      #243240;
+  --text:      #E8EEF4;
+  --muted:     #8A99A8;
+  --faint:     #5E6E7D;
+  --green:     #3DDC97;   /* primary accent — "green AgentBOX" */
+  --green-dim: #1f6b4d;
+  --blue:      #5B8DEF;
+  --amber:     #F2B66B;
+  --r:         18px;
+}
+
+.reveal {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-weight: 400;
+  color: var(--text);
+  font-size: 34px;
+  letter-spacing: -0.01em;
+}
+.reveal-viewport {
+  background:
+    radial-gradient(1200px 700px at 80% -10%, rgba(61,220,151,0.10), transparent 60%),
+    radial-gradient(1000px 700px at 0% 110%, rgba(91,141,239,0.10), transparent 55%),
+    var(--bg);
+}
+
+.reveal .slides { text-align: left; }
+.reveal .slides section { height: 100%; }
+
+.reveal h1, .reveal h2, .reveal h3 {
+  font-family: 'Inter', sans-serif;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  margin: 0 0 0.4em 0;
+  font-weight: 800;
+}
+.reveal h1 { font-size: 2.0em; }
+.reveal h2 { font-size: 1.5em; }
+.reveal h3 { font-size: 1.05em; font-weight: 700; }
+.reveal p  { line-height: 1.45; }
+.reveal strong { color: #fff; font-weight: 700; }
+.reveal em { color: var(--green); font-style: normal; font-weight: 600; }
+
+.reveal a { color: var(--green); }
+
+/* layout helpers */
+.kicker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.5em;
+  font-weight: 500;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--green);
+  margin-bottom: 1.4em;
+  display: block;
+}
+.lead { font-size: 1.05em; color: var(--muted); line-height: 1.5; max-width: 18em; }
+.center { display:flex; flex-direction:column; justify-content:center; height:100%; }
+.footer-id {
+  position:absolute; bottom: 0; left:0;
+  font-family:'JetBrains Mono', monospace;
+  font-size:0.42em; color:var(--faint); letter-spacing:0.1em;
+}
+
+/* bullet lists */
+.reveal ul { list-style: none; margin: 0; padding: 0; }
+.reveal ul li {
+  position: relative;
+  padding: 0.34em 0 0.34em 1.5em;
+  margin: 0.18em 0;
+  line-height: 1.4;
+}
+.reveal ul li::before {
+  content: "";
+  position: absolute; left: 0; top: 0.78em;
+  width: 0.5em; height: 0.5em; border-radius: 2px;
+  background: var(--green);
+  box-shadow: 0 0 14px rgba(61,220,151,0.6);
+}
+.reveal ul li em { color: var(--green); }
+
+/* cards row */
+.cards { display:grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 0.4em; }
+.card {
+  background: linear-gradient(160deg, var(--surface), var(--bg2));
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 28px 26px;
+}
+.card .tag {
+  font-family:'JetBrains Mono', monospace;
+  font-size: 0.46em; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--green); display:block; margin-bottom: 0.5em;
+}
+.card h3 { font-size: 1.15em; margin-bottom: 0.25em; }
+.card p { font-size: 0.62em; color: var(--muted); line-height:1.45; margin:0; }
+
+/* stats row */
+.stats { display:grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 0.6em; }
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 26px 22px;
+}
+.stat .num {
+  font-weight: 900; font-size: 1.7em; line-height:1;
+  color: var(--green); letter-spacing: -0.04em;
+}
+.stat .num.blue { color: var(--blue); }
+.stat .lbl { font-size: 0.5em; color: var(--muted); margin-top: 0.7em; line-height:1.4; }
+
+/* the "what it is" comparison table */
+.subsys { width:100%; border-collapse: collapse; margin-top: 0.5em; }
+.subsys td { padding: 0.55em 0.6em; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.subsys tr:last-child td { border-bottom: none; }
+.subsys .name { font-weight: 800; color:#fff; font-size:1.05em; width: 24%; }
+.subsys .name .dot { display:inline-block; width:0.5em; height:0.5em; border-radius:50%; background:var(--green); margin-right:0.5em; vertical-align:middle; box-shadow:0 0 12px var(--green);}
+.subsys .role { color: var(--muted); font-size:0.7em; width: 24%; }
+.subsys .what { color: var(--text); font-size:0.7em; font-family:'JetBrains Mono',monospace; }
+
+/* architecture diagram */
+.arch { display:flex; flex-direction:column; gap:14px; margin-top:0.3em; }
+.arch-box {
+  border:1px solid var(--line); border-radius:14px; padding:16px 20px;
+  background: var(--surface); display:flex; align-items:center; gap:16px;
+}
+.arch-box .ico { font-family:'JetBrains Mono',monospace; font-size:0.55em; color:var(--green); letter-spacing:0.15em; min-width: 6.5em; }
+.arch-box .body { font-size:0.62em; color:var(--muted); }
+.arch-box .body b { color:#fff; font-weight:700; }
+.arch-flow { text-align:center; color:var(--faint); font-size:0.5em; font-family:'JetBrains Mono',monospace; letter-spacing:0.2em; }
+.arch-note { margin-top:0.5em; font-size:0.55em; color:var(--muted); text-align:center; }
+.arch-note em { color:var(--green); }
+
+/* demo splash */
+.demo-splash { display:flex; flex-direction:column; justify-content:center; align-items:center; height:100%; text-align:center; }
+.demo-splash .big { font-size:3.6em; font-weight:900; letter-spacing:-0.05em; line-height:1; }
+.demo-splash .big .g { color:var(--green); }
+.demo-splash .sub { margin-top:0.6em; color:var(--muted); font-family:'JetBrains Mono',monospace; font-size:0.6em; letter-spacing:0.25em; text-transform:uppercase; }
+.pulse { width:14px; height:14px; border-radius:50%; background:var(--green); display:inline-block; margin-right:0.5em;
+  box-shadow:0 0 0 0 rgba(61,220,151,0.7); animation: pulse 1.8s infinite; vertical-align:middle; }
+@keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(61,220,151,0.6);} 70%{box-shadow:0 0 0 18px rgba(61,220,151,0);} 100%{box-shadow:0 0 0 0 rgba(61,220,151,0);} }
+
+/* title slide */
+.title-wrap { display:flex; flex-direction:column; justify-content:center; height:100%; }
+.title-wrap h1 { font-size:3.4em; font-weight:900; letter-spacing:-0.05em; }
+.title-wrap h1 .g { color:var(--green); }
+.title-wrap .tagline { font-size:1.0em; color:var(--text); font-weight:600; margin-top:0.1em; }
+.title-wrap .desc { color:var(--muted); font-size:0.7em; max-width:24em; margin-top:0.9em; line-height:1.5; }
+.title-wrap .who { margin-top:1.6em; font-family:'JetBrains Mono',monospace; font-size:0.55em; color:var(--faint); letter-spacing:0.15em; }
+
+.two-col { display:grid; grid-template-columns: 1.1fr 0.9fr; gap:40px; align-items:center; height:100%; }
+
+.pillbar { display:flex; gap:10px; flex-wrap:wrap; margin-top:1.2em; }
+.pill { font-family:'JetBrains Mono',monospace; font-size:0.46em; letter-spacing:0.12em;
+  border:1px solid var(--line); border-radius:999px; padding:0.5em 1em; color:var(--muted); }
+.pill b { color:var(--green); font-weight:700; }
+
+.reveal .progress { color: var(--green); height:4px; }
+.reveal .controls { color: var(--green); }
+.reveal section img { border:none; box-shadow:none; }
+
+/* status check / cross marks */
+.live { color:var(--green); font-weight:700; }
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ============ 1 · TITLE ============ -->
+<section data-background-color="#0A0E13">
+  <div class="title-wrap">
+    <span class="kicker">Community Friday Call · Project Showcase</span>
+    <h1>Agent<span class="g">BOX</span></h1>
+    <div class="tagline">An entire AI back-office on a box that fits in your hand.</div>
+    <div class="desc">A local agent, its long-term memory, and an email pipeline —
+      self-provisioning, all on one 8&nbsp;GB Jetson.</div>
+    <div class="pillbar">
+      <span class="pill"><b>local</b> Qwen3-4B</span>
+      <span class="pill"><b>8 GB</b> Jetson Orin</span>
+      <span class="pill"><b>&lt;25W</b></span>
+      <span class="pill"><b>one</b> dashboard</span>
+    </div>
+    <div class="who">[ YOUR NAME ] · 2026</div>
+  </div>
+  <aside class="notes">
+    [0:00–0:30] HOOK — 30s. Hold up the box if you have it; it IS the prop.
+    "This is a complete AI back-office — email triage, a chat agent, and a memory
+    that learns your business. It all runs on this. No cloud account required to
+    run it. Let me show you." Promise the demo. Do NOT explain architecture yet.
+  </aside>
+</section>
+
+<!-- ============ 2 · PROBLEM ============ -->
+<section data-background-color="#0A0E13">
+  <div class="center">
+    <span class="kicker">The problem</span>
+    <h2>Founders drown in email —<br>and lose their context.</h2>
+    <ul style="margin-top:0.5em; font-size:0.92em;">
+      <li>Inbox triage eats <em>hours a day</em></li>
+      <li>The "AI assistant" fix means <em>shipping your whole inbox</em> to a cloud vendor</li>
+      <li>Context is scattered across five SaaS tools that <em>don't talk to each other</em></li>
+    </ul>
+    <p class="lead" style="margin-top:1em; max-width:26em;">
+      The bet: put the agent, its memory, and the pipeline on
+      <strong>one local box you own.</strong></p>
+  </div>
+  <aside class="notes">
+    [0:30–2:00] PROBLEM — 90s. Emotional anchor. Two points: the work is real and
+    repetitive; the standard fix has a tax (privacy + recurring bills). The bet
+    line is the thesis of the whole talk — pause after it.
+  </aside>
+</section>
+
+<!-- ============ 3 · WHAT IT IS ============ -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">What AgentBOX is</span>
+  <h2 style="font-size:1.3em;">Three subsystems. One box. One dashboard.</h2>
+  <div class="cards">
+    <div class="card">
+      <span class="tag">MailBOX</span>
+      <h3>The email pipeline</h3>
+      <p>Triage → draft → approve → send. Runs on-device with human approval before anything goes out.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Hermes</span>
+      <h3>The agent</h3>
+      <p>Conversational surface. 30+ tools, scheduled automations, messaging — chat with the box.</p>
+    </div>
+    <div class="card">
+      <span class="tag">gBrain</span>
+      <h3>The memory</h3>
+      <p>On-device knowledge store that learns your business, so the agent gets sharper with use.</p>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:1.1em; max-width:30em;">Now — let's look at the real thing.</p>
+  <aside class="notes">
+    [2:00–3:00] WHAT IT IS — 60s. The map before the demo, not the deep dive.
+    Name the three things once, slowly. Last line is the handoff — switch to the
+    live screen now.
+  </aside>
+</section>
+
+<!-- ============ 4 · DEMO SPLASH ============ -->
+<section data-background-color="#080B10">
+  <div class="demo-splash">
+    <div><span class="pulse"></span></div>
+    <div class="big" style="margin-top:0.3em;">Live <span class="g">demo</span></div>
+    <div class="sub">switch to the box</div>
+  </div>
+  <aside class="notes">
+    [3:00–9:30] LIVE DEMO — ~6.5 min — THE CENTERPIECE. Follow the DEMO RUNBOOK
+    in the .md companion. Beats:
+    A) Dashboard tour 60s — Status page on :9119, "running on the Jetson here."
+    B) MailBOX money path 3min — send a test email -> classify <30s (show
+       category+confidence) -> draft generated locally -> APPROVE -> sent.
+       "That draft was written on-device, no cloud call."
+    C) Hermes 90s — Tasks tab (live Linear board) + Org Chart.
+    D) gBrain 60s — terminal `gbrain salience`. "The box remembers."
+    Narrate intent, not clicks. Anything stalls >10s -> cut to fallback video,
+    keep talking. NEVER debug live.
+  </aside>
+</section>
+
+<!-- ============ 5 · HOW IT WORKS ============ -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">How it works</span>
+  <h2 style="font-size:1.2em;">One 8 GB Jetson, three layers, one surface.</h2>
+  <div class="arch">
+    <div class="arch-box">
+      <span class="ico">MAILBOX</span>
+      <span class="body"><b>n8n + local LLM</b> — polls Gmail, classifies, drafts. ~8 workflows, ~33 internal routes.</span>
+    </div>
+    <div class="arch-flow">▼ &nbsp; hands off to &nbsp; ▼</div>
+    <div class="arch-box">
+      <span class="ico">HERMES</span>
+      <span class="body"><b>the agent</b> — reasoning + chat + cron automations, 30+ tools. Reads & writes memory.</span>
+    </div>
+    <div class="arch-flow">▼ &nbsp; reads / writes &nbsp; ▼</div>
+    <div class="arch-box">
+      <span class="ico">gBRAIN</span>
+      <span class="body"><b>Postgres + vector embeddings</b> — persistent, entity-scoped memory on the box.</span>
+    </div>
+  </div>
+  <p class="arch-note">Local <em>Qwen3-4B</em> handles routine work · the cloud is touched only for the hard <em>10–20%</em> · all served on one dashboard at <em>:9119</em></p>
+  <aside class="notes">
+    [9:30–12:00] HOW IT WORKS — ~2.5 min. They've SEEN it now, so this lands.
+    Tell the story of ONE email moving top to bottom, don't read every box.
+    Key line: "Routine email is handled by the local model on the box. We only
+    reach for the cloud on the hard 10–20% — unknown senders, low confidence."
+  </aside>
+</section>
+
+<!-- ============ 6 · WHY EDGE ============ -->
+<section data-background-color="#0A0E13">
+  <div class="two-col">
+    <div>
+      <span class="kicker">Why a box, not a cloud app</span>
+      <ul style="font-size:0.92em;">
+        <li><em>Privacy</em> — your email and knowledge never leave the appliance</li>
+        <li><em>Cost</em> — no per-seat SaaS; local inference has no marginal bill</li>
+        <li><em>Ownership</em> — hardware you hold; unplug it, the data's with you</li>
+      </ul>
+    </div>
+    <div>
+      <div class="stat" style="text-align:center; padding:34px 22px;">
+        <div class="num">1.8 GB</div>
+        <div class="lbl">free at peak load on 8&nbsp;GB — stress-tested worst case (local drafting ∥ heavy agent turn). ~3.6× our safety bar. No OOM.</div>
+      </div>
+    </div>
+  </div>
+  <div class="stats" style="margin-top:0.8em;">
+    <div class="stat"><div class="num">&lt;25W</div><div class="lbl">sustained power</div></div>
+    <div class="stat"><div class="num blue">&lt;30s</div><div class="lbl">email to classified, on-device</div></div>
+    <div class="stat"><div class="num">~$600</div><div class="lbl">one-time hardware, no subscription</div></div>
+    <div class="stat"><div class="num blue">100%</div><div class="lbl">routine drafts stay local</div></div>
+  </div>
+  <aside class="notes">
+    [12:00–13:30] WHY EDGE — 90s. The differentiator. Lead with privacy (most
+    felt). The 1.8 GB number is your credibility proof — "we stress-tested the
+    worst case and still had 1.8 GB free, ~3.6× our bar. It fits, with room."
+    Contrast one-time ~$600 board vs recurring per-seat AI SaaS.
+  </aside>
+</section>
+
+<!-- ============ 7 · STATUS ============ -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Where it is today</span>
+  <h2 style="font-size:1.25em;"><span class="live">Live</span> — and running for a real customer.</h2>
+  <ul style="font-size:0.86em;">
+    <li><strong>Email pipeline is live</strong> — classify → draft → approve → send, on-device</li>
+    <li><strong>Customer #1 in production</strong> on a real appliance</li>
+    <li>Agent + dashboard shipped — Status, Config, Org Chart, Tasks (Linear)</li>
+    <li>Hardened last sprint — CI gate, integration tests on the send path, memory limits</li>
+    <li><em>One-command provisioning</em> — bare Jetson → working box</li>
+  </ul>
+  <aside class="notes">
+    [13:30–15:00] STATUS — 90s. Credibility beat: this runs in production for a
+    real customer, not slideware. "Live" + "customer running" are the words to
+    land. Be honest: email money-path is solid; deeper memory + customer #2 are
+    in flight (next slide).
+  </aside>
+</section>
+
+<!-- ============ 8 · ROADMAP ============ -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Where it's going</span>
+  <h2 style="font-size:1.25em;">Deepen · broaden · productize.</h2>
+  <div class="cards">
+    <div class="card">
+      <span class="tag">Deepen</span>
+      <h3>Memory, end-to-end</h3>
+      <p>gBrain recall wired into every draft — the box gets sharper the longer it runs your inbox.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Broaden</span>
+      <h3>Unified inbox</h3>
+      <p>Beyond email — social and DMs flowing through the same triage pipeline.</p>
+    </div>
+    <div class="card">
+      <span class="tag">Productize</span>
+      <h3>Fleet of boxes</h3>
+      <p>Branded URL, onboarding wizard, golden-image clone — stand one up per customer.</p>
+    </div>
+  </div>
+  <aside class="notes">
+    [15:00–16:00] ROADMAP — 60s. Three honest buckets. Don't over-promise dates;
+    frame as direction. "Clone the box" hooks into the ask.
+  </aside>
+</section>
+
+<!-- ============ 9 · THE ASK ============ -->
+<section data-background-color="#080B10">
+  <div class="center">
+    <span class="kicker">How you can get involved</span>
+    <h2 style="font-size:1.4em;">Three ways to help.</h2>
+    <ul style="font-size:0.98em; margin-top:0.3em;">
+      <li><strong>Kick the tires</strong> — I'll give you a walkthrough on a live box</li>
+      <li><strong>Send me your hard email cases</strong> — the edge cases that break naive triage</li>
+      <li><strong>Know a founder drowning in their inbox?</strong> — that's my customer #2</li>
+    </ul>
+    <p class="lead" style="margin-top:1.4em; max-width:30em;">
+      <strong style="color:var(--green);">[ your contact / where to find you ]</strong><br>
+      <span style="font-size:0.8em;">Questions?</span></p>
+  </div>
+  <div class="footer-id">AGENTBOX · COMMUNITY FRIDAY CALL</div>
+  <aside class="notes">
+    [16:00–17:00] THE ASK — 60s, then Q&A. End with a specific ask, not "thanks."
+    Pick the 2–3 ways that fit who's on the call. Q&A prep is in the .md companion
+    (cost, local model, privacy vs cloud, human-in-the-loop, headroom, offline).
+  </aside>
+</section>
+
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script>
+  Reveal.initialize({
+    hash: true,
+    transition: 'fade',
+    transitionSpeed: 'fast',
+    backgroundTransition: 'fade',
+    controls: true,
+    progress: true,
+    center: false,
+    width: 1280,
+    height: 720,
+    margin: 0.08,
+    plugins: [ RevealNotes ]
+  });
+</script>
+</body>
+</html>

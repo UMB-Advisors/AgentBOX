@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentBOX — Technical Deep Dive</title>
+
+<!-- reveal.js core (CDN). To present offline, vendor these locally first. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:#0A0E13; --bg2:#0E141C; --surface:#131C26; --surface2:#18232F;
+  --line:#243240; --text:#E8EEF4; --muted:#8A99A8; --faint:#5E6E7D;
+  --green:#3DDC97; --green-dim:#1f6b4d; --blue:#5B8DEF; --amber:#F2B66B; --red:#F2778B; --purple:#B488F0;
+  --r:16px;
+}
+.reveal { font-family:'Inter',system-ui,sans-serif; color:var(--text); font-size:32px; letter-spacing:-0.01em; }
+.reveal-viewport {
+  background:
+    radial-gradient(1200px 700px at 80% -10%, rgba(61,220,151,0.09), transparent 60%),
+    radial-gradient(1000px 700px at 0% 110%, rgba(91,141,239,0.09), transparent 55%),
+    var(--bg);
+}
+.reveal .slides { text-align:left; }
+.reveal .slides section { height:100%; }
+.reveal h1,.reveal h2,.reveal h3 { font-family:'Inter',sans-serif; color:var(--text); text-transform:none; letter-spacing:-0.035em; line-height:1.06; margin:0 0 0.4em 0; font-weight:800; }
+.reveal h1 { font-size:2.0em; } .reveal h2 { font-size:1.35em; } .reveal h3 { font-size:1.0em; font-weight:700; }
+.reveal p { line-height:1.45; }
+.reveal strong { color:#fff; font-weight:700; }
+.reveal em { color:var(--green); font-style:normal; font-weight:600; }
+.reveal a { color:var(--green); }
+
+.kicker { font-family:'JetBrains Mono',monospace; font-size:0.48em; font-weight:500; letter-spacing:0.3em; text-transform:uppercase; color:var(--green); margin-bottom:1.0em; display:block; }
+.lead { font-size:1.0em; color:var(--muted); line-height:1.5; max-width:24em; }
+.center { display:flex; flex-direction:column; justify-content:center; height:100%; }
+.footer-id { position:absolute; bottom:0; left:0; font-family:'JetBrains Mono',monospace; font-size:0.4em; color:var(--faint); letter-spacing:0.1em; }
+
+.reveal ul { list-style:none; margin:0; padding:0; }
+.reveal ul li { position:relative; padding:0.28em 0 0.28em 1.4em; margin:0.1em 0; line-height:1.4; }
+.reveal ul li::before { content:""; position:absolute; left:0; top:0.7em; width:0.45em; height:0.45em; border-radius:2px; background:var(--green); box-shadow:0 0 12px rgba(61,220,151,0.55); }
+
+.cards { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:0.3em; }
+.cards.four { grid-template-columns:repeat(2,1fr); }
+.card { background:linear-gradient(160deg,var(--surface),var(--bg2)); border:1px solid var(--line); border-radius:var(--r); padding:22px 22px; }
+.card .tag { font-family:'JetBrains Mono',monospace; font-size:0.42em; letter-spacing:0.16em; text-transform:uppercase; color:var(--green); display:block; margin-bottom:0.45em; }
+.card .tag.plan { color:var(--amber); }
+.card h3 { font-size:1.0em; margin-bottom:0.2em; }
+.card p { font-size:0.55em; color:var(--muted); line-height:1.42; margin:0; }
+.badge { font-family:'JetBrains Mono',monospace; font-size:0.78em; padding:0.15em 0.6em; border-radius:6px; margin-left:0.4em; vertical-align:middle; }
+.badge.live { background:rgba(61,220,151,0.14); color:var(--green); }
+.badge.soon { background:rgba(242,182,107,0.14); color:var(--amber); }
+
+.stats { display:grid; grid-template-columns:repeat(4,1fr); gap:18px; margin-top:0.5em; }
+.stat { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:22px 18px; }
+.stat .num { font-weight:900; font-size:1.5em; line-height:1; color:var(--green); letter-spacing:-0.04em; }
+.stat .num.blue { color:var(--blue); }
+.stat .lbl { font-size:0.46em; color:var(--muted); margin-top:0.6em; line-height:1.4; }
+
+pre.code { background:#0A1118; border:1px solid var(--line); border-left:3px solid var(--green); border-radius:10px; padding:18px 22px; font-family:'JetBrains Mono',monospace; font-size:0.5em; line-height:1.55; color:#C8D6E2; overflow:auto; margin:0.3em 0; box-shadow:none; }
+pre.code .c { color:var(--faint); } pre.code .k { color:var(--blue); } pre.code .g { color:var(--green); } pre.code .r { color:var(--red); } pre.code .a { color:var(--amber); }
+
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:34px; align-items:center; height:100%; }
+.two-col.wide { grid-template-columns:1.15fr 0.85fr; }
+
+/* n8n workflow graph */
+.wf { display:flex; align-items:stretch; gap:10px; margin-top:0.4em; }
+.wf .col { display:flex; flex-direction:column; gap:8px; justify-content:center; flex:1; }
+.wfn { border:1px solid var(--line); border-radius:10px; padding:9px 12px; background:var(--surface); font-size:0.42em; text-align:center; }
+.wfn.det { border-color:var(--green-dim); } .wfn.llm { border-left:3px solid var(--amber); background:#15110a; }
+.wfn .t { font-family:'JetBrains Mono',monospace; color:#fff; font-weight:700; display:block; }
+.wfn .s { color:var(--muted); font-size:0.85em; }
+.wfn.llm .t { color:var(--amber); }
+.wfarr { display:flex; align-items:center; color:var(--faint); font-size:0.5em; }
+.legend { display:flex; gap:20px; margin-top:0.8em; font-size:0.46em; color:var(--muted); }
+.legend .k { display:inline-block; width:0.8em; height:0.8em; border-radius:3px; vertical-align:middle; margin-right:0.4em; }
+.legend .k.det { background:var(--green); } .legend .k.llm { background:var(--amber); }
+
+/* email flow */
+.flow { display:flex; flex-direction:column; gap:8px; margin-top:0.2em; font-size:0.95em; }
+.farrow { color:var(--faint); font-family:'JetBrains Mono',monospace; font-size:0.4em; text-align:center; letter-spacing:0.15em; }
+.fnode { border:1px solid var(--line); border-radius:11px; padding:10px 16px; background:var(--surface); font-size:0.48em; flex:1; }
+.fnode b { color:#fff; } .fnode .m { color:var(--muted); }
+.fnode.local { border-left:3px solid var(--green); } .fnode.cloud { border-left:3px solid var(--blue); } .fnode.human { border-left:3px solid var(--amber); }
+.fsplit { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+/* topology */
+.topo { border:1px solid var(--line); border-radius:var(--r); overflow:hidden; margin-top:0.3em; }
+.topo .hdr { background:var(--surface2); padding:9px 18px; font-family:'JetBrains Mono',monospace; font-size:0.44em; letter-spacing:0.12em; color:var(--green); border-bottom:1px solid var(--line); }
+.topo .row { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line); }
+.topo .svc { background:var(--bg2); padding:13px 15px; }
+.topo .svc .n { font-family:'JetBrains Mono',monospace; font-size:0.46em; color:#fff; font-weight:700; }
+.topo .svc .d { font-size:0.4em; color:var(--muted); margin-top:0.3em; line-height:1.35; }
+.topo .svc.agents { background:#0d1a14; } .topo .svc.agents .n { color:var(--green); }
+
+.title-wrap { display:flex; flex-direction:column; justify-content:center; height:100%; }
+.title-wrap h1 { font-size:3.2em; font-weight:900; letter-spacing:-0.05em; }
+.title-wrap h1 .g { color:var(--green); }
+.title-wrap .tagline { font-size:0.95em; color:var(--text); font-weight:600; margin-top:0.1em; }
+.title-wrap .desc { color:var(--muted); font-size:0.62em; max-width:27em; margin-top:0.8em; line-height:1.5; }
+.title-wrap .who { margin-top:1.3em; font-family:'JetBrains Mono',monospace; font-size:0.5em; color:var(--faint); letter-spacing:0.15em; }
+.pillbar { display:flex; gap:9px; flex-wrap:wrap; margin-top:1.0em; }
+.pill { font-family:'JetBrains Mono',monospace; font-size:0.42em; letter-spacing:0.1em; border:1px solid var(--line); border-radius:999px; padding:0.5em 1em; color:var(--muted); }
+.pill b { color:var(--green); font-weight:700; }
+
+.demo-splash { display:flex; flex-direction:column; justify-content:center; align-items:center; height:100%; text-align:center; }
+.demo-splash .big { font-size:3.2em; font-weight:900; letter-spacing:-0.05em; }
+.demo-splash .big .g { color:var(--green); }
+.demo-splash .sub { margin-top:0.6em; color:var(--muted); font-family:'JetBrains Mono',monospace; font-size:0.5em; letter-spacing:0.22em; text-transform:uppercase; max-width:22em; line-height:1.7; }
+.pulse { width:13px; height:13px; border-radius:50%; background:var(--green); display:inline-block; box-shadow:0 0 0 0 rgba(61,220,151,0.7); animation:pulse 1.8s infinite; }
+@keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(61,220,151,0.6);} 70%{box-shadow:0 0 0 16px rgba(61,220,151,0);} 100%{box-shadow:0 0 0 0 rgba(61,220,151,0);} }
+
+.reveal .progress { color:var(--green); height:4px; }
+.reveal .controls { color:var(--green); }
+.big-quote { font-size:1.5em; font-weight:800; line-height:1.18; letter-spacing:-0.03em; max-width:18em; }
+.big-quote .g { color:var(--green); }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<!-- 1 · TITLE -->
+<section data-background-color="#0A0E13">
+  <div class="title-wrap">
+    <span class="kicker">Community Friday Call · Technical Deep Dive</span>
+    <h1>Agent<span class="g">BOX</span></h1>
+    <div class="tagline">A box that arrives with its agents already running.</div>
+    <div class="desc">Why we built it, how we orchestrate agents on a tiny local model
+      with n8n, and what actually ships. A pre-configured edge appliance — agent,
+      memory, and email pipeline on one Jetson.</div>
+    <div class="pillbar">
+      <span class="pill"><b>Jetson</b> 8 GB</span>
+      <span class="pill"><b>n8n</b> agent orchestration</span>
+      <span class="pill"><b>Qwen3-4B</b> local</span>
+      <span class="pill"><b>preloaded</b> agents</span>
+    </div>
+    <div class="who">[ YOUR NAME ] · 2026</div>
+  </div>
+  <aside class="notes">
+    [0:00–0:45] Frame: "Three things — why we built it, how we actually build and
+    run agents on a 4B local model using n8n, and what ships today. Plus a live
+    demo on a real box." Set the tone: under the hood, then see it run.
+  </aside>
+</section>
+
+<!-- 2 · WHY -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Why we built it</span>
+  <h2>Two forces pushed the AI off the cloud, onto a box.</h2>
+  <div class="cards" style="grid-template-columns:1fr 1fr; margin-top:0.6em;">
+    <div class="card"><span class="tag">Privacy</span><h3>Your inbox stays yours</h3>
+      <p>An email assistant means handing a vendor your entire inbox. For our customers that's a non-starter — content has to stay on hardware they own.</p></div>
+    <div class="card"><span class="tag">Economics</span><h3>Hardware beats a meter</h3>
+      <p>Routing every inference to the cloud is a recurring per-seat bill. A ~$500 one-time board beats a year of cloud calls. Margin only works on hardware.</p></div>
+  </div>
+  <p class="lead" style="margin-top:0.9em; max-width:33em;">Target fixed up front: <em>agent, memory, and pipeline all run on one local box.</em> No cloud account required to operate it.</p>
+  <aside class="notes">
+    [0:45–2:00] WHY — 75s. Privacy (felt) + economics (structural) → appliance, not
+    service. Keep it tight; this is the setup for the realization on the next slide.
+  </aside>
+</section>
+
+<!-- 3 · THE REALIZATION -->
+<section data-background-color="#080B10">
+  <div class="center">
+    <span class="kicker">What we learned talking to people</span>
+    <p class="big-quote">Nobody wants a framework to <span style="color:var(--muted)">build their own agents</span>.<br>They want a box that shows up with the agents <span class="g">already configured and running.</span></p>
+    <p class="lead" style="margin-top:1.1em; max-width:32em;">So AgentBOX isn't an agent toolkit. It's an <em>appliance with a catalog of preloaded agents</em> — plug in, connect Gmail, and the email agent is already triaging. Turnkey, not assembly-required.</p>
+  </div>
+  <aside class="notes">
+    [2:00–3:30] THE REALIZATION — 90s. THE pivot of the talk. Early on we thought
+    the product was "run agents locally." Talking to real users flipped it: they
+    don't want to assemble agents, pick models, wire tools. They want it to already
+    work. So we ship a BOX with a curated catalog of agents pre-built and running,
+    and a memory that's seeded for their business. Everything technical after this
+    serves that goal: make preloaded agents reliable on cheap local hardware.
+  </aside>
+</section>
+
+<!-- 4 · UNDER THE HOOD — PLATFORM -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Under the hood · the platform</span>
+  <h2 style="font-size:1.15em;">One box is a shared substrate. Agents sit on top.</h2>
+  <div class="topo">
+    <div class="hdr">AGENTS (PRELOADED) — email triage · daily research · news &amp; social digest · conversational</div>
+    <div class="row">
+      <div class="svc agents"><div class="n">n8n</div><div class="d">orchestration — workflows that ARE the agents</div></div>
+      <div class="svc agents"><div class="n">Hermes</div><div class="d">conversational surface + tools, pinned v0.15.1</div></div>
+      <div class="svc agents"><div class="n">gBrain</div><div class="d">shared memory — seeded per customer</div></div>
+      <div class="svc agents"><div class="n">dashboard</div><div class="d">one operator UI on :9119</div></div>
+    </div>
+    <div class="hdr" style="border-top:1px solid var(--line); color:var(--blue);">SUBSTRATE — JETSON ORIN NANO SUPER · 8 GB UNIFIED · &lt;25W</div>
+    <div class="row">
+      <div class="svc"><div class="n">ollama (×1)</div><div class="d">Qwen3-4B + nomic embeddings, shared</div></div>
+      <div class="svc"><div class="n">postgres</div><div class="d">operational DB + n8n state</div></div>
+      <div class="svc"><div class="n">qdrant</div><div class="d">RAG vector store</div></div>
+      <div class="svc"><div class="n">docker</div><div class="d">one compose, one installer</div></div>
+    </div>
+  </div>
+  <p style="font-size:0.48em; color:var(--muted); margin-top:0.6em;">The hard part isn't any one agent — it's running <em>several</em> of them reliably inside 8 GB shared between CPU and GPU. One ollama serves everything; that consolidation is what buys the headroom.</p>
+  <aside class="notes">
+    [3:30–5:15] PLATFORM — 105s. Two layers: a shared substrate (the constrained
+    box) and a layer of preloaded agents on top. Key engineering point: the
+    challenge is co-residency — a 4B model, embeddings, Postgres, Qdrant, n8n,
+    Docker, OS, AND several agents in ONE 8 GB pool. We consolidated to a single
+    ollama serving all agents (draft, classify, embeddings) — that's what makes
+    running multiple agents on this hardware feasible. Briefly: stress-tested worst
+    case left ~1.8 GB free. Don't dwell — it's context for "how do agents work."
+  </aside>
+</section>
+
+<!-- 5 · UNDER THE HOOD — N8N AS AGENT LAYER -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Under the hood · how we build agents</span>
+  <h2 style="font-size:1.1em;">An agent is an n8n workflow — not one giant prompt loop.</h2>
+  <div class="wf">
+    <div class="col">
+      <div class="wfn det"><span class="t">Schedule</span><span class="s">poll / trigger</span></div>
+    </div>
+    <div class="wfarr">→</div>
+    <div class="col">
+      <div class="wfn det"><span class="t">Fetch + dedup</span><span class="s">deterministic</span></div>
+    </div>
+    <div class="wfarr">→</div>
+    <div class="col">
+      <div class="wfn llm"><span class="t">LLM: classify</span><span class="s">Qwen3-4B node</span></div>
+      <div class="wfn llm"><span class="t">LLM: draft</span><span class="s">local / cloud</span></div>
+    </div>
+    <div class="wfarr">→</div>
+    <div class="col">
+      <div class="wfn det"><span class="t">Route / retry</span><span class="s">IF + idempotency</span></div>
+    </div>
+    <div class="wfarr">→</div>
+    <div class="col">
+      <div class="wfn det"><span class="t">Persist + act</span><span class="s">Postgres / Gmail</span></div>
+    </div>
+  </div>
+  <div class="legend">
+    <span><span class="k det"></span>n8n owns the control flow — schedule, branch, loop, retry, idempotency</span>
+    <span><span class="k llm"></span>the model is called only where reasoning is needed</span>
+  </div>
+  <ul style="font-size:0.6em; margin-top:0.7em;">
+    <li><strong>Tokens go further</strong> — the 4B model only runs at classify/draft, not orchestration</li>
+    <li><strong>Deterministic &amp; observable</strong> — routing is reviewable; every step logs to an append-only audit trail</li>
+    <li><strong>Editable &amp; versioned</strong> — non-coders tune rules in the visual editor; workflows export to git</li>
+  </ul>
+  <aside class="notes">
+    [5:15–7:30] N8N AS AGENT LAYER — 135s. THE core "under the hood" slide. The
+    insight: don't make a small model do orchestration. Decompose the agent into an
+    n8n workflow where n8n owns ALL deterministic control flow — scheduling,
+    dedup, branching on confidence, retries, idempotency locks — and the LLM is
+    invoked ONLY at the nodes that need reasoning (classify, draft). Three payoffs:
+    (1) token budget — a 4B model can't afford to "think" about control flow, so we
+    don't ask it to; (2) determinism + observability — the routing is plain IF
+    nodes you can review, and every transition is logged, not buried in model
+    output; (3) it's visually editable — an operator can change the confidence
+    threshold without touching code, and workflows version-control to git. This is
+    how you make agents reliable on cheap hardware.
+  </aside>
+</section>
+
+<!-- 6 · ANATOMY OF THE EMAIL AGENT -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Under the hood · anatomy of the email agent</span>
+  <div class="flow">
+    <div class="fnode"><b>MailBOX</b> <span class="m">— parent workflow: poll Gmail every 5 min, dedup by message_id, fan out to sub-workflows</span></div>
+    <div class="farrow">▼ &nbsp; MailBOX-Classify (sub-workflow) &nbsp; ▼</div>
+    <div class="fnode local"><b>Qwen3-4B classify, no-think mode</b> <span class="m">→ {category, confidence}, normalized + live-gated</span></div>
+    <div class="farrow">▼ &nbsp; MailBOX-Draft (sub-workflow) — route on confidence &nbsp; ▼</div>
+    <div class="fsplit">
+      <div class="fnode local"><b>conf ≥ 0.75 + routine</b> <span class="m">→ LOCAL draft (Qwen3 + sender-scoped RAG)</span></div>
+      <div class="fnode cloud"><b>conf &lt; 0.75 / escalate</b> <span class="m">→ CLOUD draft (gpt-oss:120b)</span></div>
+    </div>
+    <div class="farrow">▼ &nbsp; queue (status=pending) → human approves → MailBOX-Send &nbsp; ▼</div>
+    <div class="fnode human"><b>Gmail Reply</b> <span class="m">— CAS lock so a retry can't double-send; outbound embedded back into RAG</span></div>
+  </div>
+  <p style="font-size:0.46em; color:var(--faint); margin-top:0.5em;">12 workflows in the repo; 5 active on the fleet. Sub-workflows = reusable agent capabilities. Idempotency + audit live in SQL, not the model.</p>
+  <aside class="notes">
+    [7:30–9:15] EMAIL AGENT ANATOMY — 105s. Make the previous slide concrete with
+    the flagship preloaded agent. It's not one workflow — it's a parent + named
+    sub-workflows (Classify, Draft, Send), each a reusable capability. Walk it:
+    poll+dedup (deterministic), classify locally in no-think mode for speed, route
+    on confidence, draft local-or-cloud, human approves, send is idempotent via a
+    CAS lock so an operator retry can never double-send. The reliability guarantees
+    (idempotency, audit log) live in Postgres, not in the model — that's the
+    pattern. 12 workflows exist; 5 run on the fleet today.
+  </aside>
+</section>
+
+<!-- 7 · OPTIMIZING THE SMALL MODEL -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">Under the hood · making a 4B model carry it</span>
+  <div class="two-col wide">
+    <div>
+      <h2 style="font-size:1.05em;">Spend the model only where it earns its tokens.</h2>
+      <ul style="font-size:0.74em;">
+        <li><em>No-think classify</em> — disable chain-of-thought; we want a label, not an essay</li>
+        <li><em>Confidence-gated routing</em> — local for the routine majority, cloud only for the uncertain tail</li>
+        <li><em>Sender-scoped RAG</em> — recall only this counterparty's history; no confabulation</li>
+        <li><em>Token-budgeted memory</em> — injected recall is hard-capped so reasoning room survives</li>
+      </ul>
+    </div>
+    <div>
+      <pre class="code"><span class="c"># model + context, chosen by the box</span>
+<span class="k">FROM</span> qwen3:4b-instruct
+<span class="k">PARAMETER</span> num_ctx <span class="g">4096</span>
+
+<span class="c"># Hermes pinned to v0.15.1:</span>
+<span class="c"># 0.16 forces a 64K context floor,</span>
+<span class="c"># which a 4B model can't reason in.</span>
+4096 = email + draft + <span class="a">memory(capped)</span>
+              + reasoning room</pre>
+      <p style="font-size:0.42em; color:var(--faint); margin-top:0.4em;">Pin model digests — the bare alias once flipped to a thinking variant and broke clean output.</p>
+    </div>
+  </div>
+  <aside class="notes">
+    [9:15–11:00] OPTIMIZING THE MODEL — 105s. The techniques that make a 4B model
+    production-viable. (1) No-think classify — we suppress chain-of-thought because
+    we only need a category label; it's faster and cheaper. (2) Confidence routing
+    (from the email agent) — most mail is routine and drafts locally; the long tail
+    escalates to a 120B cloud model. (3) RAG is sender-scoped — only recall the
+    current counterparty's history, which keeps context tight and avoids
+    confabulation. (4) Memory injection is token-budgeted — at 4096 ctx every
+    injected token steals reasoning room, so recall is capped. The Modelfile/pin
+    detail: 4096 is the Goldilocks window; Hermes is pinned to 0.15.1 because
+    0.16's 64K floor is incompatible with a 4B model. Lesson: pin your digests.
+  </aside>
+</section>
+
+<!-- 8 · THE AGENT CATALOG -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">What ships · the preloaded agent catalog</span>
+  <div class="cards four">
+    <div class="card"><span class="tag">Email triage <span class="badge live">live</span></span><h3>MailBOX</h3>
+      <p>The flagship. Classify → draft → approve → send, on-device. Running in production for customer #1.</p></div>
+    <div class="card"><span class="tag">Research <span class="badge live">shipped</span></span><h3>Daily Research Brief</h3>
+      <p>Cron agent: reads your open threads, picks questions, researches the web, synthesizes a morning brief. Propose-only.</p></div>
+    <div class="card"><span class="tag">Curation <span class="badge live">shipped</span></span><h3>News &amp; Social Digest</h3>
+      <p>News + Reddit/X/GitHub feeds with thumbs up/down. Votes rerank the feed and teach a taste profile.</p></div>
+    <div class="card"><span class="tag">Conversational <span class="badge live">live</span></span><h3>Hermes + skills</h3>
+      <p>Chat the box over CLI / messaging. Bundled skill packs — research, github, email, media, devops, more.</p></div>
+  </div>
+  <p style="font-size:0.5em; color:var(--muted); margin-top:0.7em;">Roadmap <span class="badge soon">next</span> — Capability Packs (Sales, Finance, Reception) install onto the same box. Land on Email, then attach more agents. <span style="color:var(--faint);">(Pack pricing/timing still being shaped — don't quote it.)</span></p>
+  <aside class="notes">
+    [11:00–12:45] THE CATALOG — 105s. This is the product made concrete. Four
+    agents ship TODAY: (1) MailBOX email triage — live in production; (2) Daily
+    Research Brief — a cron agent merged, rolling out, strictly propose-only (never
+    sends/posts); (3) News & Social digest — feeds with voting that trains a taste
+    profile; (4) Hermes conversational + bundled skills. Be honest about scope:
+    research/digest are merged and activating across the fleet. The roadmap is
+    Capability Packs (Sales/Finance/Reception) — same box, attach more agents.
+    DO NOT quote Pack prices — the business PRD marks them illustrative.
+  </aside>
+</section>
+
+<!-- 9 · GBRAIN / THE MOAT -->
+<section data-background-color="#0A0E13">
+  <div class="two-col">
+    <div>
+      <span class="kicker">Why a box gets better over time</span>
+      <h2 style="font-size:1.2em;">Shared memory makes every new agent smarter.</h2>
+      <ul style="font-size:0.78em;">
+        <li>gBrain is on-box, <em>entity-scoped</em> memory — seeded per customer</li>
+        <li>Email populates the graph: contacts, threads, your voice</li>
+        <li>Each new agent <em>inherits</em> that context — research recalls your company, digest learns your taste</li>
+      </ul>
+    </div>
+    <div>
+      <pre class="code"><span class="c"># the product motion</span>
+<span class="g">land</span>    → Email agent on the box
+<span class="g">activate</span> → graph fills from your inbox
+<span class="g">attach</span>  → new agents arrive
+          already knowing you</pre>
+      <p style="font-size:0.46em; color:var(--faint); margin-top:0.5em;">Today: gBrain runs on-box, the dashboard reads it. Deeper agent↔memory wiring is rolling out in phases.</p>
+    </div>
+  </div>
+  <aside class="notes">
+    [12:45–14:15] GBRAIN / MOAT — 90s. Why the appliance compounds. gBrain is a
+    local, entity-scoped knowledge store seeded per customer. The flagship email
+    agent fills it (contacts, threads, voice). Then every additional agent inherits
+    that context — the research agent recalls your company, the digest learns your
+    taste. That's the "land → activate the graph → attach" motion and the reason
+    each new preloaded agent is cheaper to deliver and more valuable. HONEST scope:
+    gBrain runs on-box and the dashboard reads it today; the deep Hermes↔gBrain
+    memory provider is phased and rolling out — don't claim it's all wired.
+  </aside>
+</section>
+
+<!-- 10 · LIVE DEMO -->
+<section data-background-color="#080B10">
+  <div class="demo-splash">
+    <div><span class="pulse"></span></div>
+    <div class="big" style="margin-top:0.3em;">Live <span class="g">demo</span></div>
+    <div class="sub">a real box · the dashboard · an agent under the hood · an email triaged end to end</div>
+  </div>
+  <aside class="notes">
+    [14:15–17:15] LIVE DEMO — ~3 min — on a real box (agentbox1 / mailbox2 over the
+    SSH tunnel: ssh -L 9119:127.0.0.1:9119 mailbox2 → http://localhost:9119).
+    RUN THE PRE-FLIGHT 30 MIN BEFORE (below). Beats:
+    A) Dashboard tour 30s — Status on :9119, "this is running on the Jetson."
+    B) Under the hood 45s — open the n8n editor, show the MailBOX workflow canvas:
+       "this IS the email agent — these green nodes are deterministic, the amber
+       node is the only place the model runs." Ties directly to slide 5.
+    C) Email money-path 75s — send a prepped test email -> watch classify (<30s,
+       show category+confidence) -> local draft -> APPROVE -> sent. "On-device,
+       no cloud call."
+    D) Preloaded agents 30s — show the News/Digest feed (thumbs up/down) and/or a
+       quick Hermes chat turn. "Same box, more agents, shared memory."
+    NARRATE INTENT, not clicks. Anything stalls >10s -> cut to fallback video, keep
+    talking. NEVER debug live. Throwaway inbox only; don't open the API-keys tab.
+
+    PRE-FLIGHT (30 min before):
+    1. Tunnel + dashboard: curl -s -o /dev/null -w '%{http_code}\n'
+       http://127.0.0.1:9119/api/google/auth/start  → expect 303.
+    2. Stack healthy: ssh mailbox2 'docker ps --format "{{.Names}}: {{.Status}}"'.
+    3. Test email staged from a throwaway account; round-trip ONCE in rehearsal.
+    4. Record a FALLBACK screen-capture of a full successful run; keep it open.
+    5. Browser zoom 125–150%; mute notifications; close secret-bearing tabs.
+  </aside>
+</section>
+
+<!-- 11 · WHAT SHIPS / NUMBERS -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">What actually ships</span>
+  <h2 style="font-size:1.2em;">Live in production — reproducible, not a prototype.</h2>
+  <div class="stats">
+    <div class="stat"><div class="num">4</div><div class="lbl">preloaded agents shipping on the box</div></div>
+    <div class="stat"><div class="num blue">5</div><div class="lbl">active n8n workflows, ~33 internal routes</div></div>
+    <div class="stat"><div class="num">1,810 MB</div><div class="lbl">free at peak — 3.6× the safety bar</div></div>
+    <div class="stat"><div class="num blue">1</div><div class="lbl">customer live in production today</div></div>
+  </div>
+  <ul style="font-size:0.7em; margin-top:0.8em;">
+    <li><em>Bare Jetson → green box</em> in one idempotent installer — canonical schema, gated workflow activation; only manual step is Gmail OAuth</li>
+    <li>CI gate: <span style="font-family:'JetBrains Mono',monospace; font-size:0.85em;">bash -n</span> + typecheck + biome + pytest + vitest; trigger-based audit log on every state change</li>
+  </ul>
+  <aside class="notes">
+    [17:15–18:30] WHAT SHIPS — 75s. Land credibility on solid numbers. Headline:
+    four preloaded agents, running in production for a real customer, on a box you
+    can reproduce from bare metal with one idempotent installer. The reproducibility
+    is what turns "a cool demo" into "a product" — new boxes come up the same way,
+    no hand-built snowflakes. Be honest: email money-path is hardened; deeper memory
+    integration + customer #2 are in flight.
+  </aside>
+</section>
+
+<!-- 12 · LESSONS / NEXT -->
+<section data-background-color="#0A0E13">
+  <span class="kicker">What we learned · what's next</span>
+  <div class="two-col">
+    <div>
+      <h3 style="color:var(--green); margin-bottom:0.5em;">Lessons</h3>
+      <ul style="font-size:0.7em;">
+        <li>Ship configured agents, not a framework</li>
+        <li>Let n8n orchestrate; spend the model surgically</li>
+        <li>The hardware constraint is the architect</li>
+        <li>Reliability lives in SQL, not the prompt</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="color:var(--blue); margin-bottom:0.5em;">Next</h3>
+      <ul style="font-size:0.7em;">
+        <li>Deeper agent ↔ gBrain memory (phased)</li>
+        <li>Capability Packs: Sales, Finance, Reception</li>
+        <li>Unified inbox — social/DMs through the pipeline</li>
+        <li>Golden-image clone → fleet of boxes</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">
+    [18:30–19:30] LESSONS / NEXT — 60s. Takeaways that generalize (ship agents not
+    frameworks; orchestrate with n8n, use the model surgically; constraint-driven
+    design; reliability in SQL). Then forward buckets — don't commit dates.
+  </aside>
+</section>
+
+<!-- 13 · CLOSE -->
+<section data-background-color="#080B10">
+  <div class="center">
+    <span class="kicker">Questions / get involved</span>
+    <h2 style="font-size:1.5em;">A box that shows up<br>with its agents <span style="color:var(--green)">already running.</span></h2>
+    <ul style="font-size:0.84em; margin-top:0.4em;">
+      <li>Want a walkthrough on a live box? Grab me after</li>
+      <li>Edge-AI / Jetson folks — let's compare notes on the 8 GB envelope</li>
+      <li>Send me the hard email cases that break naive triage</li>
+    </ul>
+    <p class="lead" style="margin-top:1.1em;"><strong style="color:var(--green);">[ your contact ]</strong></p>
+  </div>
+  <div class="footer-id">AGENTBOX · TECHNICAL DEEP DIVE</div>
+  <aside class="notes">
+    [19:30–...] CLOSE + Q&A. Restate the thesis, three asks, open the floor.
+    Q&A prep: cost (~$500, one-time), why 4B not 7B (8 GB pool), offline behavior
+    (local path keeps working, cloud tail pauses), human-in-the-loop (hard rule),
+    can non-coders edit agents (yes — n8n visual editor), how memory is seeded.
+  </aside>
+</section>
+
+</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script>
+  Reveal.initialize({
+    hash:true, transition:'fade', transitionSpeed:'fast', backgroundTransition:'fade',
+    controls:true, progress:true, center:false, width:1280, height:720, margin:0.06,
+    plugins:[ RevealNotes ]
+  });
+</script>
+</body>
+</html>
