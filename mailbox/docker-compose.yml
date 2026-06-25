@@ -56,6 +56,13 @@ services:
       # Serialize per-model inference. Trades latency for safety on
       # 8GB unified VRAM (STAQPRO-206 root cause #1).
       OLLAMA_NUM_PARALLEL: 1
+      # Cap resident models so the two qwen3:4b's (draft = qwen3:4b-ctx4k @4096
+      # ctx; persona/gbrain-ingest = qwen3:4b-instruct @32k) can't both load and
+      # evict the embed model. 8GB only fits ~one 4B + embed, so this keeps embed
+      # + one 4B resident and makes the two 4B's take turns instead of thrashing
+      # (was: embed cold-loading ~31s every RAG call). Pair with the
+      # ollama-pin-embed timer (systemd/) which pins nomic-embed-text keep_alive=-1.
+      OLLAMA_MAX_LOADED_MODELS: 2
     volumes:
     - ollama_models:/root/.ollama
     healthcheck:
