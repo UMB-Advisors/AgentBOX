@@ -189,7 +189,7 @@ grep -q '^GITHUB_PACKAGES_TOKEN=..*' .env || die "GITHUB_PACKAGES_TOKEN required
 # ── STAGE 2: base services + single ollama (DR-64) ────────────────────────
 log "STAGE 2 — postgres + qdrant + ollama (one ollama, DR-64)"
 docker compose up -d postgres qdrant ollama
-for i in $(seq 1 30); do docker exec mailbox-postgres-1 pg_isready -U mailbox >/dev/null 2>&1 && break; sleep 2; done
+for _ in $(seq 1 30); do docker exec mailbox-postgres-1 pg_isready -U mailbox >/dev/null 2>&1 && break; sleep 2; done
 
 # ── STAGE 3: canonical DB bootstrap ───────────────────────────────────────
 # The numbered migrations are incremental on a base the init-db mount does NOT
@@ -352,7 +352,7 @@ INSTALL_CLI="$HH/hermes-agent/hermes_cli"
 if [ -x "$HBIN" ] && [ ! -d "$INSTALL_CLI/web_dist" ]; then
   log "  building stock hermes dashboard web dist (one-time; ~minutes)"
   timeout 360 "$HBIN" dashboard --host 127.0.0.1 --port 9119 --no-open >/tmp/hermes-webbuild.log 2>&1 &
-  for i in $(seq 1 80); do [ -d "$INSTALL_CLI/web_dist" ] && break; sleep 3; done
+  for _ in $(seq 1 80); do [ -d "$INSTALL_CLI/web_dist" ] && break; sleep 3; done
   "$HBIN" dashboard --stop >/dev/null 2>&1 || true
   [ -d "$INSTALL_CLI/web_dist" ] && log "  web_dist built (stock)" || log "  WARN: web_dist not built — see /tmp/hermes-webbuild.log"
 fi
