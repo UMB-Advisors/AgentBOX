@@ -1,0 +1,8 @@
+[Unit]
+Description=Pin nomic-embed-text in ollama (keep RAG embed warm)
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Installed to ~/bin by provisioning; adjust if relocated.
+ExecStart=%h/bin/ollama-pin-embed.sh
