@@ -59,7 +59,11 @@ describe('assemblePrompt — edit-lessons block', () => {
     const long = 'x'.repeat(900);
     const content = userContent([
       { original: `AAA${long}`, final: `BBB${long}`, sent_at: '2026-06-20T10:00:00Z' },
-      { original: 'second-lesson-original', final: 'second-lesson-final', sent_at: '2026-06-19T10:00:00Z' },
+      {
+        original: 'second-lesson-original',
+        final: 'second-lesson-final',
+        sent_at: '2026-06-19T10:00:00Z',
+      },
     ]);
     // Only the first lesson is rendered.
     expect(content).not.toContain('second-lesson-original');
