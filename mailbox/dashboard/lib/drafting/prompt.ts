@@ -53,6 +53,17 @@ export interface DraftPromptInput {
   // Different semantics from rag_refs (vector-similar emails) and kb_refs
   // (operator-uploaded SOPs) → different surface, per Neo Architect.
   exemplar_refs?: ReadonlyArray<{ snippet: string; sent_at: string; subject?: string }>;
+  // Diff-based learning loop — contrastive edit lessons mined from sent_history
+  // (lib/drafting/edit-lessons.ts). Each pair is the model's original draft and
+  // the operator's edited-then-sent version, so the LLM learns the correction
+  // pattern. Distinct slot from exemplar_refs (final-only positives). Empty →
+  // no edit-lessons block (graceful degrade).
+  edit_lessons?: ReadonlyArray<{
+    original: string;
+    final: string;
+    sent_at: string;
+    subject?: string;
+  }>;
   // MBOX-130 — compact Google Calendar snapshot lines for `scheduling` drafts
   // (now → now+14d busy blocks). Lets the drafter propose concrete time slots
   // instead of "let me check my calendar." Privacy-gated upstream (LOCAL
@@ -262,6 +273,35 @@ function exemplarBlock(input: DraftPromptInput): string {
   return lines.join('\n');
 }
 
+// Diff-based learning loop — contrastive edit-lessons block. Shows the model
+// what it drafted vs what the operator actually sent for this category, so it
+// learns the correction pattern (not just the destination, which exemplarBlock
+// already covers). Cap at 1 lesson and 400c per side to protect the Qwen3-4B 4k
+// ctx budget; empty input → no block (graceful degrade).
+const EDIT_LESSON_RENDER_CAP = 400;
+function editLessonsBlock(input: DraftPromptInput): string {
+  if (!input.edit_lessons || input.edit_lessons.length === 0) return '';
+  const lines: string[] = [
+    '',
+    '## How you revise drafts like this (prefer the operator’s edits)',
+    'For past emails in this category, here is what the assistant drafted and how',
+    'the operator changed it before sending. Match the operator’s style and',
+    'avoid the patterns they edited out.',
+  ];
+  for (const lesson of input.edit_lessons.slice(0, 1)) {
+    const date = lesson.sent_at ? ` (${lesson.sent_at.slice(0, 10)})` : '';
+    const subj = lesson.subject ? ` "${lesson.subject.slice(0, 80)}"` : '';
+    lines.push(
+      `Example${date}${subj}:`,
+      'Assistant drafted:',
+      lesson.original.slice(0, EDIT_LESSON_RENDER_CAP),
+      'Operator sent instead:',
+      lesson.final.slice(0, EDIT_LESSON_RENDER_CAP),
+    );
+  }
+  return lines.join('\n');
+}
+
 // STAQPRO-148 — KB block. Distinct from ragBlock (which is conversational
 // email-history context) — KB content is authoritative policy/SOP that the
 // LLM should defer to over its priors. Section header explicitly says
@@ -325,6 +365,9 @@ export function buildUserPrompt(input: DraftPromptInput): string {
     // voice from prior replies before reading the conversational RAG / KB
     // reference snippets. Empty → fall through to today's RAG-only behavior.
     exemplarBlock(input),
+    // Diff-based learning loop — contrastive edit lessons right after the
+    // positive exemplars, before reference snippets. Empty → no block.
+    editLessonsBlock(input),
     ragBlock(input),
     kbBlock(input),
     // MBOX-130 — calendar availability for `scheduling` drafts. Empty for every
