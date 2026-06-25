@@ -15,9 +15,7 @@ const PERSONA: PersonaContext = {
   business_description: 'small-batch CPG operator',
 };
 
-function inputWith(
-  edit_lessons?: DraftPromptInput['edit_lessons'],
-): DraftPromptInput {
+function inputWith(edit_lessons?: DraftPromptInput['edit_lessons']): DraftPromptInput {
   return {
     from_addr: 'lead@example.com',
     to_addr: 'ops@heronlabs.com',
