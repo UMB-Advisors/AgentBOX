@@ -30,17 +30,6 @@
         ]
       ]
     },
-    "Gmail Reply": {
-      "main": [
-        [
-          {
-            "index": 0,
-            "node": "Mark Sent",
-            "type": "main"
-          }
-        ]
-      ]
-    },
     "If draft loaded": {
       "main": [
         [
@@ -75,7 +64,7 @@
         [
           {
             "index": 0,
-            "node": "Gmail Reply",
+            "node": "Get Gmail Token",
             "type": "main"
           }
         ],
@@ -106,6 +95,39 @@
             "index": 0,
             "node": "Load Draft",
             "type": "main"
+          }
+        ]
+      ]
+    },
+    "Get Gmail Token": {
+      "main": [
+        [
+          {
+            "node": "Build Reply MIME",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reply MIME": {
+      "main": [
+        [
+          {
+            "node": "Gmail Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Send": {
+      "main": [
+        [
+          {
+            "node": "Mark Sent",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -296,7 +318,7 @@
             "error_message": null,
             "id": "={{ $('Load Draft').item.json.draft_id }}",
             "send_attempt_at": null,
-            "sent_gmail_message_id": "={{ $('Gmail Reply').item?.json?.id ?? $('Load Draft').item.json.sent_gmail_message_id }}",
+            "sent_gmail_message_id": "={{ $('Gmail Send').item?.json?.id ?? $('Load Draft').item.json.sent_gmail_message_id }}",
             "status": "sent",
             "updated_at": "={{ $now.toISO() }}"
           }
@@ -335,33 +357,6 @@
       ],
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1
-    },
-    {
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "vEz5mz0uaAtlK8yz",
-          "name": "Gmail account"
-        }
-      },
-      "id": "d4f4705f-8d43-425b-9892-60f819acfdd4",
-      "name": "Gmail Reply",
-      "parameters": {
-        "emailType": "text",
-        "message": "={{ $('Load Draft').item.json.draft_body }}",
-        "messageId": "={{ $('Load Draft').item.json.message_id }}",
-        "operation": "reply",
-        "options": {
-          "appendAttribution": false
-        },
-        "resource": "message"
-      },
-      "position": [
-        1408,
-        240
-      ],
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "webhookId": "4e1978ac-2548-4c2a-9f5f-25a7da78fef4"
     },
     {
       "id": "b4cdd84a-5515-4175-a83e-8e18e57977fe",
@@ -450,6 +445,78 @@
       ],
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://mailbox-dashboard:3001/dashboard/api/internal/google/access-token?account_email={{ $('Load Draft').item.json.to_addr }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Hermes-Internal-Token",
+              "value": "={{ $env.HERMES_INTERNAL_TOKEN }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "a1c00000-0000-0000-0000-000000000101",
+      "name": "Get Gmail Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1360,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Token-as-data Gmail reply — build a base64url RFC822 message for the\n// Gmail REST send endpoint (replaces the native gmailOAuth2 node). Threading is\n// carried primarily by threadId; In-Reply-To/References are best-effort from the\n// original Message-ID.\nconst d = $('Load Draft').first().json;\nconst to = d.from_addr;          // reply goes back to the original sender\nconst from = d.to_addr;          // the mailbox that received the message\nconst subjRaw = (d.original_subject || '').toString();\nconst subject = subjRaw.toLowerCase().startsWith('re:') ? subjRaw : 'Re: ' + subjRaw;\nconst mid = d.message_id ? '<' + String(d.message_id).replace(/^<|>$/g, '') + '>' : '';\nconst body = (d.draft_body || '').toString();\n\nconst headers = [\n  'To: ' + to,\n  'From: ' + from,\n  'Subject: ' + subject,\n];\nif (mid) { headers.push('In-Reply-To: ' + mid); headers.push('References: ' + mid); }\nheaders.push('MIME-Version: 1.0');\nheaders.push('Content-Type: text/plain; charset=\"UTF-8\"');\nheaders.push('Content-Transfer-Encoding: 8bit');\nconst mime = headers.join('\\r\\n') + '\\r\\n\\r\\n' + body;\nconst raw = Buffer.from(mime, 'utf8')\n  .toString('base64').replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n\nconst payload = { raw };\nif (d.thread_id) payload.threadId = d.thread_id;\nreturn [{ json: { body: payload } }];\n"
+      },
+      "id": "a1c00000-0000-0000-0000-000000000102",
+      "name": "Build Reply MIME",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Get Gmail Token').item.json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "a1c00000-0000-0000-0000-000000000103",
+      "name": "Gmail Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1680,
+        140
+      ]
     }
   ],
   "pinData": {},
