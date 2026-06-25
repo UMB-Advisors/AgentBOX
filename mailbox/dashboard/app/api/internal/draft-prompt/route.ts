@@ -4,6 +4,7 @@ import { getCalendarSnapshot, isCalendarContextEnabled } from '@/lib/calendar/ca
 import type { Category } from '@/lib/classification/prompt';
 import { getKysely } from '@/lib/db';
 import { getCategoryExemplars } from '@/lib/drafting/exemplars';
+import { getEditLessons } from '@/lib/drafting/edit-lessons';
 import { getPersonaContext } from '@/lib/drafting/persona';
 import { assemblePrompt } from '@/lib/drafting/prompt';
 import { pickEndpoint } from '@/lib/drafting/router';
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
     // (THREAD_HISTORY_CHAR_BUDGET, default 6000c) and sits in the existing
     // MAX_THREAD_CHARS=2000c assemblePrompt slot — the in-module 50-row
     // SQL LIMIT + per-message strip keeps the join cheap.
-    const [retrieval, exemplars, threadHistory] = await Promise.all([
+    const [retrieval, exemplars, editLessons, threadHistory] = await Promise.all([
       retrieveForDraft({
         from_addr: row.from_addr ?? '',
         subject: row.subject ?? null,
@@ -136,6 +137,9 @@ export async function POST(req: NextRequest) {
         thread_id: row.thread_id,
       }),
       getCategoryExemplars(classification_category, 1, DEFAULT_PERSONA_KEY, row.account_id),
+      // Diff-based learning loop — contrastive edit lessons (original→sent) for
+      // this category/account. Fail-closed empty → no edit-lessons block.
+      getEditLessons(classification_category, 1, DEFAULT_PERSONA_KEY, row.account_id),
       getThreadHistory({
         thread_id: row.thread_id,
         message_id: row.message_id,
@@ -194,6 +198,14 @@ export async function POST(req: NextRequest) {
         snippet: e.snippet,
         sent_at: e.sent_at,
         subject: e.subject,
+      })),
+      // Diff-based learning loop — contrastive original→sent edit lessons. Empty
+      // → prompt.ts:editLessonsBlock renders nothing (graceful degrade).
+      edit_lessons: editLessons.map((l) => ({
+        original: l.original,
+        final: l.final,
+        sent_at: l.sent_at,
+        subject: l.subject,
       })),
       // STAQPRO-341 — same-thread prior messages walked via thread_id.
       // assemblePrompt's threadBlock truncates at MAX_THREAD_CHARS=2000c
