@@ -352,7 +352,7 @@ INSTALL_CLI="$HH/hermes-agent/hermes_cli"
 if [ -x "$HBIN" ] && [ ! -d "$INSTALL_CLI/web_dist" ]; then
   log "  building stock hermes dashboard web dist (one-time; ~minutes)"
   timeout 360 "$HBIN" dashboard --host 127.0.0.1 --port 9119 --no-open >/tmp/hermes-webbuild.log 2>&1 &
-  for i in $(seq 1 80); do [ -d "$INSTALL_CLI/web_dist" ] && break; sleep 3; done
+  for _ in $(seq 1 80); do [ -d "$INSTALL_CLI/web_dist" ] && break; sleep 3; done
   "$HBIN" dashboard --stop >/dev/null 2>&1 || true
   [ -d "$INSTALL_CLI/web_dist" ] && log "  web_dist built (stock)" || log "  WARN: web_dist not built — see /tmp/hermes-webbuild.log"
 fi
