@@ -1,3 +1,9 @@
+> **SUPERSEDED 2026-06-12** — the single-deployer model is DECOMMISSIONED (it
+> deployed the retired `web_dist`/`hermes_cli` architecture). Custom features
+> deploy from `UMB-Advisors/agentbox-sidecar` per its `docs/update-runbook.md`.
+> Runner (`agentbox-deploy`) disposition TBD (U2: repurpose for sidecar CI vs
+> deregister; it may still serve mailbox-dashboard image builds).
+
 # CI/CD Single-Deployer — Runbook v0.1.0
 
 **Date:** 2026-06-09

@@ -103,16 +103,12 @@ jobs:
         run: |
           set -e
           bash -n install/agentbox-install.sh
-          bash -n bin/deploy-dashboard.sh
-          bash -n bin/lib/custom-backend-files.sh
           for f in provisioning/*.sh mailbox/scripts/*.sh; do bash -n "$f"; done
-      - name: shellcheck (bin/)
+      - name: shellcheck (install)
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           # --severity=warning: gate on warnings/errors, not info-level advisories.
-          # The deploy scripts intentionally expand local vars client-side into
-          # remote ssh commands (SC2029), which is the desired behavior here.
-          shellcheck -x --severity=warning bin/deploy-dashboard.sh bin/lib/custom-backend-files.sh
+          shellcheck -x --severity=warning install/agentbox-install.sh
 
 # Deferred for follow-up commits under STAQPRO-134:
 #   - Lint/format step (Biome recommended; pick + add)

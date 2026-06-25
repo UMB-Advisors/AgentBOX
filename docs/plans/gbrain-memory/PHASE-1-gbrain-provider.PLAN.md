@@ -1,3 +1,5 @@
+> **HISTORICAL (2026-06-12):** the v0.15.1 pin has since been bumped — agentbox2 runs upstream v0.16.0 (`agentbox2-v3`); gbrain ships as the `hermes_gbrain_provider` plugin from the agentbox-sidecar repo. This plan's "implement against the v0.15.1 ABI" framing is preserved for the record only.
+
 # PHASE 1 — hermes `gbrain` Memory Provider (interactive, recall-first)
 
 **Parent:** `docs/hermes-gbrain-memory-integration-prd.v0.1.0.md`

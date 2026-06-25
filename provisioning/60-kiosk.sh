@@ -51,7 +51,8 @@ COG_VERSION="0.12.1-1"                       # WPE WebKit launcher (jammy arm64)
 MATCHBOX_VERSION="1.2.2+git20200512-1build1" # minimal stacking WM
 DASH_PORT="9119"
 DASH_HOST="127.0.0.1"
-DASH_URL="http://127.0.0.1:9119"
+# Kiosk renders the agentbox-sidecar front door (:9200), not hermes :9119 (2026-06-12)
+DASH_URL="http://127.0.0.1:9200"
 
 HH="${HERMES_HOME:-$HOME/.hermes}"
 P="$HH/hermes-agent"
@@ -163,7 +164,7 @@ Requires a PHYSICAL DISPLAY attached to the Orin Nano (interactive blocker).
   B) Start the dashboard and confirm it binds FAST (the bug fix):
        systemctl --user start hermes-dashboard.service
        # within a couple seconds:
-       curl -fsS http://127.0.0.1:9119/ >/dev/null && echo "DASHBOARD UP"
+       curl -fsS http://127.0.0.1:9200/healthz >/dev/null && echo "DASHBOARD UP"
        hermes dashboard --status
 
   C) Try the PRIMARY renderer (cog / WPE):

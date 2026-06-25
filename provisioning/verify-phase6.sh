@@ -6,7 +6,8 @@
 set -uo pipefail
 . "${HOME}/.hermesbox_env.sh" 2>/dev/null || true
 
-DASH_URL="http://127.0.0.1:9119"
+# Health-check the agentbox-sidecar front door (:9200), not hermes :9119 (2026-06-12)
+DASH_URL="http://127.0.0.1:9200"
 HH="${HERMES_HOME:-$HOME/.hermes}"
 WEB_DIST="$HH/hermes-agent/hermes_cli/web_dist"
 pass=0; fail=0; warn=0
@@ -43,7 +44,7 @@ done
 #    hermes-dashboard.service to be started first.
 if systemctl --user is-active hermes-dashboard.service >/dev/null 2>&1; then
   t0=$(date +%s%3N)
-  if curl -fsS "$DASH_URL/" >/dev/null 2>&1; then
+  if curl -fsS "$DASH_URL/healthz" >/dev/null 2>&1; then
     t1=$(date +%s%3N); echo "  INFO  dashboard responded in $((t1-t0)) ms"
     ok "dashboard serving $DASH_URL"
   else

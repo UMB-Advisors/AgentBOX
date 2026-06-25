@@ -1,7 +1,0 @@
-name: gbrain
-version: 0.1.0
-description: "gBrain semantic memory — recall-first integration with a local gbrain knowledge graph over MCP Streamable HTTP (gbrain serve --http). Read-only by default; writes are config-gated."
-pip_dependencies: []
-hooks:
-  - on_session_end
-  - on_pre_compress

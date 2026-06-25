@@ -7,6 +7,12 @@ argument-hint: "[--prototype] [--prod] [--resume <stage>]"
 
 # /agentbox-flash — Blank Jetson → fully set-up AgentBOX
 
+> **⚠️ CAVEAT (2026-06-12):** `install/agentbox-install.sh` currently provisions the
+> **PRE-SIDECAR** architecture (v0.15.1 pin + hermes_cli overlay, no sidecar). After
+> install, follow the **agentbox-sidecar** setup (service `:9200`, plugins, postupdate
+> healthcheck) — see the agentbox-sidecar decoupling PRD + `agentbox-sidecar/docs/update-runbook.md`.
+> This caveat stands until the installer rework (MBOX-428) lands.
+
 You provision a bare NVIDIA Jetson Orin Nano Super 8 GB into a working AgentBOX,
 driving everything that can be automated and gating cleanly on the three steps a
 human must physically do. **GitHub is the source of truth** — the box clones this
@@ -41,7 +47,7 @@ operator. Load-bearing values:
 | `BOARD_CONFIG` | `jetson-orin-nano-devkit-super` for JetPack 6.1+; `jetson-orin-nano-devkit` otherwise. Wrong value = failed flash. |
 | `TARGET_DEVICE` | `nvme0n1p1` (NVMe, strongly preferred — installer needs ≥16 GB free) or `internal` for eMMC/SD. |
 | `BOX_USER` / `BOX_PASS` / `BOX_HOST` | Baked into the rootfs so first boot skips interactive `oem-config` and you can SSH in headless. |
-| `AGENTBOX_GIT_URL` / `AGENTBOX_GIT_REF` | Repo the box clones. Defaults to `UMB-Advisors/AgentBOX`. Until the installer lands on `main`, set ref to `feat/agentbox-installer`. `GIT_TOKEN` for a private repo. |
+| `AGENTBOX_GIT_URL` / `AGENTBOX_GIT_REF` | Repo the box clones. Defaults to `UMB-Advisors/AgentBOX` (installer is on `main`). `GIT_TOKEN` for a private repo. |
 | `INSTALL_MODE` | `--prototype` (throwaway secrets, gate bypass, no Caddy) or production (1Password + live gate ON). |
 | `GITHUB_PACKAGES_TOKEN` | **Mandatory** — the installer dies without it (dashboard image builds against GHCR). |
 

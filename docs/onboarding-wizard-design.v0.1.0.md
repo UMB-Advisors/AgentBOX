@@ -83,7 +83,7 @@ The wizard's email-connect page redirects to `:9119/api/google/auth/start`. Herm
 *Cons:*
 - Two OAuth stacks for one box — refresh tokens duplicated across Hermes file store and n8n credential store. Re-consent (MBOX-460 precedent) must be coordinated across both.
 - The callback at `:9119/api/google/auth/callback` sets a cookie scoped to `/api/google`; after it fires, control lands in the Hermes settings tab, not the wizard. Resuming the wizard requires a custom `next_url` parameter and cross-origin session plumbing.
-- Hermes is pinned to v0.15.1 (`HERMES_REF=927fa7a98`); CLAUDE.md explicitly warns against bumping. Upstream OAuth behavior changes are blocked.
+- Hermes is pinned to v0.15.1 (`HERMES_REF=927fa7a98`); CLAUDE.md explicitly warns against bumping. Upstream OAuth behavior changes are blocked. (HISTORICAL: pin since bumped — agentbox2 runs upstream v0.16.0 (`agentbox2-v3`); gbrain ships as the `hermes_gbrain_provider` plugin from the sidecar repo.)
 - The `:9119` ungated proxy (plan-008) means `auth/start` is reachable without Caddy basic_auth on Funneled boxes.
 
 **Option A2 — Implement OAuth in the mailbox-dashboard (RECOMMENDED).**

@@ -189,7 +189,7 @@ grep -q '^GITHUB_PACKAGES_TOKEN=..*' .env || die "GITHUB_PACKAGES_TOKEN required
 # ── STAGE 2: base services + single ollama (DR-64) ────────────────────────
 log "STAGE 2 — postgres + qdrant + ollama (one ollama, DR-64)"
 docker compose up -d postgres qdrant ollama
-for i in $(seq 1 30); do docker exec mailbox-postgres-1 pg_isready -U mailbox >/dev/null 2>&1 && break; sleep 2; done
+for _ in $(seq 1 30); do docker exec mailbox-postgres-1 pg_isready -U mailbox >/dev/null 2>&1 && break; sleep 2; done
 
 # ── STAGE 3: canonical DB bootstrap ───────────────────────────────────────
 # The numbered migrations are incremental on a base the init-db mount does NOT
@@ -275,6 +275,14 @@ if ! docker compose --profile n8n-verify run --rm mailbox-n8n-verify; then
 fi
 log "  NOTE: live Gmail triage needs Gmail OAuth (MANUAL browser consent, per inbox) — not bench-automatable."
 
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ WARNING (2026-06-12): STAGES 7/7.5/7.6 provision the PRE-SIDECAR          ║
+# ║ architecture (v0.15.1 pin + hermes_cli overlay, no sidecar). A box built  ║
+# ║ from this will NOT match live agentbox2. See the agentbox-sidecar         ║
+# ║ decoupling PRD (docs/agentbox-sidecar-decoupling.prd.v0.1.0.md in the     ║
+# ║ AgentBOX docs tree) + agentbox-sidecar/docs/update-runbook.md before      ║
+# ║ running. Full rework tracked under MBOX-428.                              ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
 # ── STAGE 7: Hermes (v0.15.1 pin) + gbrain memory ─────────────────────────
 # Native (not containerized). Codifies the validated JP7.2 sequence (2026-06-06).
 # Idempotent: each step is guarded so re-runs converge.
@@ -334,80 +342,40 @@ else
   log "  MANUAL: gbrain not set up (need bun + ~/gbrain-src) — see docs/agentbox-jp72-reproduction"
 fi
 # 7.5 build + install the dashboard web dist (the :9119 service runs --skip-build).
-# Prefer the vendored CUSTOM web (Carbon reskin, Settings→Google page); fall back
-# to the stock build only if the custom build is unavailable/fails. web_dist is a
-# gitignored build artifact, so it must be built here — it never ships in the repo.
-ABX_HERMES="$REPO/hermes-agent-main/hermes-agent-main"
+# WARNING (2026-06-12): PRE-SIDECAR architecture — live agentbox2 serves the UI from
+# agentbox-sidecar (:9200); this stage will not reproduce it. The vendored custom-web
+# build was retired with the stale hermes-agent-main/ tree; this stage now builds the
+# STOCK hermes dashboard only. Custom UI ships from the agentbox-sidecar repo
+# (see agentbox-sidecar/docs/update-runbook.md). web_dist is a gitignored build
+# artifact, so it must be built here — it never ships in the repo.
 INSTALL_CLI="$HH/hermes-agent/hermes_cli"
-if [ -d "$ABX_HERMES/web" ] && command -v npm >/dev/null; then
-  log "  building AgentBOX custom web bundle (vendored; ~minutes)"
-  if ( cd "$ABX_HERMES/web" && { [ -f package-lock.json ] && npm ci || npm install; } >/tmp/abx-webbuild.log 2>&1 \
-        && npm run build >>/tmp/abx-webbuild.log 2>&1 ) && [ -d "$ABX_HERMES/hermes_cli/web_dist" ]; then
-    mkdir -p "$INSTALL_CLI"
-    [ -d "$INSTALL_CLI/web_dist" ] && cp -a "$INSTALL_CLI/web_dist" "$INSTALL_CLI/web_dist.stock-$(date -u +%Y%m%d-%H%M%S)" 2>/dev/null || true
-    if command -v rsync >/dev/null; then rsync -a --delete "$ABX_HERMES/hermes_cli/web_dist/" "$INSTALL_CLI/web_dist/"
-    else rm -rf "$INSTALL_CLI/web_dist"; cp -a "$ABX_HERMES/hermes_cli/web_dist" "$INSTALL_CLI/web_dist"; fi
-    log "  installed AgentBOX custom web_dist"
-  else
-    log "  WARN: custom web build failed (see /tmp/abx-webbuild.log) — will fall back to stock build"
-  fi
-fi
 if [ -x "$HBIN" ] && [ ! -d "$INSTALL_CLI/web_dist" ]; then
   log "  building stock hermes dashboard web dist (one-time; ~minutes)"
   timeout 360 "$HBIN" dashboard --host 127.0.0.1 --port 9119 --no-open >/tmp/hermes-webbuild.log 2>&1 &
-  for i in $(seq 1 80); do [ -d "$INSTALL_CLI/web_dist" ] && break; sleep 3; done
+  for _ in $(seq 1 80); do [ -d "$INSTALL_CLI/web_dist" ] && break; sleep 3; done
   "$HBIN" dashboard --stop >/dev/null 2>&1 || true
   [ -d "$INSTALL_CLI/web_dist" ] && log "  web_dist built (stock)" || log "  WARN: web_dist not built — see /tmp/hermes-webbuild.log"
 fi
 
-# ── STAGE 7.6: AgentBOX custom dashboard BACKEND overlay (DR: 2026-06-06) ──
-# STAGE 7 installs/pins STOCK upstream hermes. Stock has NO /api/google/* or
-# /api/shopify/* routes (so "Connect Google account" 404s), and its auth allowlist
-# doesn't cover the OAuth callbacks. Overlay the AgentBOX-custom backend — the *.py
-# under hermes_cli/ that diverge from the stock import (web_server.py, the
-# google_*/shopify_* helpers, dashboard_auth/public_paths.py). The file set is the
-# shared SoT in bin/lib/custom-backend-files.sh (git-derived, so new custom modules
-# are picked up automatically). MUST run after 7.2 — a re-pin / `hermes update`
-# reverts the working tree to stock; re-running this installer re-applies the overlay.
-log "STAGE 7.6 — AgentBOX custom dashboard backend"
-if [ -f "$REPO/bin/lib/custom-backend-files.sh" ] && [ -d "$ABX_HERMES/hermes_cli" ] && [ -d "$INSTALL_CLI" ]; then
-  . "$REPO/bin/lib/custom-backend-files.sh"
-  PYBIN="$HH/hermes-agent/venv/bin/python3"; [ -x "$PYBIN" ] || PYBIN="python3"
-  OVTS="$(date -u +%Y%m%d-%H%M%S)"; n=0
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    src="$ABX_HERMES/hermes_cli/$f"; dst="$INSTALL_CLI/$f"
-    [ -f "$src" ] || { log "  WARN: custom file missing in repo: $f"; continue; }
-    "$PYBIN" -m py_compile "$src" 2>/dev/null || { log "  WARN: py_compile failed: $f — skipping"; continue; }
-    mkdir -p "$(dirname "$dst")"
-    [ -f "$dst" ] && cp -a "$dst" "$dst.stock-$OVTS" 2>/dev/null || true
-    cp -a "$src" "$dst"; n=$((n+1))
-  done < <(abx_custom_backend_files "$ABX_HERMES")
-  log "  overlaid $n custom backend files onto $INSTALL_CLI"
-  # Ship non-.py custom extras (graph viewer bundle + gbrain→UA adapter) so the
-  # Brain Graph tab and its "Generate Brain Graph" button work on a fresh box.
-  # Paths are hermes-root-relative: graph_app/ lands under hermes_cli/, the
-  # adapter beside it under tools/. Directories are MERGED (cp -a src/.) so a
-  # box-generated knowledge-graph.json snapshot survives a re-run/repair.
-  INSTALL_HROOT="$(dirname "$INSTALL_CLI")"; ex=0
-  while IFS= read -r p; do
-    [ -n "$p" ] || continue
-    esrc="$ABX_HERMES/$p"; edst="$INSTALL_HROOT/$p"
-    [ -e "$esrc" ] || continue
-    if [ -d "$esrc" ]; then
-      mkdir -p "$edst"; cp -a "$esrc/." "$edst/"
-    else
-      mkdir -p "$(dirname "$edst")"; cp -a "$esrc" "$edst"
-    fi
-    ex=$((ex+1))
-  done < <(abx_custom_extras "$ABX_HERMES")
-  [ "$ex" -gt 0 ] && log "  shipped $ex custom extra(s) (graph viewer bundle + adapter)"
-  # MBOX-468: provision the at-rest key for mail-account secrets. The custom
-  # backend encrypts M365 client-secrets / IMAP app-passwords with AES-256-GCM
-  # keyed by HERMES_MAIL_SECRET_KEY (32-byte hex); a missing key hard-fails the
-  # 'connect' step (test-connection still works). A per-box random key is ideal —
-  # each box encrypts its own secrets. Idempotent: NEVER overwrite an existing
-  # key (rotating it would orphan every already-stored secret).
+# ── STAGE 7.6: AgentBOX custom dashboard BACKEND overlay (RETIRED 2026-06-12) ──
+# History: STAGE 7 installs/pins STOCK upstream hermes, which has NO /api/google/* or
+# /api/shopify/* routes. This stage used to overlay the AgentBOX-custom *.py onto the
+# stock hermes_cli. That hermes_cli-overlay architecture is dead — custom features now
+# ship from the agentbox-sidecar repo (:9200). See the RETIRED note below.
+log "STAGE 7.6 — AgentBOX custom dashboard backend (RETIRED)"
+# RETIRED (2026-06-12, MBOX-492): the custom hermes_cli-overlay architecture is dead.
+# The vendored source tree (hermes-agent-main/) and the file-set SoT
+# (bin/lib/custom-backend-files.sh) were removed; custom features now ship from the
+# agentbox-sidecar repo (:9200). This stage no longer overlays python onto the stock
+# hermes_cli — it only provisions the per-box at-rest key the mail backend needs.
+log "  WARN: custom backend overlay decommissioned — custom features ship from agentbox-sidecar (see agentbox-sidecar/docs/update-runbook.md)"
+if [ -d "$INSTALL_CLI" ]; then
+  # MBOX-468: provision the at-rest key for mail-account secrets. The mail backend
+  # encrypts M365 client-secrets / IMAP app-passwords with AES-256-GCM keyed by
+  # HERMES_MAIL_SECRET_KEY (32-byte hex); a missing key hard-fails the 'connect'
+  # step (test-connection still works). A per-box random key is ideal — each box
+  # encrypts its own secrets. Idempotent: NEVER overwrite an existing key (rotating
+  # it would orphan every already-stored secret).
   HENV="$HH/.env"
   if [ -f "$HENV" ] && grep -q '^HERMES_MAIL_SECRET_KEY=' "$HENV"; then
     log "  HERMES_MAIL_SECRET_KEY already present in $HENV"
@@ -417,12 +385,6 @@ if [ -f "$REPO/bin/lib/custom-backend-files.sh" ] && [ -d "$ABX_HERMES/hermes_cl
     chmod 600 "$HENV" 2>/dev/null || true
     log "  generated HERMES_MAIL_SECRET_KEY -> $HENV"
   fi
-  # If the dashboard service is already running (re-run / hermes update repair),
-  # restart so the overlay takes effect now. On a first install STAGE 8 starts it.
-  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-  systemctl --user restart hermes-dashboard.service >/dev/null 2>&1 || true
-else
-  log "  WARN: custom backend overlay skipped (missing bin/lib/custom-backend-files.sh or install dir) — run bin/deploy-dashboard.sh"
 fi
 
 # ── STAGE 8: boot-to-ready systemd (SM-100) ───────────────────────────────
@@ -447,14 +409,19 @@ fi
 log "STAGE 9 — verify"
 docker compose ps --format '{{.Name}}\t{{.Status}}'
 PSQL -tAc "select 'drafts:'||(to_regclass('mailbox.drafts') is not null)::text;"
-# Custom dashboard backend live? /api/google/auth/start is an AgentBOX-only route
-# (3xx redirect to Google). Stock backend lacks it -> 401/404 = overlay didn't take.
+# Sidecar live? The user-facing UI + custom routes (incl. /api/google/auth/start)
+# are served by agentbox-sidecar on :9200 (current architecture, 2026-06-12).
 sleep 3
 PYBIN="$HH/hermes-agent/venv/bin/python3"; [ -x "$PYBIN" ] || PYBIN="python3"
-GCODE="$("$PYBIN" -c "import http.client as h; c=h.HTTPConnection('127.0.0.1',9119,timeout=10); c.request('GET','/api/google/auth/start'); print(c.getresponse().status)" 2>/dev/null || echo ERR)"
+HCODE="$("$PYBIN" -c "import http.client as h; c=h.HTTPConnection('127.0.0.1',9200,timeout=10); c.request('GET','/healthz'); print(c.getresponse().status)" 2>/dev/null || echo ERR)"
+GCODE="$("$PYBIN" -c "import http.client as h; c=h.HTTPConnection('127.0.0.1',9200,timeout=10); c.request('GET','/api/google/auth/start'); print(c.getresponse().status)" 2>/dev/null || echo ERR)"
+case "$HCODE" in
+  200) log "  sidecar OK — :9200/healthz -> $HCODE" ;;
+  *) log "  WARN: sidecar NOT live (:9200/healthz -> $HCODE). Install/repair per agentbox-sidecar/docs/update-runbook.md" ;;
+esac
 case "$GCODE" in
-  301|302|303|307|308|200) log "  custom backend OK — /api/google/auth/start -> $GCODE" ;;
-  *) log "  WARN: custom backend NOT live (/api/google/auth/start -> $GCODE). Google connect will 404. Re-run STAGE 7.6 or: bin/deploy-dashboard.sh" ;;
+  301|302|303|307|308|200) log "  google routes OK — /api/google/auth/start -> $GCODE" ;;
+  *) log "  WARN: google routes NOT live (:9200/api/google/auth/start -> $GCODE). Google connect will 404. See agentbox-sidecar/docs/update-runbook.md" ;;
 esac
 log "AgentBOX install complete. Smokes: inject inbound -> draft appears; 'hermes -z' replies;"
 log "re-run the SM-97 spike (spike-hermes-mailbox/12-worstcase-turn.sh) to spot-check the envelope."

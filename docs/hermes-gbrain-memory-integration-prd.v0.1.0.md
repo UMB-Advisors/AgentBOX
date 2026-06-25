@@ -25,7 +25,7 @@ Today neither memory system is wired into the system in any unified way: **honch
 
 **Key constraints (load-bearing):**
 - 8 GB Jetson Orin, already co-resident: Qwen3-4B (Ollama), mailbox stack, Postgres, n8n, gBrain, hermes gateway+dashboard, WhatsApp bridge.
-- Hermes **pinned to v0.15.1** (`HERMES_REF=927fa7a98`) — 0.16's ≥64K context floor breaks local Qwen3-4B. Injected memory context spends scarce tokens on a 4B model → recall must be **token-budgeted**.
+- Hermes **pinned to v0.15.1** (`HERMES_REF=927fa7a98`) — 0.16's ≥64K context floor breaks local Qwen3-4B. (HISTORICAL: pin since bumped — agentbox2 runs upstream v0.16.0 (`agentbox2-v3`); gbrain ships as the `hermes_gbrain_provider` plugin from the sidecar repo.) Injected memory context spends scarce tokens on a 4B model → recall must be **token-budgeted**.
 - gBrain PGLite is **single-writer** (today's bulk-write workflow requires stopping `gbrain serve`). One shared read/write brain needs the **Postgres engine + daemon** to be concurrency-safe.
 
 ---

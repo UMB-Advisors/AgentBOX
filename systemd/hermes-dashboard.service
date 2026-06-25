@@ -1,3 +1,5 @@
+# NOTE: agentbox-sidecar.service (the :9200 user-facing front door) is owned by
+# the agentbox-sidecar repo (deploy/) — it is not vendored here.
 [Unit]
 Description=hermesBOX — hermes web dashboard (:9119, loopback only)
 Documentation=https://github.com/NousResearch/hermes-agent
@@ -9,7 +11,7 @@ Type=simple
 Environment=HERMES_HOME=%h/.hermes
 Environment=HERMES_DASHBOARD_TUI=1
 Environment=HERMES_ACCEPT_HOOKS=1
-ExecStart=%h/.local/bin/hermes dashboard --host 127.0.0.1 --port 9119 --no-open --skip-build --tui
+ExecStart=%h/.hermes/hermes-agent-v2/.venv/bin/hermes dashboard --host 127.0.0.1 --port 9119 --no-open --skip-build
 ExecStop=%h/.local/bin/hermes dashboard --stop
 Restart=on-failure
 RestartSec=3

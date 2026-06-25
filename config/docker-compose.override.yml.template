@@ -7,7 +7,9 @@
 # Two concerns, both required for the unified appliance:
 #  1. Loopback publishes so the co-resident Hermes agent + dashboard work:
 #       - Ollama :11435  -> Hermes uses local Qwen3-4B (custom:local-qwen3-4b)
-#       - dashboard :3001 -> Hermes dashboard "Incoming Messages" iframe
+#       - dashboard :3001 -> headless mailbox-dashboard, reached only via the
+#         hermes /dashboard proxy patch (retiring with the MBOX-469 endgame);
+#         user-facing port = sidecar :9200
 #  2. Funnel-fronting Caddy + n8n external URLs for the Gmail-OAuth callback
 #     (only meaningful once a tailnet FQDN exists; harmless otherwise).
 services:
@@ -16,7 +18,9 @@ services:
     ports:
       - "127.0.0.1:11435:11434"
 
-  # Publish the approval queue on loopback for the Hermes dashboard iframe.
+  # Publish the headless mailbox-dashboard on loopback — reached only via the
+  # hermes /dashboard proxy patch (retiring with the MBOX-469 endgame); the
+  # user-facing port is the agentbox-sidecar on :9200.
   mailbox-dashboard:
     ports:
       - "127.0.0.1:3001:3001"

@@ -13,7 +13,7 @@ Conflicts=hermesbox-kiosk-cog.service
 Type=simple
 TTYPath=/dev/tty1
 PAMName=login
-Environment=HERMESBOX_DASH_URL=http://127.0.0.1:9119/
+Environment=HERMESBOX_DASH_URL=http://127.0.0.1:9200/
 Environment=HERMESBOX_DISPLAY=:0
 ExecStart=%h/.local/bin/hermesbox-kiosk-chromium.sh
 Restart=always

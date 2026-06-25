@@ -31,7 +31,7 @@ human steps: recovery jumper, Gmail OAuth, 1Password unlock).
 | 3–4 | canonical DB schema; models (`qwen3:4b-instruct`, `qwen3:4b-ctx4k`, `nomic-embed-text:v1.5`) |
 | 5 | dashboard + n8n (+caddy). **Dashboard image:** build from source (needs a real `GITHUB_PACKAGES_TOKEN`) **or** preload (`DASHBOARD_IMAGE` / `docker save\|load mailbox-dashboard:local`) |
 | 6 | n8n Postgres credential + import + activate the 4 workflows |
-| 7 | **Hermes**: install + **pin v0.15.1** (`HERMES_REF`), deploy `config/hermes/config.yaml.template`, **gBrain** (vendored src + pglite brain) |
+| 7 | **Hermes**: install + **pin v0.15.1** (`HERMES_REF`), deploy `config/hermes/config.yaml.template`, **gBrain** (vendored src + pglite brain) (HISTORICAL: pin since bumped — agentbox2 runs upstream v0.16.0 (`agentbox2-v3`); gbrain ships as the `hermes_gbrain_provider` plugin from the sidecar repo.) |
 | 7.5 | build + install the **custom** dashboard web dist from vendored `hermes-agent-main/web` (stock build only as fallback) |
 | 7.6 | **overlay the AgentBOX-custom backend** onto the stock Hermes install — `web_server.py` + `google_*/shopify_*` helpers + `dashboard_auth/public_paths.py`. Without this, stock Hermes has no `/api/google/*` routes and **Connect Google 404s**. File set = git-derived SoT in `bin/lib/custom-backend-files.sh`; same set `bin/deploy-dashboard.sh` pushes for post-`hermes update` repairs |
 | 8 | **boot-to-ready**: install `systemd/{agentbox,hermes-dashboard,hermes-gateway}.service` + enable-linger |
@@ -39,7 +39,7 @@ human steps: recovery jumper, Gmail OAuth, 1Password unlock).
 ## Why these JP7.2 / version specifics
 
 - **nvidia runtime registration** — JP7.2/r39 ships the toolkit but leaves it unregistered; GPU containers fail with "unknown runtime: nvidia" until `nvidia-ctk runtime configure`.
-- **Hermes pinned to v0.15.1** (`HERMES_REF=927fa7a98`) — **0.16.0 enforces a ≥64K context floor** that rejects the local Qwen3-4B (Modelfile ctx 4096); 0.15.1 serves it on GPU within the 8 GB SM-97 envelope.
+- **Hermes pinned to v0.15.1** (`HERMES_REF=927fa7a98`) — **0.16.0 enforces a ≥64K context floor** that rejects the local Qwen3-4B (Modelfile ctx 4096); 0.15.1 serves it on GPU within the 8 GB SM-97 envelope. (HISTORICAL: pin since bumped — agentbox2 runs upstream v0.16.0 (`agentbox2-v3`); gbrain ships as the `hermes_gbrain_provider` plugin from the sidecar repo.)
 - **Single Ollama (DR-64)** — gBrain embeddings + Hermes chat both use the one dockerized Ollama published on `127.0.0.1:11435`; no separate host Ollama required.
 - **Dashboard token** — `.env.example` ships a placeholder `GITHUB_PACKAGES_TOKEN`; a from-source build needs a real `read:packages` token. Offline/no-token boxes preload the prebuilt arm64 image (it's CUDA-free, so no JP7.2 risk).
 

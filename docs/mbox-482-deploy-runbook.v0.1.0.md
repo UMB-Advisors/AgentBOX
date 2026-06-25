@@ -38,9 +38,11 @@ live Gmail flow on agentbox2 is byte-untouched.
 2. **`MAILBOX_OAUTH_TOKEN_KEY` set on the dashboard.** The Graph minter +
    imap-credentials route decrypt `provider_secret_enc` with it; the register
    bridge encrypts with it. Already required by the Google connect.
-3. **Deploy the dashboard build** (new routes) the normal way (merge → CI
-   deployer, or `bin/deploy-dashboard.sh` break-glass). The mailbox-stack
-   dashboard container also needs a rebuild if it's the proxied `/dashboard/*`:
+3. **Deploy the dashboard build** (new routes) per the sidecar runbook
+   (`agentbox-sidecar/docs/update-runbook.md`) — the CI deployer /
+   `bin/deploy-dashboard.sh` path is decommissioned (see addendum-01). The
+   mailbox-stack dashboard container also needs a rebuild if it's the proxied
+   `/dashboard/*`:
    ```bash
    ssh <box> 'cd ~/mailbox && docker compose build mailbox-dashboard && docker compose up -d mailbox-dashboard'
    ```
@@ -136,3 +138,12 @@ live Gmail flow on agentbox2 is byte-untouched.
 - **P0.5 (Gmail send → HTTP token-as-data) was SKIPPED** as too risky for the
   live customer-#1 send path (MIME/threading rewrite, no test rig here). Tracked
   separately.
+
+## Addendum-01 (2026-06-12)
+
+The hermes-side **registration bridge** is now a sidecar port: wire
+`dashboard_bridge` into **agentbox-sidecar** (FastAPI), never into hermes
+`web_server.py` (box runs stock upstream v0.16.0). The mailbox-dashboard
+container rebuild steps above remain valid. The "merge → CI deployer /
+`bin/deploy-dashboard.sh` break-glass" deploy path is superseded by
+`agentbox-sidecar/docs/update-runbook.md`.
