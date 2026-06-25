@@ -1,0 +1,23 @@
+# AgentBOX — first-run onboarding WiFi access point.
+# Installed to: /etc/systemd/system/agentbox-onboarding-ap.service (STAGE 0.3).
+# Brings up a setup hotspot on a freshly-flashed box so the operator can reach
+# the sidecar wizard and pick a WiFi network. Self-disables once onboarding is
+# complete (the sidecar writes /var/lib/agentbox/onboarding-complete at stage=live,
+# and the ConditionPathExists below then skips the unit on subsequent boots).
+# Design: docs/onboarding-wifi-ap-provisioning.v0.1.0.md
+[Unit]
+Description=AgentBOX first-run onboarding WiFi AP (setup hotspot)
+After=NetworkManager.service
+Wants=NetworkManager.service
+# Skip entirely once onboarding has completed.
+ConditionPathExists=!/var/lib/agentbox/onboarding-complete
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/agentbox-onboarding-ap up
+ExecStop=/usr/local/sbin/agentbox-onboarding-ap down
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

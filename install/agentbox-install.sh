@@ -119,6 +119,28 @@ else
   log "  WARN: tailscale not installed — install + enroll with --ssh (see docs/runbook/provisioning.v0.1.0.md §2)"
 fi
 
+# ── STAGE 0.3: onboarding WiFi AP — first-run setup hotspot ────────────────
+# A freshly-flashed box that is not yet on a network broadcasts its own WiFi AP
+# so the operator can reach the sidecar wizard (:9200) and pick a WiFi network.
+# The radio (RTL8822CE) can't do AP+STA concurrently, so the bring-up script
+# branches: ethernet present -> AP stays up; else AP is config-only and the
+# sidecar performs the WiFi join + reconnect handoff. Self-disables at stage=live.
+# Design: docs/onboarding-wifi-ap-provisioning.v0.1.0.md
+log "STAGE 0.3 — onboarding WiFi AP (setup hotspot)"
+if command -v nmcli >/dev/null; then
+  sudo install -m 0755 "$REPO/provisioning/35-onboarding-ap.sh" /usr/local/sbin/agentbox-onboarding-ap
+  sudo install -m 0644 "$REPO/provisioning/35-onboarding-ap.service" /etc/systemd/system/agentbox-onboarding-ap.service
+  sudo install -d -m 0755 /var/lib/agentbox
+  sudo systemctl daemon-reload
+  if sudo systemctl enable agentbox-onboarding-ap.service >/dev/null 2>&1; then
+    log "  agentbox-onboarding-ap.service installed + enabled (fires on next boot if onboarding incomplete)"
+  else
+    log "  WARN: could not enable agentbox-onboarding-ap.service — enable manually"
+  fi
+else
+  log "  WARN: nmcli not found — skipping onboarding AP (NetworkManager required)"
+fi
+
 # ── STAGE 0.5: MailBOX stack (VENDORED in this monorepo; sync into place) ──
 # AgentBOX absorbs the MailBOX stack — it lives at $REPO/mailbox (no external
 # clone). Sync the source-controlled stack into $STACK_DIR (the runtime
