@@ -27,42 +27,59 @@ function allWorkflows(): { file: string; wf: N8nWorkflow }[] {
     .map((e) => ({ file: e.name, wf: loadWorkflow(e.name) }));
 }
 
-// The FLOOR assertion: in MailBOX-Send, Gmail Reply's messageId + message MUST
-// reference a `$('…')` cross-node node (specifically `$('Load Draft')`) and MUST
-// NOT read bare `$json.` — the exact MBOX-344 regression.
+// The FLOOR assertion: in MailBOX-Send (now token-as-data, not the native Gmail
+// node), the reply is built in the `Build Reply MIME` Code node and the token is
+// minted by `Get Gmail Token`. Both MUST reference `$('Load Draft')` (cross-node)
+// and MUST NOT read bare `$json.` for draft fields — the exact MBOX-344 mixup
+// guard, carried onto the new send chain.
 const BARE_JSON_RE = /\$json\./;
 function floorProblems(wf: N8nWorkflow): string[] {
-  const node = wf.nodes.find((n) => n.name === 'Gmail Reply');
-  if (!node) return ["MailBOX-Send has no 'Gmail Reply' node"];
   const problems: string[] = [];
-  for (const field of ['messageId', 'message'] as const) {
-    const expr = node.parameters[field];
-    if (typeof expr !== 'string') {
-      problems.push(`Gmail Reply.${field} is not a string expression`);
-      continue;
-    }
-    if (!expr.includes("$('Load Draft')")) {
-      problems.push(`Gmail Reply.${field} must reference $('Load Draft') — got: ${expr}`);
-    }
-    if (BARE_JSON_RE.test(expr)) {
-      problems.push(`Gmail Reply.${field} reads bare $json (MBOX-344 regression): ${expr}`);
+
+  // The node that turns the draft into the outgoing MIME message.
+  const mime = wf.nodes.find((n) => n.name === 'Build Reply MIME');
+  if (!mime) {
+    problems.push("MailBOX-Send has no 'Build Reply MIME' node");
+  } else {
+    const code = mime.parameters.jsCode;
+    if (typeof code !== 'string') {
+      problems.push('Build Reply MIME.jsCode is not a string');
+    } else {
+      if (!code.includes("$('Load Draft')")) {
+        problems.push("Build Reply MIME.jsCode must reference $('Load Draft')");
+      }
+      if (BARE_JSON_RE.test(code)) {
+        problems.push('Build Reply MIME.jsCode reads bare $json (MBOX-344 regression)');
+      }
     }
   }
+
+  // The token mint keys off the draft's receiving mailbox — also cross-node.
+  const tok = wf.nodes.find((n) => n.name === 'Get Gmail Token');
+  if (!tok) {
+    problems.push("MailBOX-Send has no 'Get Gmail Token' node");
+  } else {
+    const url = tok.parameters.url;
+    if (typeof url !== 'string' || !url.includes("$('Load Draft')")) {
+      problems.push("Get Gmail Token.url must reference $('Load Draft')");
+    }
+  }
+
   return problems;
 }
 
 describe('n8n expression lint — FLOOR (MBOX-344 send path)', () => {
-  it('MailBOX-Send Gmail Reply messageId + message reference $(Load Draft), never bare $json', () => {
+  it('MailBOX-Send reply build + token mint reference $(Load Draft), never bare $json', () => {
     const wf = loadWorkflow('MailBOX-Send.json');
     expect(floorProblems(wf)).toEqual([]);
   });
 
-  it('catches a bare-$json regression on Gmail Reply (mutated copy)', () => {
+  it('catches a bare-$json regression on the reply build (mutated copy)', () => {
     const wf = loadWorkflow('MailBOX-Send.json');
     const mutated: N8nWorkflow = JSON.parse(JSON.stringify(wf));
-    const gmail = mutated.nodes.find((n) => n.name === 'Gmail Reply');
-    if (!gmail) throw new Error('fixture missing Gmail Reply');
-    gmail.parameters.messageId = '={{ $json.message_id }}';
+    const mime = mutated.nodes.find((n) => n.name === 'Build Reply MIME');
+    if (!mime) throw new Error('fixture missing Build Reply MIME');
+    mime.parameters.jsCode = 'const b = $json.draft_body; return [{ json: {} }];';
     const problems = floorProblems(mutated);
     expect(problems.length).toBeGreaterThan(0);
     expect(problems.some((p) => p.includes('MBOX-344 regression'))).toBe(true);
@@ -73,11 +90,13 @@ describe('buildMainInputPredecessors', () => {
   it('maps each node to the node(s) feeding its main input (MailBOX-Send)', () => {
     const wf = loadWorkflow('MailBOX-Send.json');
     const preds = buildMainInputPredecessors(wf);
-    expect(preds.get('Gmail Reply')).toEqual(new Set(['Lock Acquired?']));
+    expect(preds.get('Get Gmail Token')).toEqual(new Set(['Lock Acquired?']));
+    expect(preds.get('Build Reply MIME')).toEqual(new Set(['Get Gmail Token']));
+    expect(preds.get('Gmail Send')).toEqual(new Set(['Build Reply MIME']));
     expect(preds.get('Lock Acquired?')).toEqual(new Set(['Acquire Send Lock']));
     expect(preds.get('Load Draft')).toEqual(new Set(['Webhook (mailbox-send)']));
-    // Mark Sent is fed by two branches (Already Sent? true + Gmail Reply)
-    expect(preds.get('Mark Sent')).toEqual(new Set(['Already Sent?', 'Gmail Reply']));
+    // Mark Sent is fed by two branches (Already Sent? true + Gmail Send)
+    expect(preds.get('Mark Sent')).toEqual(new Set(['Already Sent?', 'Gmail Send']));
   });
 });
 
