@@ -33,3 +33,8 @@ result-*
 # Claude Code agent worktrees (local session state, not source).
 # ``**/`` so it matches nested checkouts, not just the repo root.
 **/.claude/worktrees/
+
+# entity_map.yaml retired here — canonical source is UMB-Advisors/agentbox-seed
+# (entities/entity_map.yaml). Local working copy is a symlink to it; the box's
+# ~/gbrain-ingest copy is deployed from the seed (apply --module entities).
+gbrain-ingest/entity_map.yaml
