@@ -130,7 +130,10 @@ log "STAGE 0.3 — onboarding WiFi AP (setup hotspot)"
 if command -v nmcli >/dev/null; then
   sudo install -m 0755 "$REPO/provisioning/35-onboarding-ap.sh" /usr/local/sbin/agentbox-onboarding-ap
   sudo install -m 0644 "$REPO/provisioning/35-onboarding-ap.service" /etc/systemd/system/agentbox-onboarding-ap.service
-  sudo install -d -m 0755 /var/lib/agentbox
+  # Owned by the box/sidecar user so the (non-root) sidecar can write the
+  # onboarding-complete marker + clear the bind-override env at stage=live.
+  # Root (the AP unit) can still write here regardless of owner.
+  sudo install -d -m 0775 -o "$USER" -g "$USER" /var/lib/agentbox
   sudo systemctl daemon-reload
   if sudo systemctl enable agentbox-onboarding-ap.service >/dev/null 2>&1; then
     log "  agentbox-onboarding-ap.service installed + enabled (fires on next boot if onboarding incomplete)"

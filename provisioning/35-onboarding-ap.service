@@ -15,6 +15,12 @@ ConditionPathExists=!/var/lib/agentbox/onboarding-complete
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# AP auth model (OOBE decision G7, v1): OPEN setup AP. A random WPA2 PSK is
+# unreadable to a phone that hasn't joined yet (chicken-and-egg), so v1 ships an
+# open AP — security rests on the short setup window + the dashboard auth gate.
+# To switch to WPA2 (e.g. once a serial-derived PSK is printed/QR'd on the box,
+# Phase 4), remove this line. Reversible one-liner.
+Environment=AGENTBOX_AP_OPEN=1
 ExecStart=/usr/local/sbin/agentbox-onboarding-ap up
 ExecStop=/usr/local/sbin/agentbox-onboarding-ap down
 TimeoutStartSec=60

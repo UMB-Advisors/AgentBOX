@@ -28,8 +28,10 @@ STATE_DIR="/var/lib/agentbox"
 DONE_MARKER="${STATE_DIR}/onboarding-complete"   # sidecar writes this when stage=live
 PSK_FILE="${STATE_DIR}/ap.psk"                    # persisted AP passphrase (0600)
 STATE_FILE="${STATE_DIR}/onboarding-ap.state"     # last bring-up facts, read by sidecar
+ENV_FILE="${STATE_DIR}/onboarding.env"            # bind override sourced by agentbox-sidecar.service
 HOTSPOT_CON="agentbox-onboarding-ap"              # NM connection id we own
 AP_IP="10.42.0.1"                                  # NM `shared` method gateway
+SIDECAR_UNIT="agentbox-sidecar.service"           # user unit serving the wizard on :9200
 # Open AP (no passphrase) when set — simplest join, weakest security. The auth
 # model is still an open product decision (design doc §6); default is WPA2.
 AP_OPEN="${AGENTBOX_AP_OPEN:-0}"
@@ -78,6 +80,48 @@ note=$3
 EOF
 }
 
+# Flip the sidecar to bind 0.0.0.0 so the wizard is reachable at AP_IP:9200.
+# The sidecar is a *user* unit; agentbox-sidecar.service sources ENV_FILE via
+# `EnvironmentFile=-`, so writing it is enough for a fresh boot (the system AP
+# unit orders before the user manager). For the race where the sidecar already
+# started bound to loopback, we additionally attempt a best-effort user-scoped
+# restart; if that isn't possible we just log the manual command (G2).
+flip_sidecar_bind(){
+  install -d -m 0775 "$STATE_DIR"
+  printf 'SIDECAR_HOST=0.0.0.0\n' > "$ENV_FILE"; chmod 0644 "$ENV_FILE"
+  log "sidecar bind override written ($ENV_FILE -> 0.0.0.0)"
+  local owner uid
+  owner="$(stat -c %U "$STATE_DIR" 2>/dev/null)"
+  uid="$(id -u "$owner" 2>/dev/null)"
+  if [ -n "$owner" ] && [ -n "$uid" ] && [ -d "/run/user/$uid" ]; then
+    sudo -u "$owner" XDG_RUNTIME_DIR="/run/user/$uid" \
+      systemctl --user restart "$SIDECAR_UNIT" >/dev/null 2>&1 \
+      && log "  restarted ${SIDECAR_UNIT} as ${owner} (rebound to 0.0.0.0)" \
+      || log "  NOTE: could not auto-restart sidecar; it will rebind on next start. Manual: systemctl --user restart ${SIDECAR_UNIT}"
+  else
+    log "  NOTE: sidecar user session not active yet; it will pick up 0.0.0.0 when it starts."
+  fi
+}
+
+# Confirm the wizard actually answers locally; WARN only (non-fatal).
+healthcheck(){
+  local i
+  for i in 1 2 3 4 5; do
+    curl -fsS --max-time 3 "http://127.0.0.1:9200/healthz" >/dev/null 2>&1 && {
+      log "healthcheck OK — wizard reachable on :9200"; return 0; }
+    sleep 2
+  done
+  log "WARN: sidecar :9200 not answering yet — wizard may be briefly unreachable at ${AP_IP}:9200"
+}
+
+# Shared success path for both the reuse and create branches of cmd_up.
+on_ap_up(){ # $1=mode $2=ssid $3=note
+  log "AP up: SSID='$2' at http://${AP_IP}:9200 — join it and open the setup page."
+  write_state "$1" "$2" "$3"
+  flip_sidecar_bind
+  healthcheck
+}
+
 cmd_up(){
   if [ -f "$DONE_MARKER" ]; then
     log "onboarding already complete ($DONE_MARKER present) — not starting AP."; exit 0
@@ -101,7 +145,7 @@ cmd_up(){
   if nmcli -t -f NAME connection show 2>/dev/null | grep -qx "$HOTSPOT_CON"; then
     log "hotspot connection '${HOTSPOT_CON}' exists — bringing it up"
     nmcli connection up "$HOTSPOT_CON" >/dev/null 2>&1 \
-      && { log "AP up: SSID='${ssid}' at http://${AP_IP}:9200"; write_state "$mode" "$ssid" "$note"; exit 0; } \
+      && { on_ap_up "$mode" "$ssid" "$note"; exit 0; } \
       || log "WARN: could not bring up existing '${HOTSPOT_CON}'; recreating"
     nmcli connection delete "$HOTSPOT_CON" >/dev/null 2>&1 || true
   fi
@@ -122,8 +166,7 @@ cmd_up(){
   fi
 
   if nmcli connection up "$HOTSPOT_CON" >/dev/null 2>&1; then
-    log "AP up: SSID='${ssid}' at http://${AP_IP}:9200 — join it and open the setup page."
-    write_state "$mode" "$ssid" "$note"
+    on_ap_up "$mode" "$ssid" "$note"
   else
     log "ERROR: failed to bring up the AP on ${wlan}. Check 'nmcli connection up ${HOTSPOT_CON}'."
     write_state none "$ssid" "ap-bringup-failed"; exit 1
@@ -133,6 +176,7 @@ cmd_up(){
 cmd_down(){
   nmcli connection down "$HOTSPOT_CON" >/dev/null 2>&1 || true
   nmcli connection delete "$HOTSPOT_CON" >/dev/null 2>&1 || true
+  rm -f "$ENV_FILE" 2>/dev/null || true   # revert sidecar bind override
   write_state none "" "torn-down"
   log "AP '${HOTSPOT_CON}' torn down."
 }
