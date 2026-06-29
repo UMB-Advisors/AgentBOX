@@ -134,6 +134,16 @@ if command -v nmcli >/dev/null; then
   # onboarding-complete marker + clear the bind-override env at stage=live.
   # Root (the AP unit) can still write here regardless of owner.
   sudo install -d -m 0775 -o "$USER" -g "$USER" /var/lib/agentbox
+  # mDNS so the phone can find the box at <hostname>.local after the setup AP
+  # drops on a single-radio (mode B) join — the reconnect recovery path (G8).
+  if ! command -v avahi-daemon >/dev/null 2>&1; then
+    sudo apt-get install -y avahi-daemon >/dev/null 2>&1 \
+      && log "  installed avahi-daemon (mDNS / <hostname>.local)" \
+      || log "  WARN: could not install avahi-daemon — mode-B reconnect via .local won't resolve"
+  fi
+  sudo systemctl enable --now avahi-daemon >/dev/null 2>&1 \
+    && log "  avahi-daemon enabled — box reachable at $(hostname).local" \
+    || log "  WARN: avahi-daemon not enabled — mode-B reconnect via .local won't resolve"
   sudo systemctl daemon-reload
   if sudo systemctl enable agentbox-onboarding-ap.service >/dev/null 2>&1; then
     log "  agentbox-onboarding-ap.service installed + enabled (fires on next boot if onboarding incomplete)"

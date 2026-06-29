@@ -41,6 +41,13 @@ log(){ printf '\n\033[1;36m[onboarding-ap]\033[0m %s\n' "$*"; }
 # First wifi device NetworkManager knows about (empty if the box has no radio).
 wlan_iface(){ nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2=="wifi"{print $1; exit}'; }
 
+# Does the box already have a working internet uplink? If so we MUST NOT bring up
+# the AP: on a single-radio box that would drop the box's own WiFi (and its
+# Tailscale-over-WiFi), and there is no need for a setup hotspot when the operator
+# can reach the wizard over the existing network (via <hostname>.local). This is
+# the core "AP only when truly offline" guard.
+has_internet(){ [ "$(nmcli -t -f CONNECTIVITY general status 2>/dev/null)" = "full" ]; }
+
 # Is any *physical* ethernet link carrying (cable plugged + up)? Skips virtual
 # (veth/docker/bridge/tailscale) interfaces by only trusting /sys device-backed NICs.
 eth_has_carrier(){
@@ -132,6 +139,14 @@ cmd_up(){
     write_state none "" "no-wifi-radio"; exit 0
   fi
 
+  # Already online? Then the box doesn't need a setup hotspot — and bringing one
+  # up would knock a single-radio box off its current WiFi. Reach the wizard at
+  # http://<hostname>.local:9200/onboarding over the existing network instead.
+  if has_internet; then
+    log "box already has internet — NOT starting AP. Reach setup at http://$(hostname).local:9200/onboarding"
+    write_state none "" "already-online"; exit 0
+  fi
+
   local mode note
   if eth_has_carrier; then
     mode=A; note="ethernet uplink present — AP stays up for the whole session"
@@ -184,6 +199,8 @@ cmd_down(){
 cmd_status(){
   echo "wlan_iface: $(wlan_iface || echo none)"
   echo "eth_carrier: $(eth_has_carrier && echo yes || echo no)"
+  echo "has_internet: $(has_internet && echo yes || echo no)  (AP only comes up when no)"
+  echo "mdns_name: $(hostname).local"
   echo "onboarding_complete: $([ -f "$DONE_MARKER" ] && echo yes || echo no)"
   [ -f "$STATE_FILE" ] && { echo "--- last bring-up ---"; cat "$STATE_FILE"; }
   nmcli -t -f NAME,DEVICE,STATE connection show --active 2>/dev/null | grep "$HOTSPOT_CON" \
