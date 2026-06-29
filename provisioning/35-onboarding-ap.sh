@@ -29,6 +29,7 @@ DONE_MARKER="${STATE_DIR}/onboarding-complete"   # sidecar writes this when stag
 PSK_FILE="${STATE_DIR}/ap.psk"                    # persisted AP passphrase (0600)
 STATE_FILE="${STATE_DIR}/onboarding-ap.state"     # last bring-up facts, read by sidecar
 ENV_FILE="${STATE_DIR}/onboarding.env"            # bind override sourced by agentbox-sidecar.service
+SCAN_CACHE="${STATE_DIR}/wifi-scan.cache"         # nearby networks captured BEFORE the AP (single radio can't scan while hosting)
 HOTSPOT_CON="agentbox-onboarding-ap"              # NM connection id we own
 AP_IP="10.42.0.1"                                  # NM `shared` method gateway
 SIDECAR_UNIT="agentbox-sidecar.service"           # user unit serving the wizard on :9200
@@ -110,6 +111,21 @@ flip_sidecar_bind(){
   fi
 }
 
+# Capture nearby WiFi networks BEFORE the radio becomes an AP — a single-radio
+# box can't scan while hosting the hotspot, so the wizard's picker reads this
+# cache (terse SSID:SIGNAL:SECURITY, the same shape features/network.py parses).
+cache_scan(){
+  install -d -m 0775 "$STATE_DIR"
+  if nmcli -t -f SSID,SIGNAL,SECURITY device wifi list --rescan yes >"${SCAN_CACHE}.tmp" 2>/dev/null \
+     && [ -s "${SCAN_CACHE}.tmp" ]; then
+    mv "${SCAN_CACHE}.tmp" "$SCAN_CACHE"; chmod 0644 "$SCAN_CACHE"
+    log "cached $(grep -c . "$SCAN_CACHE") nearby network(s) for the wizard picker"
+  else
+    rm -f "${SCAN_CACHE}.tmp" 2>/dev/null || true
+    log "WARN: pre-AP scan returned nothing; wizard will rely on manual SSID entry"
+  fi
+}
+
 # Confirm the wizard actually answers locally; WARN only (non-fatal).
 healthcheck(){
   local i
@@ -154,6 +170,10 @@ cmd_up(){
     mode=B; note="no ethernet — AP is config-only; sidecar join will hand off (reconnect dance)"
   fi
   log "uplink model ${mode}: ${note}"
+
+  # Scan for the operator's networks NOW, while the radio is still free — once
+  # the AP is up this radio can't scan (the wizard reads this cache).
+  cache_scan
 
   local ssid; ssid="$(ap_ssid)"
   # Reuse our connection if it already exists; otherwise create it.
