@@ -37,8 +37,8 @@ self-disabled.
 | G4 | No connect-network wizard step | blocker | ✅ **done** — `ConnectNetworkBody` + step descriptor + status gating |
 | G9 | Stage-machine composition for the network step | major | ✅ **done** — `network_configured` flag |
 | G7 | AP auth model undecided | major | ✅ **decided+set** — open AP v1 (`AGENTBOX_AP_OPEN=1`) |
-| G5 | Mode-B reconnect handoff + discovery | blocker | 🟡 **partial** — reconnect panel + `agentbox.local` link + best-effort poll shipped; full discovery needs G8 provisioning + hardware E2E |
-| G8 | Discovery mechanism (mDNS vs Tailscale) | major | 🟡 **UX-only** — needs `avahi-daemon` + `agentbox.local` publish in provisioning |
+| G5 | Mode-B reconnect handoff + discovery | blocker | ✅ **code-complete** — reconnect panel links to the box's real `<hostname>.local` + best-effort poll; **AP now comes up only when offline** (guard), so no ethernet crutch and no remote-box bricking. Needs hardware E2E (G16) |
+| G8 | Discovery (mDNS) | major | ✅ **done** — `avahi-daemon` installed/enabled at install; status API returns `hostname`; wizard links to `<hostname>.local:9200` |
 | G6 | Mobile spine + focus-shell merge | major | 🟡 consolidated onto `feat/onboarding-oobe`; focus-shell wiring still per the mobile-focus handoff |
 | G10 | Onboarding/network routes ungated | major | ⬜ **todo** — production hardening (`ONBOARDING_API_TOKEN` + header check); low risk given short window |
 | G11 | Crypto key (`HERMES_MAIL_SECRET_KEY`) unconfigured blocks email-connect | major | ⬜ **todo** — generate at install (monorepo) |
@@ -59,14 +59,16 @@ Power on → AP up → phone joins (open) → wizard reachable at `10.42.0.1:920
 
 ## The remaining critical path to "fully works on any box"
 
-1. **G16 hardware E2E for mode B** (no ethernet) — the riskiest seam; needs a real box + iOS
-   and Android phones. Validates the reconnect handoff and the `agentbox.local` recovery.
-2. **G8 provisioning** — install/enable `avahi-daemon` and publish `agentbox.local` so the
-   mode-B recovery link resolves.
-3. **G12** — installer must clone+enable the sidecar so a freshly flashed box actually serves
+The wireless mode-B path is now **code-complete** (AP only when offline → join → AP drops →
+phone reconnects to home WiFi → `<hostname>.local:9200` resumes the wizard). What's left:
+
+1. **G16 hardware E2E for mode B** — THE verification gate; needs a real offline box + iOS and
+   Android phones. Until this runs, mode B is "should work," not "proven."
+2. **G12** — installer must clone+enable the sidecar so a freshly flashed box actually serves
    the wizard.
-4. **G11** — auto-generate `HERMES_MAIL_SECRET_KEY` at install so email-connect never hard-blocks.
-5. **G10** — gate the onboarding/network routes before production.
+3. **G11** — auto-generate `HERMES_MAIL_SECRET_KEY` at install so email-connect never hard-blocks.
+4. **G10** — gate the onboarding/network routes before production.
+5. **G15** — captive-portal auto-launch (so the customer doesn't type `…/onboarding`).
 
 ---
 
