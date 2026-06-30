@@ -42,11 +42,13 @@ command -v pnpm >/dev/null 2>&1 || sudo npm install -g pnpm
 log "building wizard UI (web/dist)"
 (
   cd "$SIDE/web"
-  pnpm install
-  # pnpm 10 skips dependency build scripts by default; esbuild needs its native
-  # binary built or `vite build` fails. package.json allowlists it, but force it
-  # here too in case node_modules was already populated with scripts skipped.
-  pnpm rebuild esbuild >/dev/null 2>&1 || true
+  # pnpm 11 EXITS NON-ZERO on its "ignored build scripts" reminder, which would
+  # abort this script (set -e) before esbuild is built — tolerate it. `pnpm
+  # rebuild` then actually builds esbuild's native binary (it bypasses the
+  # approval gate). `pnpm build` is the real check: if dist can't be produced it
+  # fails loudly and the script stops.
+  pnpm install || true
+  pnpm rebuild esbuild || true
   pnpm build
 )
 log "syncing sidecar Python deps (uv sync)"
