@@ -34,10 +34,9 @@ if [ "${node_major:-0}" -lt 20 ]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi
-# Pin pnpm 9: pnpm 10/11 gate dependency build scripts (esbuild's native binary
-# gets skipped and `vite build` fails); pnpm 9 runs them by default. Installed
-# unconditionally so an existing pnpm 10/11 is overridden.
-sudo npm install -g pnpm@9
+# Any pnpm is fine — the dependency-build allowlist lives in web/pnpm-workspace.yaml
+# (the home pnpm 10/11 read), so esbuild's native binary gets built on install.
+command -v pnpm >/dev/null 2>&1 || sudo npm install -g pnpm
 
 # 3. build the wizard UI + sync sidecar deps
 log "building wizard UI (web/dist)"
