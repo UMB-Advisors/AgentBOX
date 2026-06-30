@@ -134,6 +134,19 @@ if command -v nmcli >/dev/null; then
   # onboarding-complete marker + clear the bind-override env at stage=live.
   # Root (the AP unit) can still write here regardless of owner.
   sudo install -d -m 0775 -o "$USER" -g "$USER" /var/lib/agentbox
+  # The sidecar runs as a non-root lingering user service; NetworkManager denies
+  # `nmcli device wifi connect` to a non-active session ("Insufficient
+  # privileges"). Grant just nmcli to the box user so the onboarding WiFi join
+  # works. Validated with visudo before install.
+  _nmcli_path="$(command -v nmcli || echo /usr/bin/nmcli)"
+  printf '%s ALL=(root) NOPASSWD: %s\n' "$USER" "$_nmcli_path" > /tmp/agentbox-nmcli.sudoers
+  if sudo visudo -cf /tmp/agentbox-nmcli.sudoers >/dev/null 2>&1; then
+    sudo install -m 0440 /tmp/agentbox-nmcli.sudoers /etc/sudoers.d/agentbox-onboarding-nmcli
+    log "  sudoers: $USER may run nmcli as root (onboarding WiFi join)"
+  else
+    log "  WARN: nmcli sudoers rule failed validation — WiFi join will be denied"
+  fi
+  rm -f /tmp/agentbox-nmcli.sudoers
   # mDNS so the phone can find the box at <hostname>.local after the setup AP
   # drops on a single-radio (mode B) join — the reconnect recovery path (G8).
   if ! command -v avahi-daemon >/dev/null 2>&1; then
