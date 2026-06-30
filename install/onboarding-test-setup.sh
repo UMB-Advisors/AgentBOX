@@ -22,17 +22,35 @@ SIDE_BRANCH="feat/onboarding-oobe"
 log(){ printf '\n\033[1;36m[onboarding]\033[0m %s\n' "$*"; }
 die(){ printf '\n\033[1;31m[onboarding] ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
-[ -d "$MONO/.git" ] || die "missing $MONO — clone the monorepo (branch $MONO_BRANCH) first"
-[ -d "$SIDE/web" ]  || die "missing $SIDE — clone the sidecar (branch $SIDE_BRANCH) first"
+[ -d "$MONO/.git" ] || die "missing $MONO — this script must live in a clone of the monorepo"
 
-# 0. Self-update to the latest pushed code, then re-exec the fresh script once.
+# Clone (if missing) or hard-reset a repo to the exact latest of its branch. The
+# monorepo is assumed present (a fresh flash clones it + runs agentbox-install.sh);
+# the sidecar is cloned here if absent. Private repos need a credential: a cached
+# git/gh credential, or AB_GH_TOKEN=<github token> in the environment.
+ensure_repo() { # $1=dir $2=reponame $3=branch
+  local dir="$1" repo="$2" branch="$3"
+  if [ -d "$dir/.git" ]; then
+    git -C "$dir" fetch -q origin "$branch" && git -C "$dir" reset -q --hard "origin/$branch" \
+      || log "WARN: could not update $dir; using local copy"
+  else
+    log "cloning $repo ($branch)"
+    local url="https://github.com/UMB-Advisors/${repo}.git"
+    [ -n "${AB_GH_TOKEN:-}" ] && url="https://${AB_GH_TOKEN}@github.com/UMB-Advisors/${repo}.git"
+    git clone -q -b "$branch" "$url" "$dir" \
+      || die "clone of $repo failed — if it's private, re-run with AB_GH_TOKEN=<github token> $0"
+  fi
+}
+
+# 0. Ensure both repos present + at latest, then re-exec the fresh script once.
 if [ -z "${AB_REEXEC:-}" ]; then
-  log "updating to latest code"
-  git -C "$MONO" fetch -q origin "$MONO_BRANCH" && git -C "$MONO" reset -q --hard "origin/$MONO_BRANCH" || log "WARN: monorepo update failed; using local copy"
-  git -C "$SIDE" fetch -q origin "$SIDE_BRANCH" && git -C "$SIDE" reset -q --hard "origin/$SIDE_BRANCH" || log "WARN: sidecar update failed; using local copy"
+  log "ensuring repos are present + up to date"
+  ensure_repo "$MONO" AgentBOX "$MONO_BRANCH"
+  ensure_repo "$SIDE" agentbox-sidecar "$SIDE_BRANCH"
   export AB_REEXEC=1
   exec bash "$MONO/install/onboarding-test-setup.sh" "$@"
 fi
+[ -d "$SIDE/web" ] || die "sidecar checkout looks wrong (no web/) at $SIDE"
 
 # 1. Node >= 20 (Vite 7 dropped 18; apt ships 18, so pull Node 22 from NodeSource).
 node_major=0
