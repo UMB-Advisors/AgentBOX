@@ -1,0 +1,8 @@
+name: agency-agents-router
+version: 1.0.0
+description: Lazy search/load/delegate router for The Agency agent roster.
+provides_tools:
+  - agency_agents_search
+  - agency_agents_inspect
+  - agency_agents_load
+  - agency_agents_delegate
