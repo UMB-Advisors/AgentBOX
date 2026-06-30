@@ -38,7 +38,15 @@ command -v pnpm >/dev/null 2>&1 || sudo npm install -g pnpm@10
 
 # 3. build the wizard UI + sync sidecar deps
 log "building wizard UI (web/dist)"
-( cd "$SIDE/web" && pnpm install && pnpm build )
+(
+  cd "$SIDE/web"
+  pnpm install
+  # pnpm 10 skips dependency build scripts by default; esbuild needs its native
+  # binary built or `vite build` fails. package.json allowlists it, but force it
+  # here too in case node_modules was already populated with scripts skipped.
+  pnpm rebuild esbuild >/dev/null 2>&1 || true
+  pnpm build
+)
 log "syncing sidecar Python deps (uv sync)"
 ( cd "$SIDE" && uv sync )
 
