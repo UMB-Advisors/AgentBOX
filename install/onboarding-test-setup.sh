@@ -34,21 +34,22 @@ if [ "${node_major:-0}" -lt 20 ]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi
-# Any pnpm is fine — the dependency-build allowlist lives in web/pnpm-workspace.yaml
-# (the home pnpm 10/11 read), so esbuild's native binary gets built on install.
-command -v pnpm >/dev/null 2>&1 || sudo npm install -g pnpm
+# Force pnpm 9: pnpm 10/11 hard-error on un-approved dependency build scripts on
+# EVERY command (even rebuild), and won't run them non-interactively. pnpm 9 has
+# no such gate. Disable any corepack shim first so the pinned version wins.
+sudo corepack disable >/dev/null 2>&1 || true
+sudo npm install -g pnpm@9
+hash -r 2>/dev/null || true
 
 # 3. build the wizard UI + sync sidecar deps
 log "building wizard UI (web/dist)"
 (
   cd "$SIDE/web"
-  # pnpm 11 EXITS NON-ZERO on its "ignored build scripts" reminder, which would
-  # abort this script (set -e) before esbuild is built — tolerate it. `pnpm
-  # rebuild` then actually builds esbuild's native binary (it bypasses the
-  # approval gate). `pnpm build` is the real check: if dist can't be produced it
-  # fails loudly and the script stops.
-  pnpm install || true
-  pnpm rebuild esbuild || true
+  # Clean install so build scripts actually run (a cached node_modules makes pnpm
+  # skip them). With pnpm 9 there's no approval gate, so esbuild's native binary
+  # is built and `vite build` succeeds.
+  rm -rf node_modules
+  pnpm install
   pnpm build
 )
 log "syncing sidecar Python deps (uv sync)"
