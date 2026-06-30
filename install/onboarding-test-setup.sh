@@ -44,18 +44,18 @@ if [ "${node_major:-0}" -lt 20 ]; then
   sudo apt-get install -y nodejs
 fi
 
-# 2. pnpm 9 — pnpm 10/11 hard-error on un-approved dependency build scripts and
-#    won't run them non-interactively; pnpm 9 has no such gate. Kill any corepack
-#    shim so the pinned version is the one that runs.
-log "installing pnpm 9"
+# 2. pnpm — prefer 9 (no build-script gate). Forcefully clear every existing
+#    pnpm/corepack shim first (npm won't overwrite a corepack symlink, which is
+#    why a plain `npm i -g pnpm@9` left v11 in place). If 9 still can't win, the
+#    web/pnpm-workspace.yaml allowlist lets a *clean* install build esbuild on
+#    pnpm 11 too — so we proceed regardless of the resolved version.
+log "installing pnpm 9 (clearing existing pnpm shims first)"
 sudo corepack disable >/dev/null 2>&1 || true
-sudo npm install -g pnpm@9 >/dev/null 2>&1
+sudo npm rm -g pnpm pnpx >/dev/null 2>&1 || true
+for d in /usr/local/bin /usr/bin /bin; do sudo rm -f "$d/pnpm" "$d/pnpx" 2>/dev/null || true; done
+sudo npm install -g pnpm@9
 hash -r 2>/dev/null || true
-pnpm_ver="$(pnpm --version 2>/dev/null || echo none)"
-case "$pnpm_ver" in
-  9.*) log "pnpm $pnpm_ver" ;;
-  *)   die "expected pnpm 9.x but got '$pnpm_ver' (which -a pnpm: $(which -a pnpm 2>/dev/null | tr '\n' ' '))" ;;
-esac
+log "pnpm $(pnpm --version 2>/dev/null || echo '?') at $(command -v pnpm 2>/dev/null || echo '?')"
 
 # 3. uv — the sidecar's Python runtime
 if ! command -v uv >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/uv" ]; then
