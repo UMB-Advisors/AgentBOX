@@ -387,6 +387,48 @@ if [ -d "$INSTALL_CLI" ]; then
   fi
 fi
 
+# ── STAGE 7.7: preloaded Hermes plugins (agency-agents-router) ─────────────
+# Seed bundled plugin payloads into the box's hermes home and enable them so a
+# fresh box ships with the curated specialist roster selectable in chat. The
+# agency-agents-router keeps 135 agents in a data file (no skill-catalog bloat);
+# the agent finds/loads a specialist on demand ("use the Frontend Developer").
+# Idempotent: re-syncs the files and re-enables (a no-op if already enabled).
+# Source set lives in provisioning/plugins/ (see its README for regen).
+log "STAGE 7.7 — preloaded Hermes plugins"
+ABX_PLUGINS_SRC="$REPO/provisioning/plugins"
+if [ -d "$ABX_PLUGINS_SRC" ]; then
+  HERMES_BIN="$HOME/.local/bin/hermes"; command -v hermes >/dev/null 2>&1 && HERMES_BIN="$(command -v hermes)"
+  PYBIN="$HH/hermes-agent/venv/bin/python3"; [ -x "$PYBIN" ] || PYBIN="python3"
+  mkdir -p "$HH/plugins"
+  for pdir in "$ABX_PLUGINS_SRC"/*/; do
+    [ -f "${pdir}plugin.yaml" ] || continue
+    name="$(basename "$pdir")"
+    if command -v rsync >/dev/null; then rsync -a --delete "$pdir" "$HH/plugins/$name/"
+    else rm -rf "$HH/plugins/$name"; cp -a "${pdir%/}" "$HH/plugins/$name"; fi
+    # Enable via the hermes CLI (sanctioned writer); fall back to a config edit.
+    if ! "$HERMES_BIN" plugins enable "$name" >/dev/null 2>&1; then
+      "$PYBIN" - "$HH/config.yaml" "$name" <<'PY' || true
+import sys, pathlib
+try:
+    import yaml
+except Exception:
+    sys.exit(0)
+cfg_path, name = pathlib.Path(sys.argv[1]), sys.argv[2]
+cfg = yaml.safe_load(cfg_path.read_text()) if cfg_path.exists() else {}
+cfg = cfg or {}
+enabled = cfg.setdefault("plugins", {}).setdefault("enabled", [])
+if name not in enabled:
+    enabled.append(name)
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+PY
+    fi
+    log "  seeded + enabled plugin: $name"
+  done
+else
+  log "  no provisioning/plugins — skipping preloaded plugins"
+fi
+
 # ── STAGE 8: boot-to-ready systemd (SM-100) ───────────────────────────────
 # Install the AgentBOX user units: agentbox.service (compose orchestrator) +
 # hermes-dashboard.service (:9119) + hermes-gateway.service (messaging gateway).
