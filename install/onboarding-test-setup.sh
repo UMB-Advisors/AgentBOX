@@ -1,62 +1,79 @@
 #!/usr/bin/env bash
-# AgentBOX WiFi-AP onboarding — one-shot setup. Run ON THE BOX as the box user.
+# AgentBOX WiFi-AP onboarding — ONE-SHOT test bring-up. Run ON THE BOX:
 #
-# Turns a box that has both repos cloned into a working onboarding-AP host:
-# installs the AP unit + sudoers + state dir, builds the wizard UI, syncs the
-# sidecar's Python deps, and starts the sidecar. Idempotent — safe to re-run.
+#     ~/AgentBOX/install/onboarding-test-setup.sh
 #
-# Assumes:  ~/AgentBOX           (monorepo, branch feat/onboarding-wifi-ap)
-#           ~/agentbox-sidecar   (sidecar,  branch feat/onboarding-oobe)
-# Override with MONO=... SIDE=... if cloned elsewhere.
+# It does EVERYTHING, no other commands needed:
+#   - self-updates both repos to the latest pushed code (no manual git pull)
+#   - installs Node 22, pnpm 9, uv as needed
+#   - builds the wizard UI + syncs sidecar deps
+#   - installs the AP unit + sudoers + state dir, starts the sidecar
+#   - clears state, takes WiFi offline, and reboots into AP mode
+#
+# After it reboots (~90s): join "AgentBOX-Setup-XXXX" on your phone and open
+# http://10.42.0.1:9200/onboarding. Requires internet while running (apt/npm/uv).
+# Assumes the two repos are cloned at ~/AgentBOX and ~/agentbox-sidecar.
 set -euo pipefail
 
 MONO="${MONO:-$HOME/AgentBOX}"
 SIDE="${SIDE:-$HOME/agentbox-sidecar}"
-log(){ printf '\n\033[1;36m[setup]\033[0m %s\n' "$*"; }
-die(){ printf '\n\033[1;31m[setup] %s\033[0m\n' "$*" >&2; exit 1; }
+MONO_BRANCH="feat/onboarding-wifi-ap"
+SIDE_BRANCH="feat/onboarding-oobe"
+log(){ printf '\n\033[1;36m[onboarding]\033[0m %s\n' "$*"; }
+die(){ printf '\n\033[1;31m[onboarding] ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
-[ -d "$MONO/provisioning" ] || die "missing $MONO — clone the monorepo first (git clone -b feat/onboarding-wifi-ap ...)"
-[ -d "$SIDE/web" ]          || die "missing $SIDE — clone the sidecar first (git clone -b feat/onboarding-oobe ...)"
+[ -d "$MONO/.git" ] || die "missing $MONO — clone the monorepo (branch $MONO_BRANCH) first"
+[ -d "$SIDE/web" ]  || die "missing $SIDE — clone the sidecar (branch $SIDE_BRANCH) first"
 
-# 1. uv — the sidecar's Python runtime
-if ! command -v uv >/dev/null && [ ! -x "$HOME/.local/bin/uv" ]; then
+# 0. Self-update to the latest pushed code, then re-exec the fresh script once.
+if [ -z "${AB_REEXEC:-}" ]; then
+  log "updating to latest code"
+  git -C "$MONO" fetch -q origin "$MONO_BRANCH" && git -C "$MONO" reset -q --hard "origin/$MONO_BRANCH" || log "WARN: monorepo update failed; using local copy"
+  git -C "$SIDE" fetch -q origin "$SIDE_BRANCH" && git -C "$SIDE" reset -q --hard "origin/$SIDE_BRANCH" || log "WARN: sidecar update failed; using local copy"
+  export AB_REEXEC=1
+  exec bash "$MONO/install/onboarding-test-setup.sh" "$@"
+fi
+
+# 1. Node >= 20 (Vite 7 dropped 18; apt ships 18, so pull Node 22 from NodeSource).
+node_major=0
+command -v node >/dev/null 2>&1 && node_major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
+if [ "${node_major:-0}" -lt 20 ]; then
+  log "installing Node.js 22"
+  sudo apt-get remove -y npm >/dev/null 2>&1 || true
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+fi
+
+# 2. pnpm 9 — pnpm 10/11 hard-error on un-approved dependency build scripts and
+#    won't run them non-interactively; pnpm 9 has no such gate. Kill any corepack
+#    shim so the pinned version is the one that runs.
+log "installing pnpm 9"
+sudo corepack disable >/dev/null 2>&1 || true
+sudo npm install -g pnpm@9 >/dev/null 2>&1
+hash -r 2>/dev/null || true
+pnpm_ver="$(pnpm --version 2>/dev/null || echo none)"
+case "$pnpm_ver" in
+  9.*) log "pnpm $pnpm_ver" ;;
+  *)   die "expected pnpm 9.x but got '$pnpm_ver' (which -a pnpm: $(which -a pnpm 2>/dev/null | tr '\n' ' '))" ;;
+esac
+
+# 3. uv — the sidecar's Python runtime
+if ! command -v uv >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/uv" ]; then
   log "installing uv"; curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 export PATH="$HOME/.local/bin:$PATH"
 
-# 2. Node >= 20.19 + pnpm — only needed to BUILD the wizard UI on the box.
-#    Vite 7 dropped Node 18, and apt ships 18, so pull Node 22 from NodeSource.
-node_major=0
-command -v node >/dev/null 2>&1 && node_major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
-if [ "${node_major:-0}" -lt 20 ]; then
-  log "installing Node.js 22 (Vite 7 needs >=20.19; apt ships 18)"
-  sudo apt-get remove -y npm 2>/dev/null || true
-  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-  sudo apt-get install -y nodejs
-fi
-# Force pnpm 9: pnpm 10/11 hard-error on un-approved dependency build scripts on
-# EVERY command (even rebuild), and won't run them non-interactively. pnpm 9 has
-# no such gate. Disable any corepack shim first so the pinned version wins.
-sudo corepack disable >/dev/null 2>&1 || true
-sudo npm install -g pnpm@9
-hash -r 2>/dev/null || true
+# 4. build the wizard UI (clean install so build scripts actually run)
+log "building wizard UI (this is the slow step)"
+( cd "$SIDE/web" && rm -rf node_modules && pnpm install && pnpm build )
+[ -d "$SIDE/web/dist" ] || die "build did not produce $SIDE/web/dist"
 
-# 3. build the wizard UI + sync sidecar deps
-log "building wizard UI (web/dist)"
-(
-  cd "$SIDE/web"
-  # Clean install so build scripts actually run (a cached node_modules makes pnpm
-  # skip them). With pnpm 9 there's no approval gate, so esbuild's native binary
-  # is built and `vite build` succeeds.
-  rm -rf node_modules
-  pnpm install
-  pnpm build
-)
-log "syncing sidecar Python deps (uv sync)"
+# 5. sidecar Python deps
+log "syncing sidecar deps (uv sync)"
 ( cd "$SIDE" && uv sync )
 
-# 4. system bits: AP script + unit + writable state dir + nmcli sudoers
-log "installing AP unit + state dir + sudoers"
+# 6. system bits: AP unit + writable state dir + nmcli sudoers
+log "installing AP unit + sudoers + state dir"
 sudo install -m0755 "$MONO/provisioning/35-onboarding-ap.sh"      /usr/local/sbin/agentbox-onboarding-ap
 sudo install -m0644 "$MONO/provisioning/35-onboarding-ap.service" /etc/systemd/system/agentbox-onboarding-ap.service
 sudo install -d -m0775 -o "$USER" -g "$USER" /var/lib/agentbox
@@ -66,26 +83,37 @@ sudo visudo -cf /etc/sudoers.d/agentbox-onboarding-nmcli >/dev/null || die "sudo
 sudo systemctl daemon-reload
 sudo systemctl enable agentbox-onboarding-ap.service >/dev/null
 
-# 5. sidecar user service (runs at boot via linger; binds per onboarding.env)
-log "installing + starting the sidecar service"
+# 7. sidecar user service (runs at boot via linger)
+log "installing + starting the sidecar"
 mkdir -p "$HOME/.config/systemd/user"
 cp "$SIDE/deploy/agentbox-sidecar.service" "$HOME/.config/systemd/user/"
-sudo loginctl enable-linger "$USER" 2>/dev/null || loginctl enable-linger "$USER" 2>/dev/null || true
+sudo loginctl enable-linger "$USER" >/dev/null 2>&1 || true
 systemctl --user daemon-reload
 systemctl --user enable --now agentbox-sidecar
-
 sleep 3
-log "sidecar health check:"; curl -fsS 127.0.0.1:9200/healthz && echo "  OK" || echo "  NOT answering (check: systemctl --user status agentbox-sidecar)"
-log "AP status:"; /usr/local/sbin/agentbox-onboarding-ap status 2>/dev/null || true
+curl -fsS 127.0.0.1:9200/healthz >/dev/null 2>&1 && log "sidecar health: OK" || log "WARN: sidecar not answering yet (systemctl --user status agentbox-sidecar)"
 
-cat <<EOF
+# 8. clear state + take WiFi offline so the AP fires on the next boot
+log "clearing onboarding state + disabling WiFi autoconnect"
+rm -f "$HOME/.hermes/onboarding.json"
+sudo rm -f /var/lib/agentbox/onboarding-complete /var/lib/agentbox/onboarding.env /var/lib/agentbox/wifi-scan.cache
+sudo nmcli connection delete agentbox-home >/dev/null 2>&1 || true
+nmcli -t -f NAME,TYPE connection show | awk -F: '$2=="802-11-wireless"{print $1}' | while read -r c; do
+  [ "$c" = "agentbox-onboarding-ap" ] && continue
+  sudo nmcli connection modify "$c" connection.autoconnect no >/dev/null 2>&1 || true
+done
 
-────────────────────────────────────────────────────────────
-Setup done. To run the test, take the box offline so the AP fires:
+# 9. reboot into AP mode
+cat <<'EOF'
 
-  $MONO/install/onboarding-test-reset.sh
-  sudo reboot
-
-Then on your phone: join AgentBOX-Setup-XXXX, open http://10.42.0.1:9200/onboarding
-────────────────────────────────────────────────────────────
+════════════════════════════════════════════════════════════
+ SETUP COMPLETE — rebooting in 15s to bring up the setup AP.
+ When the box is back (~90s):
+   1. Phone WiFi  ->  join  AgentBOX-Setup-XXXX   (open, no password)
+   2. Browser     ->  http://10.42.0.1:9200/onboarding
+   3. Pick your WiFi  ->  Finish & go online
+ Press Ctrl-C in the next 15s to cancel the reboot.
+════════════════════════════════════════════════════════════
 EOF
+sleep 15
+sudo reboot
