@@ -24,17 +24,21 @@ if ! command -v uv >/dev/null && [ ! -x "$HOME/.local/bin/uv" ]; then
 fi
 export PATH="$HOME/.local/bin:$PATH"
 
-# 2. Node + pnpm — only needed to BUILD the wizard UI on the box
-if ! command -v node >/dev/null 2>&1; then
-  log "installing Node.js + npm (to build the web UI)"
-  sudo apt-get update -y && sudo apt-get install -y nodejs npm
+# 2. Node >= 20.19 + pnpm — only needed to BUILD the wizard UI on the box.
+#    Vite 7 dropped Node 18, and apt ships 18, so pull Node 22 from NodeSource.
+node_major=0
+command -v node >/dev/null 2>&1 && node_major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
+if [ "${node_major:-0}" -lt 20 ]; then
+  log "installing Node.js 22 (Vite 7 needs >=20.19; apt ships 18)"
+  sudo apt-get remove -y npm 2>/dev/null || true
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+  sudo apt-get install -y nodejs
 fi
-corepack enable 2>/dev/null || sudo npm install -g pnpm
+command -v pnpm >/dev/null 2>&1 || sudo npm install -g pnpm@10
 
 # 3. build the wizard UI + sync sidecar deps
 log "building wizard UI (web/dist)"
-( cd "$SIDE/web" && { corepack pnpm install && corepack pnpm build; } 2>/dev/null \
-  || { pnpm install && pnpm build; } )
+( cd "$SIDE/web" && pnpm install && pnpm build )
 log "syncing sidecar Python deps (uv sync)"
 ( cd "$SIDE" && uv sync )
 
