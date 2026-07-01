@@ -101,6 +101,18 @@ sudo visudo -cf /etc/sudoers.d/agentbox-onboarding-nmcli >/dev/null || die "sudo
 sudo systemctl daemon-reload
 sudo systemctl enable agentbox-onboarding-ap.service >/dev/null
 
+# 6.5 at-rest mail-secret key — the box stores the pending mailbox creds
+#     encrypted (fully-operational-from-phone OOBE), so this must exist. Generate
+#     once into ~/.hermes/.env (sourced by the sidecar unit). 32 bytes = 64 hex.
+ENVF="$HOME/.hermes/.env"
+mkdir -p "$HOME/.hermes"; touch "$ENVF"; chmod 600 "$ENVF"
+if grep -q '^HERMES_MAIL_SECRET_KEY=' "$ENVF" 2>/dev/null; then
+  log "HERMES_MAIL_SECRET_KEY already set"
+else
+  printf 'HERMES_MAIL_SECRET_KEY=%s\n' "$(openssl rand -hex 32)" >> "$ENVF"
+  log "generated HERMES_MAIL_SECRET_KEY in $ENVF"
+fi
+
 # 7. sidecar user service (runs at boot via linger)
 log "installing + starting the sidecar"
 mkdir -p "$HOME/.config/systemd/user"
