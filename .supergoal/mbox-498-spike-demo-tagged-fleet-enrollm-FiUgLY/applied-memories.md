@@ -1,0 +1,2 @@
+- agentbox2-access — box reachable `ssh -f -N agentbox2` (user UMB); sidecar :9200, hermes behind /hermes/; Tailscale Serve already proxies :9120 tailnet-only; PUBLIC Funnel on :443 -> 127.0.0.1:8088 (do not touch). Changes: phase specs use these exact endpoints.
+- agentbox1-access — agentbox1 repurposed (jenny-ai); NOT a target for this spike. Changes: all box work targets agentbox2 only.
