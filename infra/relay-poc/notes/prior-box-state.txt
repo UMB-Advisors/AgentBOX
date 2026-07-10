@@ -1,0 +1,7 @@
+--- status tags ---
+Self.Tags: None
+Self.ID: n1VFZHSMLA11CNTRL
+--- serve status ---
+No serve config
+--- prefs (non-secret) ---
+{'ControlURL': 'https://controlplane.tailscale.com', 'RouteAll': False, 'ExitNodeID': '', 'WantRunning': True, 'ShieldsUp': False, 'RunSSH': True, 'AdvertiseTags': None, 'Hostname': 'agentboxhonduras'}
