@@ -33,6 +33,8 @@ SCAN_CACHE="${STATE_DIR}/wifi-scan.cache"         # nearby networks captured BEF
 HOTSPOT_CON="agentbox-onboarding-ap"              # NM connection id we own
 AP_IP="10.42.0.1"                                  # NM `shared` method gateway
 SIDECAR_UNIT="agentbox-sidecar.service"           # user unit serving the wizard on :9200
+SIDECAR_PORT="9200"                                # sidecar HTTP port (captive :80 redirect target)
+CAPTIVE_DNS_CONF="/etc/NetworkManager/dnsmasq-shared.d/agentbox-captive.conf"  # DNS hijack drop-in (G15)
 # Open AP (no passphrase) when set — simplest join, weakest security. The auth
 # model is still an open product decision (design doc §6); default is WPA2.
 AP_OPEN="${AGENTBOX_AP_OPEN:-0}"
@@ -176,6 +178,11 @@ cmd_up(){
   cache_scan
 
   local ssid; ssid="$(ap_ssid)"
+
+  # Arm the captive portal BEFORE bring-up so NM's shared dnsmasq reads the DNS
+  # drop-in on start (covers both the reuse and create paths below).
+  captive_up "$wlan"
+
   # Reuse our connection if it already exists; otherwise create it.
   if nmcli -t -f NAME connection show 2>/dev/null | grep -qx "$HOTSPOT_CON"; then
     log "hotspot connection '${HOTSPOT_CON}' exists — bringing it up"
@@ -204,13 +211,48 @@ cmd_up(){
     on_ap_up "$mode" "$ssid" "$note"
   else
     log "ERROR: failed to bring up the AP on ${wlan}. Check 'nmcli connection up ${HOTSPOT_CON}'."
+    captive_down   # don't leave the DNS hijack / :80 redirect armed on a failed bring-up
     write_state none "$ssid" "ap-bringup-failed"; exit 1
+  fi
+}
+
+# --- Captive portal (G15): make a joining phone's OS auto-open the wizard ------
+# NM's `shared` mode runs its own dnsmasq that reads dnsmasq-shared.d/*.conf, so a
+# drop-in resolving EVERY name to the AP gateway makes the phone's OS connectivity
+# probe land on the box; an iptables :80 -> :SIDECAR_PORT redirect gets it to the
+# sidecar, which answers probe paths with a 302 to /onboarding (features/captive.py).
+# Net: the phone shows "Sign in to network" and opens the wizard — no typing an IP.
+# Must run BEFORE `nmcli connection up` so the shared dnsmasq reads the drop-in.
+captive_up(){
+  local wlan="$1"
+  mkdir -p "$(dirname "$CAPTIVE_DNS_CONF")" 2>/dev/null || true
+  printf 'address=/#/%s\n' "$AP_IP" > "$CAPTIVE_DNS_CONF" 2>/dev/null \
+    || log "WARN: could not write captive DNS drop-in $CAPTIVE_DNS_CONF"
+  if command -v iptables >/dev/null 2>&1 && [ -n "$wlan" ]; then
+    iptables -t nat -C PREROUTING -i "$wlan" -p tcp --dport 80 -j REDIRECT --to-ports "$SIDECAR_PORT" 2>/dev/null \
+      || iptables -t nat -A PREROUTING -i "$wlan" -p tcp --dport 80 -j REDIRECT --to-ports "$SIDECAR_PORT" 2>/dev/null \
+      || log "WARN: could not add :80->:${SIDECAR_PORT} captive redirect"
+  else
+    log "WARN: iptables/wlan unavailable — captive :80 redirect skipped (wizard still at ${AP_IP}:${SIDECAR_PORT})"
+  fi
+  log "captive portal armed (DNS->${AP_IP}, :80->:${SIDECAR_PORT})"
+}
+
+# Idempotent teardown: remove the DNS drop-in and every copy of our :80 redirect.
+captive_down(){
+  rm -f "$CAPTIVE_DNS_CONF" 2>/dev/null || true
+  local wlan; wlan="$(wlan_iface)"
+  if command -v iptables >/dev/null 2>&1 && [ -n "$wlan" ]; then
+    while iptables -t nat -C PREROUTING -i "$wlan" -p tcp --dport 80 -j REDIRECT --to-ports "$SIDECAR_PORT" 2>/dev/null; do
+      iptables -t nat -D PREROUTING -i "$wlan" -p tcp --dport 80 -j REDIRECT --to-ports "$SIDECAR_PORT" 2>/dev/null || break
+    done
   fi
 }
 
 cmd_down(){
   nmcli connection down "$HOTSPOT_CON" >/dev/null 2>&1 || true
   nmcli connection delete "$HOTSPOT_CON" >/dev/null 2>&1 || true
+  captive_down
   rm -f "$ENV_FILE" 2>/dev/null || true   # revert sidecar bind override
   write_state none "" "torn-down"
   log "AP '${HOTSPOT_CON}' torn down."
