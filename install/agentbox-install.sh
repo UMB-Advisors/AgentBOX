@@ -119,6 +119,54 @@ else
   log "  WARN: tailscale not installed — install + enroll with --ssh (see docs/runbook/provisioning.v0.1.0.md §2)"
 fi
 
+# ── STAGE 0.3: onboarding WiFi AP — first-run setup hotspot ────────────────
+# A freshly-flashed box that is not yet on a network broadcasts its own WiFi AP
+# so the operator can reach the sidecar wizard (:9200) and pick a WiFi network.
+# The radio (RTL8822CE) can't do AP+STA concurrently, so the bring-up script
+# branches: ethernet present -> AP stays up; else AP is config-only and the
+# sidecar performs the WiFi join + reconnect handoff. Self-disables at stage=live.
+# Design: docs/onboarding-wifi-ap-provisioning.v0.1.0.md
+log "STAGE 0.3 — onboarding WiFi AP (setup hotspot)"
+if command -v nmcli >/dev/null; then
+  sudo install -m 0755 "$REPO/provisioning/35-onboarding-ap.sh" /usr/local/sbin/agentbox-onboarding-ap
+  sudo install -m 0644 "$REPO/provisioning/35-onboarding-ap.service" /etc/systemd/system/agentbox-onboarding-ap.service
+  # Owned by the box/sidecar user so the (non-root) sidecar can write the
+  # onboarding-complete marker + clear the bind-override env at stage=live.
+  # Root (the AP unit) can still write here regardless of owner.
+  sudo install -d -m 0775 -o "$USER" -g "$USER" /var/lib/agentbox
+  # The sidecar runs as a non-root lingering user service; NetworkManager denies
+  # `nmcli device wifi connect` to a non-active session ("Insufficient
+  # privileges"). Grant just nmcli to the box user so the onboarding WiFi join
+  # works. Validated with visudo before install.
+  _nmcli_path="$(command -v nmcli || echo /usr/bin/nmcli)"
+  printf '%s ALL=(root) NOPASSWD: %s\n' "$USER" "$_nmcli_path" > /tmp/agentbox-nmcli.sudoers
+  if sudo visudo -cf /tmp/agentbox-nmcli.sudoers >/dev/null 2>&1; then
+    sudo install -m 0440 /tmp/agentbox-nmcli.sudoers /etc/sudoers.d/agentbox-onboarding-nmcli
+    log "  sudoers: $USER may run nmcli as root (onboarding WiFi join)"
+  else
+    log "  WARN: nmcli sudoers rule failed validation — WiFi join will be denied"
+  fi
+  rm -f /tmp/agentbox-nmcli.sudoers
+  # mDNS so the phone can find the box at <hostname>.local after the setup AP
+  # drops on a single-radio (mode B) join — the reconnect recovery path (G8).
+  if ! command -v avahi-daemon >/dev/null 2>&1; then
+    sudo apt-get install -y avahi-daemon >/dev/null 2>&1 \
+      && log "  installed avahi-daemon (mDNS / <hostname>.local)" \
+      || log "  WARN: could not install avahi-daemon — mode-B reconnect via .local won't resolve"
+  fi
+  sudo systemctl enable --now avahi-daemon >/dev/null 2>&1 \
+    && log "  avahi-daemon enabled — box reachable at $(hostname).local" \
+    || log "  WARN: avahi-daemon not enabled — mode-B reconnect via .local won't resolve"
+  sudo systemctl daemon-reload
+  if sudo systemctl enable agentbox-onboarding-ap.service >/dev/null 2>&1; then
+    log "  agentbox-onboarding-ap.service installed + enabled (fires on next boot if onboarding incomplete)"
+  else
+    log "  WARN: could not enable agentbox-onboarding-ap.service — enable manually"
+  fi
+else
+  log "  WARN: nmcli not found — skipping onboarding AP (NetworkManager required)"
+fi
+
 # ── STAGE 0.5: MailBOX stack (VENDORED in this monorepo; sync into place) ──
 # AgentBOX absorbs the MailBOX stack — it lives at $REPO/mailbox (no external
 # clone). Sync the source-controlled stack into $STACK_DIR (the runtime
