@@ -14,12 +14,12 @@ Turns a working demo into the spike's deliverable: hardened enough to leave runn
 ## Work
 
 **Sub-passes (evidence per pass):**
-1. **Security** — grep full branch diff for the token, any hex64, TS_API_KEY (0 hits); verify 401 on bad token, 413 on >10MB body, 404/401 on unknown boxid, path `/b/agentbox2/../` cannot escape; confirm relay serves only https/wss (Railway edge).
+1. **Security** — grep full branch diff for the token, any hex64, TS_API_KEY (0 hits); verify 401 on bad token, 413 on >10MB body, 404/401 on unknown boxid, path `/b/agentboxhonduras/../` cannot escape; confirm relay serves only https/wss (Railway edge).
 2. **States** — stop box client: public URL → clean 502/503, healthz stays 200, relay doesn't crash; restart client.
 3. **Edges** — reconnect backoff verified capped (no storm in logs); concurrent requests (5 parallel fetches) all 200.
 4. **Idle survival** — wait ≥10 min (ScheduleWakeup if needed), then e2e probe → 200 (Railway WSS lifecycle proof).
 5. **Diff review** — `bash <run-root>/repo-state.sh added-lines <baseline>` scanned for console.log debug leftovers (except intentional structured logs), TODO/FIXME from this run.
-6. **Regression sweep** — `bash -n install/agentbox-install.sh`; fresh `ssh agentbox2 true`; :9120 Serve 200; `tailscale serve status` unchanged; Funnel untouched.
+6. **Regression sweep** — `bash -n install/agentbox-install.sh`; fresh `ssh agentboxhonduras true`; `tailscale serve status` unchanged vs the Phase-1 capture (if :9120 Serve was live, still 200; if none, none appeared); sidecar `:9200/healthz` still 200.
 
 **Deliverables:**
 - `docs/spikes/mbox-498-relay-poc.md`: what was proven (fleet plane: tag:box + surviving vendor SSH; consumer plane: no-Tailscale phone→box over public internet), architecture diagram (ASCII ok), observed latency, Railway cost note, explicit **NOT production posture** list (single shared token, we're in the data path unencrypted at relay, no rate limiting), next steps (relay.thumbbox.io DNS, per-phone tokens, E2E encryption or libtailscale migration), and the leave-up/teardown decision (default: leave running with token, note monthly cost).
@@ -36,7 +36,7 @@ Turns a working demo into the spike's deliverable: hardened enough to leave runn
 - Linear comment posted on MBOX-498 (comment id in transcript)
 - Branch has ≥2 atomic commits, working tree clean, branch NOT pushed
 - bash -n install/agentbox-install.sh exit 0
-- Fresh ssh agentbox2 true exit 0 AND :9120 healthz 200 (fleet plane still healthy at run end)
+- Fresh ssh agentboxhonduras true exit 0 AND sidecar :9200/healthz 200; Serve/Funnel unchanged vs Phase-1 capture (fleet plane still healthy at run end)
 
 ## Mandatory commands (run each, surface last ~10 lines + exit code)
 

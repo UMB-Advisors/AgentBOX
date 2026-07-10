@@ -1,6 +1,6 @@
 # Roadmap: MBOX-498 spike demo — tagged fleet enrollment + cloud relay PoC
 
-**Task:** Prove the recommended phone↔box architecture: enroll agentbox2 as a tagged fleet device with vendor access surviving, and demo a phone/browser with no Tailscale reaching Hermes off-LAN via a minimal authenticated cloud relay; report go/no-go on MBOX-498.
+**Task:** Prove the recommended phone↔box architecture: enroll agentboxhonduras as a tagged fleet device with vendor access surviving, and demo a phone/browser with no Tailscale reaching Hermes off-LAN via a minimal authenticated cloud relay; report go/no-go on MBOX-498.
 **Type:** brownfield, infra, spike
 **Created:** 2026-07-03
 **Total phases:** 4
@@ -10,7 +10,7 @@
 - **Stack:** bash appliance monorepo (no package manager at root); relay PoC = Node 20+ with `ws` in `infra/relay-poc/`
 - **Package manager:** npm (relay dir only)
 - **Build / test / lint commands:** `bash -n install/agentbox-install.sh`; `node --check` on relay files; `node --test infra/relay-poc/`
-- **Risky areas:** re-tagging agentbox2 (lockout risk), public exposure of Hermes UI via relay
+- **Risky areas:** re-tagging agentboxhonduras (lockout risk), public exposure of Hermes UI via relay
 
 ## Assumptions
 
@@ -19,7 +19,7 @@ Non-blocking decisions recorded here so we can proceed without round-trips. If a
 - **TS admin access = API access token** in env `TS_API_KEY` at dispatch (create at login.tailscale.com → Settings → Keys → API access token). Pre-flight checks for it.
 - **Relay URL = Railway default `*.up.railway.app`** for the PoC; `relay.thumbbox.io` DNS is a documented 5-minute follow-up (DNS host for thumbbox.io not confirmed).
 - **Additive grants only** on the personal tailnet; full default-deny is documented for the future staqs org tailnet, not applied here.
-- Tag name `tag:box`, ownable by `autogroup:admin`; agentbox2 stays on tail377a9a for the spike.
+- Tag name `tag:box`, ownable by `autogroup:admin`; agentboxhonduras stays on tail377a9a for the spike.
 - Relay code committed to branch `feat/mbox-498-relay-poc`; **not pushed** to origin.
 - Phone-on-cellular check is manual (Eric); the automated proof is a public-internet fetch of the relay URL with relay logs showing tunnel forwarding.
 
@@ -33,7 +33,7 @@ Non-blocking decisions recorded here so we can proceed without round-trips. If a
 
 | # | Phase | Depends on | Deliverable |
 |---|-------|------------|-------------|
-| 1 | Enroll box as tagged fleet device | — | agentbox2 shows `tag:box`; vendor SSH survives; grants in policy |
+| 1 | Enroll box as tagged fleet device | — | agentboxhonduras shows `tag:box`; vendor SSH survives; grants in policy |
 | 2 | Build and deploy relay | — | `infra/relay-poc/server.js` live on Railway, healthz 200, auth enforced |
 | 3 | Box tunnel client + end-to-end | 2 | Hermes UI served through relay URL over public internet |
 | 4 | Polish, Harden & Go/No-Go | 1,2,3 | Security sweep, evidence pack, MBOX-498 comment, committed branch |
@@ -46,26 +46,25 @@ Non-blocking decisions recorded here so we can proceed without round-trips. If a
 
 **Deliverables:**
 - Tailnet policy updated: `tag:box` tagOwner, ssh rule + grant giving vendor devices access to `tag:box` (additive)
-- agentbox2 re-enrolled with `tag:box` via scoped auth key
+- agentboxhonduras re-enrolled with `tag:box` via scoped auth key
 - `infra/relay-poc/notes/phase1-tailscale.md` — what changed in policy, rollback procedure, prior state capture
 
 **Acceptance criteria:**
 - [ ] Policy file (via API) contains `tag:box` in tagOwners and an ssh/grant rule scoped to it; prior policy saved to notes dir
 - [ ] Scoped auth key created (tag:box, expiring, non-reusable); key value NOT written to any committed file
 - [ ] `tailscale status --json` on box shows `"tag:box"` in Tags
-- [ ] Fresh `ssh agentbox2 true` exits 0 AFTER re-tag (new connection, not the safety session)
-- [ ] Tailnet-only Serve still works: `https://agentbox2.tail377a9a.ts.net:9120/healthz` returns 200
-- [ ] Funnel :443 config untouched (serve status unchanged vs pre-capture)
+- [ ] Fresh `ssh agentboxhonduras true` exits 0 AFTER re-tag (new connection, not the safety session)
+- [ ] Box tailnet reachability UNCHANGED vs the Phase-1 pre-capture: `tailscale serve status` (Serve + Funnel) is identical before/after the re-tag. If Serve on :9120 was live pre-capture, `https://agentboxhonduras.tail377a9a.ts.net:9120/healthz` still returns 200; if agentboxhonduras had no Serve/Funnel, none appears (no-regression is the bar). *(Retarget: agentboxhonduras, unlike agentbox2, may have no Serve/Funnel — capture-then-compare; don't assume :9120 is live.)*
 
 **Mandatory commands:**
-- `[ -n "$TS_API_KEY" ] && echo TS_API_KEY-present`
-- `ssh -o BatchMode=yes agentbox2 'tailscale status --json | head -40'` (surface Tags line)
-- `ssh -o BatchMode=yes agentbox2 true; echo exit=$?`
+- `set -a; . ~/.config/relay-poc/secrets.env 2>/dev/null; set +a; [ -n "$TS_API_KEY" ] && echo TS_API_KEY-present`
+- `ssh -o BatchMode=yes agentboxhonduras 'tailscale status --json | head -40'` (surface Tags line)
+- `ssh -o BatchMode=yes agentboxhonduras true; echo exit=$?`
 
 **Evidence required:**
 - Tags line from `tailscale status --json` showing tag:box
 - Fresh SSH exit code 0 post-re-tag
-- 200 from :9120 healthz post-re-tag
+- `tailscale serve status` before/after diff (unchanged); sidecar `:9200/healthz` 200 post-re-tag; :9120 healthz 200 **only if** Serve was live in the pre-capture
 
 **Dependencies:** none
 
@@ -85,7 +84,7 @@ Non-blocking decisions recorded here so we can proceed without round-trips. If a
 - [ ] `node --check` passes on server.js and test files
 - [ ] `node --test infra/relay-poc/` passes locally (tunnel roundtrip, bad-token rejected, unknown box 502/404)
 - [ ] Railway deploy succeeds; `GET /healthz` on the public URL returns 200
-- [ ] `GET /b/agentbox2/...` without valid token returns 401/403
+- [ ] `GET /b/agentboxhonduras/...` without valid token returns 401/403
 - [ ] WSS `/tunnel` connection without valid token is rejected (shown in test or live probe)
 - [ ] No secrets in the repo diff (token only in Railway env + box-side env file)
 
@@ -109,19 +108,19 @@ Non-blocking decisions recorded here so we can proceed without round-trips. If a
 
 **Deliverables:**
 - `infra/relay-poc/box-client.js` — outbound WSS to relay, Bearer token, forwards to `127.0.0.1:9200`, 25s heartbeat, reconnect w/ backoff
-- Client deployed on agentbox2 (systemd user unit `relay-poc.service` or documented nohup), token in `~/.config/relay-poc/env` (mode 600)
+- Client deployed on agentboxhonduras (systemd user unit `relay-poc.service` or documented nohup), token in `~/.config/relay-poc/env` (mode 600)
 - e2e proof: Hermes UI fetched through the relay public URL
 
 **Acceptance criteria:**
 - [ ] Client connects and stays connected ≥2 min (relay logs show single stable tunnel + heartbeats)
-- [ ] `GET <relay>/b/agentbox2/?key=<token>` over public internet returns 200 with `<title>AgentBOX — Dashboard</title>`
-- [ ] `<relay>/b/agentbox2/hermes/` returns 200 `Hermes Agent - Dashboard`
+- [ ] `GET <relay>/b/agentboxhonduras/?key=<token>` over public internet returns 200 with `<title>AgentBOX — Dashboard</title>`
+- [ ] `<relay>/b/agentboxhonduras/hermes/` returns 200 `Hermes Agent - Dashboard`
 - [ ] Wrong/missing token on the same paths → 401/403
 - [ ] Kill client → requests fail cleanly (502/503) → client auto-reconnects within 30s and requests succeed again
 - [ ] Box services undisturbed: local `:9200/healthz` still 200
 
 **Mandatory commands:**
-- `ssh agentbox2 'systemctl --user status relay-poc --no-pager | head -5'` (or process check)
+- `ssh agentboxhonduras 'systemctl --user status relay-poc --no-pager | head -5'` (or process check)
 - ctx_execute fetch of the two relay URLs (200 + titles) and the 401 probe
 
 **Evidence required:**
@@ -137,11 +136,11 @@ Non-blocking decisions recorded here so we can proceed without round-trips. If a
 **Why:** Catch what shipping-focused phases missed, and produce the spike's actual deliverable: the written verdict on MBOX-498.
 
 **Sub-passes (each must produce evidence):**
-- [ ] **Security** — grep repo diff for tokens/secrets (none committed); confirm relay rejects: bad token, oversized body (>10MB), non-agentbox2 boxid; HTTPS/WSS only (no ws:// or http:// endpoints served)
+- [ ] **Security** — grep repo diff for tokens/secrets (none committed); confirm relay rejects: bad token, oversized body (>10MB), non-agentboxhonduras boxid; HTTPS/WSS only (no ws:// or http:// endpoints served)
 - [ ] **States** — relay behavior with box offline (clean 502/503 + no crash); healthz still 200 during box-offline
-- [ ] **Edges** — path traversal attempt `/b/agentbox2/../` handled; websocket reconnect storm capped by backoff
+- [ ] **Edges** — path traversal attempt `/b/agentboxhonduras/../` handled; websocket reconnect storm capped by backoff
 - [ ] **Diff review** — `git diff --stat` + added-lines scan for debug prints/TODOs (repo-state.sh)
-- [ ] **Regression sweep** — `bash -n install/agentbox-install.sh` still passes; box's :9120 Serve and :443 Funnel unchanged; fresh `ssh agentbox2 true` exit 0
+- [ ] **Regression sweep** — `bash -n install/agentbox-install.sh` still passes; box's Serve/Funnel config unchanged vs the Phase-1 pre-capture (whatever it was); fresh `ssh agentboxhonduras true` exit 0; sidecar `:9200/healthz` still 200
 - [ ] **Idle survival** — after ≥10 min idle, relay URL still serves (Railway WSS lifecycle check)
 
 **Deliverables:**

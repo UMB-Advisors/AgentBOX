@@ -4,6 +4,17 @@ This file is read by the executing agent at the start of the single `/goal` sess
 
 All paths below are rooted at this run's artifact directory (`.supergoal/mbox-498-spike-demo-tagged-fleet-enrollm-FiUgLY`) — the concrete namespaced path is baked in when this file is copied at Stage 7, so two runs in the same working tree read and write entirely separate artifacts.
 
+## HOST ADAPTATION — READ FIRST (added 2026-07-09)
+
+**This run executes on Claude Code, not the Codex harness the phase specs were authored for.** The specs' tool directives are written for that other harness and are WRONG here. Apply these substitutions globally, overriding any conflicting line in a phase spec:
+
+- **HTTP probes / Tailscale API calls:** the specs say "curl is BLOCKED, use `ctx_execute`/`ctx_fetch_and_index`." **The opposite is true here:** `ctx_execute`/`ctx_fetch_and_index` **do not exist** in this session; **`curl` works** (verified). Use Bash `curl` for every probe and every Tailscale API call. The `WebFetch` tool is also available for public-URL GETs (it fails on authenticated/loopback URLs — use `curl` for those). Ignore every "curl is blocked" / "WebFetch blocked" / "use ctx_execute" note.
+- **`TS_API_KEY` lives in a FILE, not the env.** It is at `~/.config/relay-poc/secrets.env` (kept out of the repo for security). Each Bash tool call is a fresh shell, so **prepend this to every command that needs the key** (the pre-flight check and every Tailscale API call): `set -a; . ~/.config/relay-poc/secrets.env 2>/dev/null; set +a;`. Do NOT rely on `$TS_API_KEY` being exported in the session.
+- **Tailscale API with curl:** `curl -s -H "Authorization: Bearer $TS_API_KEY" https://api.tailscale.com/api/v2/tailnet/-/acl` (GET to capture; POST with `-X POST -H 'Content-Type: application/hujson' --data @<file>` to update). Never echo the token; never write it to a committed file.
+- **Linear MCP may be ABSENT** (the `linear-staqs` MCP was not connected). For Phase 4's MBOX-498 comment: if the Linear tools aren't available, do NOT FAILURE_HANDOFF — instead write the comment to `<run-root>/mbox-498-comment.md` and print a note that it's paste-ready for a human. That satisfies the deliverable's intent.
+- **Playwright MCP** is not assumed present — the automated proof is a `curl`/`WebFetch` of the public relay URL showing status + title; the phone-on-cellular check is the human's manual confirmation.
+- **Target box is `agentboxhonduras`** (user `carlos`), retargeted from agentbox2 — physical console available for lockout recovery. Serve/Funnel checks are capture-then-compare (the box may have no `:9120` Serve at all); the hard box-health check is sidecar `:9200/healthz` == 200.
+
 ## The loop
 
 Repeat until `SUPERGOAL_RUN_COMPLETE` is printed:
