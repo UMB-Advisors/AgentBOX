@@ -53,6 +53,12 @@ the auth cookie to `Path=/`, so assets resolve and the SPA renders. **User URL b
 For production multi-box, give each box its own service/subdomain (root-mount each). Leave
 `SINGLE_BOX` unset for the multi-box `/b/<boxid>/*` mode (fine for APIs, breaks root-absolute SPAs).
 
+**Sessions & logout.** A valid `?key=` sets an HttpOnly session cookie so you don't re-paste the
+token every request (it clears when the browser fully closes). To end a session sooner, visit
+`<cookiePath>/logout` (`/logout` in single-box mode) — it clears the cookie and shows a confirmation;
+the next unauthenticated request is 401. The relay also injects a small fixed-position **Log out**
+link into forwarded HTML pages so it's reachable from the dashboard itself.
+
 ## Box client — Phase 3
 `~/.config/relay-poc/env` on the box (mode 600):
 ```

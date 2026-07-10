@@ -24,7 +24,7 @@ before(async () => {
       return;
     }
     res.writeHead(200, { "content-type": "text/html" });
-    res.end(`<title>AgentBOX — Dashboard</title> ${req.method} ${req.url}`);
+    res.end(`<!doctype html><title>AgentBOX — Dashboard</title><body><div id="root"></div> ${req.method} ${req.url}</body>`);
   });
   await new Promise((r) => origin.listen(0, "127.0.0.1", r));
   originPort = origin.address().port;
@@ -121,6 +121,15 @@ test("single-box root-mount: root-absolute asset resolves (SPA renders, not blan
     assert.match(red.headers.get("set-cookie"), /Path=\/(;|$)/);
     // relay health moved off "/healthz" so the box owns it
     assert.equal((await fetch(`http://127.0.0.1:${p2}/__relay/health`)).status, 200);
+    // a "Log out" link is injected into the HTML so it's reachable from the UI
+    const shell2 = await (await fetch(`http://127.0.0.1:${p2}/`, { headers: auth, redirect: "manual" })).text();
+    assert.match(shell2, /href="\/logout"/);
+    assert.match(shell2, /Log out<\/a>/);
+    // /logout clears the cookie (Max-Age=0) without requiring auth
+    const lo = await fetch(`http://127.0.0.1:${p2}/logout`, { redirect: "manual" });
+    assert.equal(lo.status, 200);
+    assert.match(lo.headers.get("set-cookie"), /relay_rootbox=;.*Max-Age=0/i);
+    assert.match(await lo.text(), /Signed out/);
   } finally {
     try { c2.ws.terminate(); } catch { /* noop */ }
     await r2.close();

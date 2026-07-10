@@ -23,6 +23,27 @@ const HOP_BY_HOP = new Set([
   "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
 ]);
 
+// Shown by GET <cookiePath>/logout after the auth cookie is cleared.
+const LOGOUT_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">`
+  + `<meta name="viewport" content="width=device-width,initial-scale=1"><title>Signed out — AgentBOX</title>`
+  + `<style>body{margin:0;height:100vh;display:grid;place-items:center;background:#0b0d10;color:#e6e9ef;`
+  + `font-family:system-ui,-apple-system,sans-serif}.card{text-align:center;max-width:22rem;padding:2rem}`
+  + `h1{font-size:1.3rem;margin:0 0 .6rem}p{opacity:.72;line-height:1.55;font-size:.95rem}`
+  + `code{background:#1b1f27;padding:.1rem .35rem;border-radius:.3rem}</style></head><body><div class="card">`
+  + `<h1>Signed out</h1><p>You've been logged out of this AgentBOX. Reopen your access link `
+  + `(the one ending in <code>?key=…</code>) to sign back in.</p></div></body></html>`;
+
+// A small fixed-position "Log out" link injected into forwarded HTML pages.
+const logoutLink = (href) =>
+  `<a href="${href}" style="position:fixed;bottom:14px;right:14px;z-index:2147483647;`
+  + `font:600 12px/1 system-ui,-apple-system,sans-serif;background:#111418;color:#fff;padding:8px 12px;`
+  + `border-radius:9px;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.4);opacity:.9">Log out</a>`;
+
+const headerValue = (headers, name) => {
+  const hit = Object.entries(headers || {}).find(([k]) => k.toLowerCase() === name);
+  return hit ? hit[1] : "";
+};
+
 function parseTokens(str) {
   const out = {};
   for (const pair of (str || "").split(",")) {
@@ -140,10 +161,23 @@ export function createRelay({ tokens, singleBox = null }) {
       cookiePath = `/b/${boxid}`;
     }
 
+    const cookieName = `relay_${boxid}`;
+    const logoutHref = singleBox ? "/logout" : `/b/${boxid}/logout`;
+
+    // Logout — clear the auth cookie. No auth required (you're dropping your own
+    // credential); friendly confirmation page.
+    if (subpath === "/logout") {
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "set-cookie": `${cookieName}=; HttpOnly; SameSite=Lax; Path=${cookiePath}; Max-Age=0`,
+      });
+      return res.end(LOGOUT_PAGE);
+    }
+
     const expected = tokens[boxid];
     if (expected === undefined) return send(404, { error: "unknown_box" }); // unknown box id
 
-    const cookieName = `relay_${boxid}`;
     const provided =
       url.searchParams.get("key") ||
       parseCookies(req.headers.cookie)[cookieName] ||
@@ -178,8 +212,14 @@ export function createRelay({ tokens, singleBox = null }) {
       headers: stripHopByHop(req.headers),
       body,
     });
+    // Inject a "Log out" link into HTML pages so it's reachable from the UI.
+    // React mounts into #root; a sibling <a> before </body> survives its renders.
+    let outBody = r.body;
+    if (r.status === 200 && /text\/html/i.test(headerValue(r.headers, "content-type")) && outBody.includes("</body>")) {
+      outBody = Buffer.from(outBody.toString("utf8").replace("</body>", logoutLink(logoutHref) + "</body>"), "utf8");
+    }
     res.writeHead(r.status, stripHopByHop(r.headers));
-    res.end(r.body);
+    res.end(outBody);
   });
 
   // WSS /tunnel — box side. Auth at the upgrade so a bad token never opens.
