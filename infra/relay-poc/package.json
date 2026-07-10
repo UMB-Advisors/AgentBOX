@@ -1,0 +1,14 @@
+{
+  "name": "relay-poc",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MBOX-498 authenticated WSS relay PoC — public HTTPS ↔ box outbound tunnel (consumer plane)",
+  "engines": { "node": ">=20" },
+  "dependencies": { "ws": "^8.18.0" },
+  "scripts": {
+    "start": "node server.js",
+    "client": "node box-client.js",
+    "test": "node --test"
+  }
+}
