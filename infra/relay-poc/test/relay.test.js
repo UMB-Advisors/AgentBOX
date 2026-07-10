@@ -93,6 +93,40 @@ test("healthz reports the connected box", async () => {
   assert.ok(j.boxes.includes("agentboxhonduras"));
 });
 
+test("single-box root-mount: root-absolute asset resolves (SPA renders, not blank)", async () => {
+  const SB = "c".repeat(64);
+  const r2 = createRelay({ tokens: { rootbox: SB }, singleBox: "rootbox" });
+  await new Promise((r) => r2.server.listen(0, "127.0.0.1", r));
+  const p2 = r2.server.address().port;
+  const c2 = await new Promise((resolve, reject) => {
+    const cl = connect({
+      relayUrl: `ws://127.0.0.1:${p2}`, boxId: "rootbox", token: SB,
+      origin: `http://127.0.0.1:${originPort}`, onOpen: () => resolve(cl),
+    });
+    cl.ws.on("error", reject);
+  });
+  try {
+    const auth = { authorization: `Bearer ${SB}` };
+    // shell at root
+    const shell = await fetch(`http://127.0.0.1:${p2}/`, { headers: auth, redirect: "manual" });
+    assert.equal(shell.status, 200);
+    assert.match(await shell.text(), /AgentBOX — Dashboard/);
+    // the failure mode we shipped: root-absolute asset must resolve THROUGH the relay
+    const asset = await fetch(`http://127.0.0.1:${p2}/assets/index-abc.js`, { headers: auth, redirect: "manual" });
+    assert.equal(asset.status, 200);
+    assert.match(await asset.text(), /\/assets\/index-abc\.js/);   // full path forwarded to the box
+    // ?key= must scope the cookie to Path=/ so /assets/* is authorized in a browser
+    const red = await fetch(`http://127.0.0.1:${p2}/?key=${SB}`, { redirect: "manual" });
+    assert.equal(red.status, 302);
+    assert.match(red.headers.get("set-cookie"), /Path=\/(;|$)/);
+    // relay health moved off "/healthz" so the box owns it
+    assert.equal((await fetch(`http://127.0.0.1:${p2}/__relay/health`)).status, 200);
+  } finally {
+    try { c2.ws.terminate(); } catch { /* noop */ }
+    await r2.close();
+  }
+});
+
 test("WSS /tunnel with bad token is rejected (never opens)", async () => {
   const result = await new Promise((resolve) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/tunnel`, {

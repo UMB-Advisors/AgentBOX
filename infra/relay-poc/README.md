@@ -36,11 +36,22 @@ node --test                    # all green, no network needed
 railway login                  # your account
 railway init                   # project: mbox-498-relay-poc
 railway variables set BOX_TOKENS="agentboxhonduras:$(openssl rand -hex 32)"
+railway variables set SINGLE_BOX="agentboxhonduras"   # root-mount (see below)
 railway up
 railway domain                 # → public https URL
 ```
 Store the token ONLY in Railway env + `~/.config/relay-poc/env` on the box (mode 600).
 **Never commit a token** — `BOX_TOKENS` is read from the environment; nothing secret lives here.
+
+### Root-mount vs multi-box (`SINGLE_BOX`)
+The box UI is a Vite/React SPA whose HTML references assets by **root-absolute path**
+(`/assets/*.js`). Under the multi-box `/b/<boxid>/` prefix the browser requests those at the
+domain root → **404 → blank page** (a plain `curl` of the shell returns 200 and hides this).
+Set `SINGLE_BOX=<boxid>` to mount one box at `/`: the relay forwards the full path and scopes
+the auth cookie to `Path=/`, so assets resolve and the SPA renders. **User URL becomes the root:**
+`https://<relay>/?key=<token>` (not `/b/<boxid>/`). Relay health moves to `/__relay/health`.
+For production multi-box, give each box its own service/subdomain (root-mount each). Leave
+`SINGLE_BOX` unset for the multi-box `/b/<boxid>/*` mode (fine for APIs, breaks root-absolute SPAs).
 
 ## Box client — Phase 3
 `~/.config/relay-poc/env` on the box (mode 600):

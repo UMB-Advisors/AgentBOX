@@ -4,6 +4,17 @@
 **Verdict up front:** **GO to productize the reachability model**, with the caveats below. Both planes are
 proven on real hardware over the real internet. Neither is production-ready as-built (see NOT-PRODUCTION).
 
+> **Update (2026-07-10, post-spike) — browser-render fix.** First browser test of Plane B showed a **blank
+> page**: the dashboard is a Vite/React SPA referencing assets by root-absolute path (`/assets/*.js`), which
+> 404 under the `/b/<boxid>/` prefix — so the shell loaded (HTTP 200, which curl-based checks passed) but the
+> JS never ran. **Sensor lesson:** "dashboard loads" was verified at the HTTP level (200 + `<title>`), never in
+> a real browser; the correct check (now a test) is that the shell's *referenced assets* also 200 through the
+> relay. **Fix shipped:** a `SINGLE_BOX` root-mount mode — the relay forwards `/*` to one box and scopes the
+> cookie to `Path=/`, so assets resolve and the SPA renders. **User URL is now the root** `https://<relay>/?key=<tok>`.
+> Re-verified in-browser (all assets 200, cookie-only asset load 200, dashboard renders). `node --test` now 8/8.
+> Production multi-box → one service/subdomain per box (root-mount each). The URL-encoded `..%2f` note in
+> NOT-PRODUCTION #4 still stands.
+
 MBOX-498 asked: can a **client/customer phone with no Tailscale** reach a freshly-provisioned AgentBOX's
 web UI when the box is behind an arbitrary home router (no port-forward, mDNS blocked)? The research brief
 proposed two planes; this spike built and exercised both end-to-end.

@@ -80,7 +80,14 @@ function readBody(req) {
 }
 
 // Create a relay. `tokens` = { boxid: token }. Returns { server, boxes, close }.
-export function createRelay({ tokens }) {
+//
+// `singleBox` (a boxid) mounts that one box at the ROOT: public `/*` forwards
+// straight to the box (full path preserved), and the auth cookie is scoped to
+// `Path=/`. This is required for SPA UIs whose HTML references assets by
+// root-absolute path (`/assets/x.js`) — under the multi-box `/b/<boxid>/`
+// prefix those assets resolve to the domain root and 404, leaving a blank page.
+// Multi-box mode (`/b/<boxid>/*`) is unchanged when `singleBox` is falsy.
+export function createRelay({ tokens, singleBox = null }) {
   const boxes = new Map(); // boxid -> { ws, pending: Map<id,{resolve,timer}>, seq, alive }
 
   const rejectPending = (box, status) => {
@@ -112,14 +119,26 @@ export function createRelay({ tokens }) {
       res.end(JSON.stringify(obj));
     };
 
-    if (url.pathname === "/healthz") {
+    // Relay's own health. In single-box mode it lives at a reserved path so the
+    // box may own "/healthz" (and "/") itself.
+    const healthPath = singleBox ? "/__relay/health" : "/healthz";
+    if (url.pathname === healthPath) {
       return send(200, { ok: true, boxes: [...boxes.entries()].filter(([, b]) => b.ws && b.ws.readyState === 1).map(([id]) => id) });
     }
 
-    const m = /^\/b\/([^/]+)(\/.*)?$/.exec(url.pathname);
-    if (!m) return send(404, { error: "not_found" });
-    const boxid = decodeURIComponent(m[1]);
-    const subpath = m[2] || "/";
+    // Resolve target box + the subpath forwarded to it + the cookie scope.
+    let boxid, subpath, cookiePath;
+    if (singleBox) {
+      boxid = singleBox;
+      subpath = url.pathname;      // forward the FULL path so /assets/* resolves
+      cookiePath = "/";
+    } else {
+      const m = /^\/b\/([^/]+)(\/.*)?$/.exec(url.pathname);
+      if (!m) return send(404, { error: "not_found" });
+      boxid = decodeURIComponent(m[1]);
+      subpath = m[2] || "/";
+      cookiePath = `/b/${boxid}`;
+    }
 
     const expected = tokens[boxid];
     if (expected === undefined) return send(404, { error: "unknown_box" }); // unknown box id
@@ -136,7 +155,7 @@ export function createRelay({ tokens }) {
       const clean = new URL(url);
       clean.searchParams.delete("key");
       res.writeHead(302, {
-        "set-cookie": `${cookieName}=${provided}; HttpOnly; SameSite=Lax; Path=/b/${boxid}`,
+        "set-cookie": `${cookieName}=${provided}; HttpOnly; SameSite=Lax; Path=${cookiePath}`,
         location: clean.pathname + clean.search,
       });
       return res.end();
@@ -233,7 +252,16 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.error("BOX_TOKENS is empty — set BOX_TOKENS='boxid:token[,boxid2:token2]'");
     process.exit(1);
   }
-  const { server } = createRelay({ tokens });
+  const singleBox = process.env.SINGLE_BOX || null;
+  if (singleBox && tokens[singleBox] === undefined) {
+    console.error(`SINGLE_BOX=${singleBox} has no matching entry in BOX_TOKENS`);
+    process.exit(1);
+  }
+  const { server } = createRelay({ tokens, singleBox });
   const port = Number(process.env.PORT) || 8080;
-  server.listen(port, () => console.log(`relay listening on :${port} for boxes [${Object.keys(tokens).join(", ")}]`));
+  server.listen(port, () => console.log(
+    singleBox
+      ? `relay listening on :${port} — ROOT-MOUNT single box [${singleBox}]`
+      : `relay listening on :${port} for boxes [${Object.keys(tokens).join(", ")}]`,
+  ));
 }
