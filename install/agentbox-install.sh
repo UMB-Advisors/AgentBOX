@@ -107,10 +107,21 @@ fi
 log "STAGE 0.2 — Tailscale SSH (admin access default)"
 if command -v tailscale >/dev/null; then
   if tailscale status >/dev/null 2>&1; then
-    if sudo tailscale set --ssh=true >/dev/null 2>&1; then
-      log "  Tailscale SSH enabled (sudo tailscale set --ssh=true)"
+    # Auto-rejoin the tailnet after every reboot with NO manual `tailscale up`:
+    # (1) tailscaled must start on boot, and (2) the node's connect intent
+    # (WantRunning=true) + SSH must be persisted. Plain `set --ssh=true` does the
+    # SSH half but not WantRunning, so a box whose intent got reset (reflash/churn)
+    # still needed a manual up. Re-assert the full state, preserving the TAILNET
+    # hostname (differs from the system hostname, e.g. agentboxhonduras vs carlos)
+    # and the admin-assigned tag (verified: bare `up --ssh --hostname` keeps tag:box).
+    sudo systemctl enable tailscaled >/dev/null 2>&1 || log "  WARN: could not enable tailscaled (may not start on boot)"
+    _ts_hn="$(tailscale status --json 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("Self",{}).get("HostName",""))' 2>/dev/null)"
+    if [ -n "$_ts_hn" ] && sudo tailscale up --ssh --hostname="$_ts_hn" >/dev/null 2>&1; then
+      log "  Tailscale: SSH + auto-rejoin persisted (hostname=$_ts_hn) — no manual 'up' after reboot"
+    elif sudo tailscale set --ssh=true >/dev/null 2>&1; then
+      log "  WARN: re-asserted SSH only (couldn't read tailnet hostname); one manual 'up' may still be needed"
     else
-      log "  WARN: 'tailscale set --ssh=true' failed — enable manually: sudo tailscale up --ssh"
+      log "  WARN: could not persist Tailscale SSH/auto-rejoin — do it manually: sudo tailscale up --ssh --hostname=<box>"
     fi
   else
     log "  WARN: tailscale not up yet — enroll with: sudo tailscale up --ssh --hostname=<box> (admin SSH won't work until then)"
