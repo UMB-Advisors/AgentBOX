@@ -78,8 +78,23 @@ export function run({ relayUrl, boxId, token, origin }) {
         backoff = Math.min(backoff * 2, 30_000);
       },
     });
-    // Client-side keepalive too (relay also pings).
-    const hb = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.ping(); }, 25_000);
+    // Client-side liveness: ping AND require a pong. Without the pong check, a
+    // half-open connection (network dropped with no TCP FIN — a WiFi blip, the
+    // box moved APs) leaves ws.readyState OPEN forever, so we ping into the void
+    // and NEVER reconnect (the "box offline until manual restart" failure). If a
+    // ping goes unanswered by the next tick, force-close so the reconnect loop
+    // fires. Detection ≤ ~2× the interval.
+    let alive = true;
+    ws.on("pong", () => { alive = true; });
+    const hb = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      if (!alive) {
+        console.log("[relay-client] heartbeat lost (no pong) — forcing reconnect");
+        return ws.terminate();
+      }
+      alive = false;
+      ws.ping();
+    }, 20_000);
     ws.on("close", () => clearInterval(hb));
   };
   dial();
