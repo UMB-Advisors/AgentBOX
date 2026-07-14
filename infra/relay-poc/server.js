@@ -1,0 +1,307 @@
+// MBOX-498 relay PoC — authenticated public↔box reverse tunnel.
+//
+// The consumer plane: a phone/browser with NO Tailscale reaches a box's Hermes
+// UI over the public internet. The box dials OUT to this relay (WSS /tunnel,
+// Bearer-token auth) and holds one persistent connection; public requests to
+// /b/<boxid>/* are framed over that tunnel to the box's sidecar (127.0.0.1:9200)
+// and the response framed back. Per-box 256-bit token gate. PoC, NOT production
+// posture (see README threat notes).
+//
+// Deps: `ws` only. Run: BOX_TOKENS="box:tok,box2:tok2" PORT=8080 node server.js
+import http from "node:http";
+import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { WebSocketServer } from "ws";
+
+const TOO_LARGE = Symbol("too-large");
+const MAX_BODY = 10 * 1024 * 1024; // 10MB
+const REQ_TIMEOUT_MS = 30_000;
+const PING_MS = 25_000;
+// Hop-by-hop headers (RFC 7230 §6.1) — must not be forwarded through a proxy.
+const HOP_BY_HOP = new Set([
+  "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+  "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
+]);
+
+// Shown by GET <cookiePath>/logout after the auth cookie is cleared.
+const LOGOUT_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">`
+  + `<meta name="viewport" content="width=device-width,initial-scale=1"><title>Signed out — AgentBOX</title>`
+  + `<style>body{margin:0;height:100vh;display:grid;place-items:center;background:#0b0d10;color:#e6e9ef;`
+  + `font-family:system-ui,-apple-system,sans-serif}.card{text-align:center;max-width:22rem;padding:2rem}`
+  + `h1{font-size:1.3rem;margin:0 0 .6rem}p{opacity:.72;line-height:1.55;font-size:.95rem}`
+  + `code{background:#1b1f27;padding:.1rem .35rem;border-radius:.3rem}</style></head><body><div class="card">`
+  + `<h1>Signed out</h1><p>You've been logged out of this AgentBOX. Reopen your access link `
+  + `(the one ending in <code>?key=…</code>) to sign back in.</p></div></body></html>`;
+
+// A small fixed-position "Log out" link injected into forwarded HTML pages.
+const logoutLink = (href) =>
+  `<a href="${href}" style="position:fixed;bottom:14px;right:14px;z-index:2147483647;`
+  + `font:600 12px/1 system-ui,-apple-system,sans-serif;background:#111418;color:#fff;padding:8px 12px;`
+  + `border-radius:9px;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.4);opacity:.9">Log out</a>`;
+
+const headerValue = (headers, name) => {
+  const hit = Object.entries(headers || {}).find(([k]) => k.toLowerCase() === name);
+  return hit ? hit[1] : "";
+};
+
+function parseTokens(str) {
+  const out = {};
+  for (const pair of (str || "").split(",")) {
+    const i = pair.indexOf(":");
+    if (i > 0) out[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
+  }
+  return out;
+}
+
+function safeEqual(a, b) {
+  const ab = Buffer.from(String(a ?? ""), "utf8");
+  const bb = Buffer.from(String(b ?? ""), "utf8");
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+function bearer(h) {
+  if (!h) return null;
+  const m = /^Bearer\s+(.+)$/i.exec(h);
+  return m ? m[1] : null;
+}
+
+function parseCookies(h) {
+  const out = {};
+  for (const c of (h || "").split(";")) {
+    const i = c.indexOf("=");
+    if (i > 0) out[c.slice(0, i).trim()] = c.slice(i + 1).trim();
+  }
+  return out;
+}
+
+function stripHopByHop(headers) {
+  const out = {};
+  for (const [k, v] of Object.entries(headers || {})) {
+    if (!HOP_BY_HOP.has(k.toLowerCase())) out[k] = v;
+  }
+  return out;
+}
+
+function readBody(req) {
+  return new Promise((resolve) => {
+    if (req.method === "GET" || req.method === "HEAD") return resolve(Buffer.alloc(0));
+    const chunks = [];
+    let size = 0;
+    let over = false;
+    req.on("data", (c) => {
+      size += c.length;
+      if (over) return;
+      if (size > MAX_BODY) { over = true; chunks.length = 0; return; } // stop buffering, keep draining
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(over ? TOO_LARGE : Buffer.concat(chunks)));
+    req.on("error", () => resolve(over ? TOO_LARGE : Buffer.concat(chunks)));
+  });
+}
+
+// Create a relay. `tokens` = { boxid: token }. Returns { server, boxes, close }.
+//
+// `singleBox` (a boxid) mounts that one box at the ROOT: public `/*` forwards
+// straight to the box (full path preserved), and the auth cookie is scoped to
+// `Path=/`. This is required for SPA UIs whose HTML references assets by
+// root-absolute path (`/assets/x.js`) — under the multi-box `/b/<boxid>/`
+// prefix those assets resolve to the domain root and 404, leaving a blank page.
+// Multi-box mode (`/b/<boxid>/*`) is unchanged when `singleBox` is falsy.
+export function createRelay({ tokens, singleBox = null }) {
+  const boxes = new Map(); // boxid -> { ws, pending: Map<id,{resolve,timer}>, seq, alive }
+
+  const rejectPending = (box, status) => {
+    for (const { resolve, timer } of box.pending.values()) {
+      clearTimeout(timer);
+      resolve({ status, headers: {}, body: Buffer.from("box disconnected") });
+    }
+    box.pending.clear();
+  };
+
+  const forward = (box, { method, path, headers, body }) =>
+    new Promise((resolve) => {
+      const id = ++box.seq;
+      const timer = setTimeout(() => {
+        box.pending.delete(id);
+        resolve({ status: 504, headers: {}, body: Buffer.from("tunnel timeout") });
+      }, REQ_TIMEOUT_MS);
+      box.pending.set(id, { resolve, timer });
+      box.ws.send(JSON.stringify({
+        t: "req", id, method, path, headers,
+        body: body && body.length ? body.toString("base64") : null,
+      }));
+    });
+
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, "http://relay.local");
+    const send = (code, obj) => {
+      res.writeHead(code, { "content-type": "application/json" });
+      res.end(JSON.stringify(obj));
+    };
+
+    // Relay's own health. In single-box mode it lives at a reserved path so the
+    // box may own "/healthz" (and "/") itself.
+    const healthPath = singleBox ? "/__relay/health" : "/healthz";
+    if (url.pathname === healthPath) {
+      return send(200, { ok: true, boxes: [...boxes.entries()].filter(([, b]) => b.ws && b.ws.readyState === 1).map(([id]) => id) });
+    }
+
+    // Resolve target box + the subpath forwarded to it + the cookie scope.
+    let boxid, subpath, cookiePath;
+    if (singleBox) {
+      boxid = singleBox;
+      subpath = url.pathname;      // forward the FULL path so /assets/* resolves
+      cookiePath = "/";
+    } else {
+      const m = /^\/b\/([^/]+)(\/.*)?$/.exec(url.pathname);
+      if (!m) return send(404, { error: "not_found" });
+      boxid = decodeURIComponent(m[1]);
+      subpath = m[2] || "/";
+      cookiePath = `/b/${boxid}`;
+    }
+
+    const cookieName = `relay_${boxid}`;
+    const logoutHref = singleBox ? "/logout" : `/b/${boxid}/logout`;
+
+    // Logout — clear the auth cookie. No auth required (you're dropping your own
+    // credential); friendly confirmation page.
+    if (subpath === "/logout") {
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "set-cookie": `${cookieName}=; HttpOnly; SameSite=Lax; Path=${cookiePath}; Max-Age=0`,
+      });
+      return res.end(LOGOUT_PAGE);
+    }
+
+    const expected = tokens[boxid];
+    if (expected === undefined) return send(404, { error: "unknown_box" }); // unknown box id
+
+    const provided =
+      url.searchParams.get("key") ||
+      parseCookies(req.headers.cookie)[cookieName] ||
+      bearer(req.headers.authorization);
+    if (!provided || !safeEqual(provided, expected)) return send(401, { error: "unauthorized" });
+
+    // ?key= → set HttpOnly cookie, redirect to the clean path (browser flow).
+    if (url.searchParams.has("key")) {
+      const clean = new URL(url);
+      clean.searchParams.delete("key");
+      res.writeHead(302, {
+        "set-cookie": `${cookieName}=${provided}; HttpOnly; SameSite=Lax; Path=${cookiePath}`,
+        location: clean.pathname + clean.search,
+      });
+      return res.end();
+    }
+
+    // Path traversal guard.
+    if (subpath.split("/").some((s) => s === "..")) return send(400, { error: "bad_path" });
+
+    const box = boxes.get(boxid);
+    if (!box || !box.ws || box.ws.readyState !== 1) return send(503, { error: "box_offline" });
+
+    const body = await readBody(req);
+    if (body === TOO_LARGE) return send(413, { error: "too_large" });
+
+    const fwdQuery = new URL(url);
+    fwdQuery.searchParams.delete("key");
+    const r = await forward(box, {
+      method: req.method,
+      path: subpath + (fwdQuery.search || ""),
+      headers: stripHopByHop(req.headers),
+      body,
+    });
+    // Inject a "Log out" link into HTML pages so it's reachable from the UI.
+    // React mounts into #root; a sibling <a> before </body> survives its renders.
+    let outBody = r.body;
+    if (r.status === 200 && /text\/html/i.test(headerValue(r.headers, "content-type")) && outBody.includes("</body>")) {
+      outBody = Buffer.from(outBody.toString("utf8").replace("</body>", logoutLink(logoutHref) + "</body>"), "utf8");
+    }
+    res.writeHead(r.status, stripHopByHop(r.headers));
+    res.end(outBody);
+  });
+
+  // WSS /tunnel — box side. Auth at the upgrade so a bad token never opens.
+  const wss = new WebSocketServer({
+    server,
+    path: "/tunnel",
+    verifyClient: (info, cb) => {
+      const boxid = info.req.headers["x-box-id"];
+      const tok = bearer(info.req.headers.authorization);
+      const expected = boxid ? tokens[boxid] : undefined;
+      if (expected !== undefined && tok && safeEqual(tok, expected)) return cb(true);
+      return cb(false, 401, "Unauthorized");
+    },
+  });
+
+  wss.on("connection", (ws, req) => {
+    const boxid = req.headers["x-box-id"];
+    const prev = boxes.get(boxid);
+    if (prev && prev.ws && prev.ws !== ws) { try { prev.ws.terminate(); } catch { /* noop */ } }
+    const box = { ws, pending: new Map(), seq: 0, alive: true };
+    boxes.set(boxid, box);
+    ws.on("pong", () => { box.alive = true; });
+    ws.on("message", (data) => {
+      let msg;
+      try { msg = JSON.parse(data); } catch { return; }
+      if (msg.t === "res") {
+        const p = box.pending.get(msg.id);
+        if (p) {
+          clearTimeout(p.timer);
+          box.pending.delete(msg.id);
+          p.resolve({
+            status: msg.status || 502,
+            headers: msg.headers || {},
+            body: msg.body ? Buffer.from(msg.body, "base64") : Buffer.alloc(0),
+          });
+        }
+      }
+    });
+    ws.on("close", () => {
+      if (boxes.get(boxid) === box) boxes.delete(boxid);
+      rejectPending(box, 502);
+    });
+    ws.on("error", () => { /* close handler cleans up */ });
+  });
+
+  // Server-side heartbeat: ping every 25s, drop unresponsive tunnels.
+  const pinger = setInterval(() => {
+    for (const box of boxes.values()) {
+      if (!box.alive) { try { box.ws.terminate(); } catch { /* noop */ } continue; }
+      box.alive = false;
+      try { box.ws.ping(); } catch { /* noop */ }
+    }
+  }, PING_MS);
+  pinger.unref?.();
+
+  const close = () =>
+    new Promise((resolve) => {
+      clearInterval(pinger);
+      for (const box of boxes.values()) { try { box.ws.terminate(); } catch { /* noop */ } }
+      wss.close(() => server.close(() => resolve()));
+    });
+
+  return { server, boxes, close };
+}
+
+// CLI entrypoint.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const tokens = parseTokens(process.env.BOX_TOKENS);
+  if (Object.keys(tokens).length === 0) {
+    console.error("BOX_TOKENS is empty — set BOX_TOKENS='boxid:token[,boxid2:token2]'");
+    process.exit(1);
+  }
+  const singleBox = process.env.SINGLE_BOX || null;
+  if (singleBox && tokens[singleBox] === undefined) {
+    console.error(`SINGLE_BOX=${singleBox} has no matching entry in BOX_TOKENS`);
+    process.exit(1);
+  }
+  const { server } = createRelay({ tokens, singleBox });
+  const port = Number(process.env.PORT) || 8080;
+  server.listen(port, () => console.log(
+    singleBox
+      ? `relay listening on :${port} — ROOT-MOUNT single box [${singleBox}]`
+      : `relay listening on :${port} for boxes [${Object.keys(tokens).join(", ")}]`,
+  ));
+}
