@@ -53,7 +53,7 @@ run(){ if [ "$DRY" = 1 ]; then echo "DRY: $*"; else eval "$*"; fi; }
 # --- deploy source (GitHub by default) -------------------------------------
 : "${DEPLOY_SOURCE:=git}"                            # git | local
 : "${AGENTBOX_GIT_URL:=https://github.com/UMB-Advisors/AgentBOX.git}"
-: "${AGENTBOX_GIT_REF:=demo/agentbox}"               # demo/agentbox = the superset (OOBE + AP + relay); main has NONE of it. Change to main only after the OOBE stack merges.
+: "${AGENTBOX_GIT_REF:=demo/agentbox}"               # main has the base OOBE stack (PR #117, 2026-07-14) but NOT the newest flash fixes (:9200 gate, AB_SKIP_AP_REBOOT, GIT_TOKEN). Keep demo/agentbox until those merge, else a main clone reboots mid-flash. Flip to main after.
 : "${GIT_TOKEN:=}"                                   # REQUIRED: agentbox-sidecar is PRIVATE — the OOBE :9200 clone dies without it. PAT w/ 'repo' scope. Never logged.
 : "${AGENTBOX_REPO:=}"                               # only used when DEPLOY_SOURCE=local
 : "${BOX_CHECKOUT:=~/agentbox}"                      # where the repo lands on the box
