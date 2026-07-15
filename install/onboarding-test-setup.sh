@@ -15,10 +15,17 @@
 # Assumes the two repos are cloned at ~/AgentBOX and ~/agentbox-sidecar.
 set -euo pipefail
 
-MONO="${MONO:-$HOME/AgentBOX}"
+# Self-locate the monorepo from THIS script's path (install/onboarding-test-setup.sh
+# -> repo root), not a hardcoded ~/AgentBOX — the flash engine clones to ~/agentbox
+# (lowercase) on a case-sensitive fs, and this script lives inside whatever that is.
+MONO="${MONO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 SIDE="${SIDE:-$HOME/agentbox-sidecar}"
-MONO_BRANCH="feat/onboarding-wifi-ap"
-SIDE_BRANCH="feat/onboarding-oobe"
+# demo/agentbox is the ONLY monorepo branch carrying the full flow (install + AP +
+# infra/relay-poc: server, provision-box.sh, self-heal client). Resetting to the old
+# feat/onboarding-wifi-ap here WIPED infra/relay-poc/ out of the tree (the reach-me
+# code the demo needs). Pin the superset branch.
+MONO_BRANCH="${MONO_BRANCH:-demo/agentbox}"
+SIDE_BRANCH="${SIDE_BRANCH:-feat/onboarding-oobe}"
 log(){ printf '\n\033[1;36m[onboarding]\033[0m %s\n' "$*"; }
 die(){ printf '\n\033[1;31m[onboarding] ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
@@ -122,6 +129,18 @@ systemctl --user daemon-reload
 systemctl --user enable --now agentbox-sidecar
 sleep 3
 curl -fsS 127.0.0.1:9200/healthz >/dev/null 2>&1 && log "sidecar health: OK" || log "WARN: sidecar not answering yet (systemctl --user status agentbox-sidecar)"
+
+# When chained by the flash engine (remote, host-driven provisioning) the box
+# must stay ONLINE + ssh-reachable so the flash can gate on :9200 and finish.
+# Steps 8-9 take WiFi offline and reboot into AP mode — a mid-flash reboot would
+# sever the flash's own ssh session and strand the run, and the AP flip is a
+# deliberate, separate step for the phone handoff anyway. AB_SKIP_AP_REBOOT=1
+# stops here, sidecar installed + running (the flash then hard-gates on :9200).
+if [ -n "${AB_SKIP_AP_REBOOT:-}" ]; then
+  log "sidecar installed + running; skipping WiFi-offline + AP reboot (AB_SKIP_AP_REBOOT set)."
+  log "flip into AP mode when ready for the phone handoff: re-run this script WITHOUT AB_SKIP_AP_REBOOT."
+  exit 0
+fi
 
 # 8. clear state + take WiFi offline so the AP fires on the next boot
 log "clearing onboarding state + disabling WiFi autoconnect"
