@@ -54,7 +54,7 @@ run(){ if [ "$DRY" = 1 ]; then echo "DRY: $*"; else eval "$*"; fi; }
 : "${DEPLOY_SOURCE:=git}"                            # git | local
 : "${AGENTBOX_GIT_URL:=https://github.com/UMB-Advisors/AgentBOX.git}"
 : "${AGENTBOX_GIT_REF:=demo/agentbox}"               # demo/agentbox = the superset (OOBE + AP + relay); main has NONE of it. Change to main only after the OOBE stack merges.
-: "${GIT_TOKEN:=}"                                   # for a private repo (PAT); never logged
+: "${GIT_TOKEN:=}"                                   # REQUIRED: agentbox-sidecar is PRIVATE — the OOBE :9200 clone dies without it. PAT w/ 'repo' scope. Never logged.
 : "${AGENTBOX_REPO:=}"                               # only used when DEPLOY_SOURCE=local
 : "${BOX_CHECKOUT:=~/agentbox}"                      # where the repo lands on the box
 # The installer clones the MailBOX stack itself; pin it here if needed.
@@ -127,20 +127,28 @@ st_reach(){
   die "box never came up on $BOX_IP or $BOX_HOST.local. HUMAN: attach a monitor to triage first boot."
 }
 
+# Grant the box user NOPASSWD sudo for the provisioning run: sshpass ssh has NO tty,
+# so every 'sudo' (host-prep + installer + onboarding-test-setup) would otherwise fail
+# 'a terminal is required'. The one-time write is unlocked with BOX_PASS via 'sudo -S'
+# (reads the pw as stdin line 1; tee writes line 2 = the rule). Once the rule installs,
+# NOPASSWD:ALL is live so the chmod/visudo on the next lines need no password. Idempotent
+# + visudo-validated. Called by BOTH hostprep and deploy so a `--resume deploy` (which
+# skips hostprep) still unlocks sudo. NOTE: drop this file post-demo for a hardened box.
+grant_provisioning_sudo(){
+  [ "$DRY" = 1 ] && { echo "DRY: grant NOPASSWD sudo on $BOX_IP"; return 0; }
+  BSSH "if [ ! -f /etc/sudoers.d/90-agentbox-provisioning ]; then
+      printf '%s\n%s\n' '$BOX_PASS' '$BOX_USER ALL=(ALL) NOPASSWD:ALL' | sudo -S -p '' tee /etc/sudoers.d/90-agentbox-provisioning >/dev/null
+      sudo chmod 440 /etc/sudoers.d/90-agentbox-provisioning
+      sudo visudo -cf /etc/sudoers.d/90-agentbox-provisioning >/dev/null || { printf '%s\n' '$BOX_PASS' | sudo -S -p '' rm -f /etc/sudoers.d/90-agentbox-provisioning; echo 'FATAL: provisioning sudoers rule failed validation (removed)'; exit 1; }
+    fi"
+}
+
 # ── STAGE hostprep ──────────────────────────────────────────────────────────
 st_hostprep(){
   log "STAGE hostprep — make the box installer-ready (docker nvidia default-runtime, disk, git, internet)"
   if [ "$DRY" = 1 ]; then echo "DRY: ssh host-prep on $BOX_IP"; return 0; fi
+  grant_provisioning_sudo
   BSSH "set -e
-    # Grant the box user NOPASSWD sudo for the provisioning run: sshpass ssh has NO
-    # tty, so every 'sudo' below (and in the installer + onboarding-test-setup) would
-    # otherwise fail with 'a terminal is required'. Unlock the one-time write with
-    # BOX_PASS via 'sudo -S' (reads the pw as stdin line 1, tee writes line 2).
-    # NOTE: drop /etc/sudoers.d/90-agentbox-provisioning post-demo for a hardened box.
-    if [ ! -f /etc/sudoers.d/90-agentbox-provisioning ]; then
-      printf '%s\n%s\n' '$BOX_PASS' '$BOX_USER ALL=(ALL) NOPASSWD:ALL' | sudo -S -p '' tee /etc/sudoers.d/90-agentbox-provisioning >/dev/null
-      sudo chmod 440 /etc/sudoers.d/90-agentbox-provisioning
-    fi
     sudo apt-get update -qq
     command -v git >/dev/null || sudo apt-get install -y -qq git
     command -v docker >/dev/null || { echo 'FATAL: docker missing on box (JetPack should ship it)'; exit 1; }
@@ -162,6 +170,17 @@ st_hostprep(){
 # ── STAGE deploy ────────────────────────────────────────────────────────────
 st_deploy(){
   log "STAGE deploy — get agentbox onto box (source=$DEPLOY_SOURCE) + run install/agentbox-install.sh $INSTALL_MODE"
+  # Fail fast on the private-repo token: the OOBE :9200 front door lives in the PRIVATE
+  # agentbox-sidecar repo, cloned by onboarding-test-setup.sh below. The public monorepo
+  # clone succeeds with no token, so a missing token stays invisible until the sidecar
+  # clone dies mid-run. Catch it here, before the long base install.
+  if [ -z "$GIT_TOKEN" ]; then
+    if [ "$DRY" = 1 ]; then
+      log "  WARN: GIT_TOKEN empty — a real run will FAIL at the private agentbox-sidecar clone"
+    else
+      die "GIT_TOKEN required in provision.env — agentbox-sidecar is a PRIVATE repo; the OOBE :9200 front door cannot be installed without it. Use a PAT with 'repo' scope (the same one as GITHUB_PACKAGES_TOKEN if it carries repo scope)."
+    fi
+  fi
   if [ "$DEPLOY_SOURCE" = "local" ]; then
     [ -n "$AGENTBOX_REPO" ] && [ -x "$AGENTBOX_REPO/install/agentbox-install.sh" ] || die "DEPLOY_SOURCE=local but AGENTBOX_REPO has no install/agentbox-install.sh"
     if [ "$DRY" = 1 ]; then echo "DRY: rsync $AGENTBOX_REPO -> box:$BOX_CHECKOUT + run installer $INSTALL_MODE"; else
@@ -188,6 +207,10 @@ st_deploy(){
     fi
   fi
   if [ "$DRY" = 1 ]; then return 0; fi
+  # Ensure NOPASSWD sudo is in place even on a `--resume deploy` that skipped hostprep
+  # (idempotent — a no-op if hostprep already wrote it). The installer + onboarding
+  # below run many sudo commands over the tty-less sshpass link.
+  grant_provisioning_sudo
   # seed the token so the installer's STAGE 1 gate passes; installer writes the rest
   BSSH "cd $BOX_CHECKOUT && touch .env && grep -q '^GITHUB_PACKAGES_TOKEN=' .env || echo 'GITHUB_PACKAGES_TOKEN=$GITHUB_PACKAGES_TOKEN' >> .env"
   log "  running installer on box (streaming)..."
