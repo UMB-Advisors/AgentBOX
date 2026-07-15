@@ -88,4 +88,3 @@ screen shows the **reach-me link + QR**.
 - Non-`--prototype` installs need a **1Password** session (secrets) and a **Gmail OAuth** browser consent
   — irreducibly manual.
 - Re-provisioning a box cleanly: delete its Railway service first (rotates the token), then re-run §3.
-</content>
