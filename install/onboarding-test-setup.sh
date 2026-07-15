@@ -130,6 +130,18 @@ systemctl --user enable --now agentbox-sidecar
 sleep 3
 curl -fsS 127.0.0.1:9200/healthz >/dev/null 2>&1 && log "sidecar health: OK" || log "WARN: sidecar not answering yet (systemctl --user status agentbox-sidecar)"
 
+# When chained by the flash engine (remote, host-driven provisioning) the box
+# must stay ONLINE + ssh-reachable so the flash can gate on :9200 and finish.
+# Steps 8-9 take WiFi offline and reboot into AP mode — a mid-flash reboot would
+# sever the flash's own ssh session and strand the run, and the AP flip is a
+# deliberate, separate step for the phone handoff anyway. AB_SKIP_AP_REBOOT=1
+# stops here, sidecar installed + running (the flash then hard-gates on :9200).
+if [ -n "${AB_SKIP_AP_REBOOT:-}" ]; then
+  log "sidecar installed + running; skipping WiFi-offline + AP reboot (AB_SKIP_AP_REBOOT set)."
+  log "flip into AP mode when ready for the phone handoff: re-run this script WITHOUT AB_SKIP_AP_REBOOT."
+  exit 0
+fi
+
 # 8. clear state + take WiFi offline so the AP fires on the next boot
 log "clearing onboarding state + disabling WiFi autoconnect"
 rm -f "$HOME/.hermes/onboarding.json"

@@ -197,7 +197,10 @@ st_deploy(){
   # token so the PRIVATE sidecar repo clones. Then HARD-GATE on :9200 so a
   # sidecar-less box fails loudly instead of the installer's non-fatal WARN.
   log "  installing sidecar + onboarding (OOBE) on box (streaming)..."
-  BSSH "cd $BOX_CHECKOUT && AB_GH_TOKEN='$GIT_TOKEN' ./install/onboarding-test-setup.sh"
+  # AB_SKIP_AP_REBOOT=1: install + start the sidecar but do NOT take the box
+  # offline / reboot into AP mode — that would sever this ssh session and defeat
+  # the :9200 gate below. The AP flip is a separate, deliberate phone-handoff step.
+  BSSH "cd $BOX_CHECKOUT && AB_GH_TOKEN='$GIT_TOKEN' AB_SKIP_AP_REBOOT=1 ./install/onboarding-test-setup.sh"
   log "  gate: sidecar :9200 must answer (phone-facing front door)"
   BSSH "for i in \$(seq 1 20); do curl -fsS -m 5 http://127.0.0.1:9200/healthz >/dev/null 2>&1 && { echo 'sidecar :9200 OK'; exit 0; }; sleep 3; done; echo 'sidecar :9200 never came up'; exit 1" \
     || die "sidecar (:9200) did not come up after onboarding-test-setup — OOBE + reach-me absent. Inspect: BSSH 'systemctl --user status agentbox-sidecar; journalctl --user -u agentbox-sidecar -n 40'"
