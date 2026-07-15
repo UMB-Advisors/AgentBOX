@@ -17,8 +17,12 @@ set -euo pipefail
 
 MONO="${MONO:-$HOME/AgentBOX}"
 SIDE="${SIDE:-$HOME/agentbox-sidecar}"
-MONO_BRANCH="feat/onboarding-wifi-ap"
-SIDE_BRANCH="feat/onboarding-oobe"
+# demo/agentbox is the ONLY monorepo branch carrying the full flow (install + AP +
+# infra/relay-poc: server, provision-box.sh, self-heal client). Resetting to the old
+# feat/onboarding-wifi-ap here WIPED infra/relay-poc/ out of the tree (the reach-me
+# code the demo needs). Pin the superset branch.
+MONO_BRANCH="${MONO_BRANCH:-demo/agentbox}"
+SIDE_BRANCH="${SIDE_BRANCH:-feat/onboarding-oobe}"
 log(){ printf '\n\033[1;36m[onboarding]\033[0m %s\n' "$*"; }
 die(){ printf '\n\033[1;31m[onboarding] ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
