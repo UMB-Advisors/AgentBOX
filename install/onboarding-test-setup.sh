@@ -15,7 +15,10 @@
 # Assumes the two repos are cloned at ~/AgentBOX and ~/agentbox-sidecar.
 set -euo pipefail
 
-MONO="${MONO:-$HOME/AgentBOX}"
+# Self-locate the monorepo from THIS script's path (install/onboarding-test-setup.sh
+# -> repo root), not a hardcoded ~/AgentBOX — the flash engine clones to ~/agentbox
+# (lowercase) on a case-sensitive fs, and this script lives inside whatever that is.
+MONO="${MONO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 SIDE="${SIDE:-$HOME/agentbox-sidecar}"
 # demo/agentbox is the ONLY monorepo branch carrying the full flow (install + AP +
 # infra/relay-poc: server, provision-box.sh, self-heal client). Resetting to the old

@@ -59,7 +59,11 @@ log "  relay host: $HOST"
 log "box: staging client + env on $SSH_HOST"
 ssh -o BatchMode=yes "$SSH_HOST" 'umask 077; mkdir -p ~/.config/relay-poc ~/relay-poc ~/.config/systemd/user'
 scp -o BatchMode=yes "$RELAY_DIR/box-client.js" "$RELAY_DIR/package.json" "$SSH_HOST:~/relay-poc/" >/dev/null
-ssh -o BatchMode=yes "$SSH_HOST" 'cd ~/relay-poc && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 || true'
+# Install the client's 'ws' dep — NOT silent, NOT '|| true': a missing node or a
+# failed install leaves box-client.js (which imports 'ws') crash-looping forever.
+ssh -o BatchMode=yes "$SSH_HOST" 'command -v node >/dev/null || { echo "node missing on box — run install/onboarding-test-setup.sh first (installs Node 22)"; exit 1; }
+  cd ~/relay-poc && npm install --omit=dev --no-audit --no-fund' \
+  || die "box-client dependency install failed on $SSH_HOST (needs node + the ws package); the relay client would crash-loop"
 # env file — token travels over stdin, never on a command line / in output.
 ssh -o BatchMode=yes "$SSH_HOST" 'umask 077; cat > ~/.config/relay-poc/env' <<EOF
 RELAY_URL=wss://${HOST}
@@ -93,6 +97,15 @@ for _ in $(seq 1 10); do
   sleep 2
 done
 [ -n "$ok" ] || die "box did not register on https://${HOST} within ~20s — check 'ssh $SSH_HOST journalctl --user -u relay-poc -n 30'"
+
+# Registered != proxying. Confirm the tunnel actually REACHES the box sidecar (:9200)
+# so a registered-but-not-proxying box fails loudly instead of false-greening.
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 -H "Authorization: Bearer ${TOKEN}" "https://${HOST}/")
+case "$code" in
+  200) log "  proxy OK — relay reaches the box sidecar :9200 [HTTP $code]" ;;
+  502|503) die "box registered but the relay CANNOT reach the box sidecar :9200 [HTTP $code] — is agentbox-sidecar up? check ':9200/healthz' + 'journalctl --user -u relay-poc' on $SSH_HOST" ;;
+  *) log "  WARN: unexpected proxy response [HTTP $code] — verify the sidecar + box-client on $SSH_HOST manually" ;;
+esac
 
 log "DONE — box '${BOXID}' provisioned."
 echo "  reach-me URL (the box's sidecar builds it for the wizard; token is in the box env):"
