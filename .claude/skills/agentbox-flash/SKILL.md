@@ -7,11 +7,14 @@ argument-hint: "[--prototype] [--prod] [--resume <stage>]"
 
 # /agentbox-flash — Blank Jetson → fully set-up AgentBOX
 
-> **⚠️ CAVEAT (2026-06-12):** `install/agentbox-install.sh` currently provisions the
-> **PRE-SIDECAR** architecture (v0.15.1 pin + hermes_cli overlay, no sidecar). After
-> install, follow the **agentbox-sidecar** setup (service `:9200`, plugins, postupdate
-> healthcheck) — see the agentbox-sidecar decoupling PRD + `agentbox-sidecar/docs/update-runbook.md`.
-> This caveat stands until the installer rework (MBOX-428) lands.
+> **⚠️ CAVEAT (updated 2026-07-15):** `install/agentbox-install.sh` provisions the base
+> appliance (v0.15.1 hermes, no sidecar) and does NOT bring up the phone-facing sidecar
+> (`:9200`). The flash's **deploy** stage now chains `install/onboarding-test-setup.sh`
+> after it (installs the sidecar + OOBE wizard + WiFi-AP, builds the UI) and **hard-gates
+> on `:9200`**, so a full flash lands the OOBE stack. This only works on a ref that HAS it:
+> the default is now `AGENTBOX_GIT_REF=demo/agentbox` (the superset). `main` still lacks the
+> OOBE/sidecar/relay until MBOX-428 merges. The relay reach-me link is a separate,
+> operator-run step (`infra/relay-poc/provision-box.sh`), not part of this flash.
 
 You provision a bare NVIDIA Jetson Orin Nano Super 8 GB into a working AgentBOX,
 driving everything that can be automated and gating cleanly on the three steps a

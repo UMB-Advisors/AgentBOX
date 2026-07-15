@@ -53,7 +53,7 @@ run(){ if [ "$DRY" = 1 ]; then echo "DRY: $*"; else eval "$*"; fi; }
 # --- deploy source (GitHub by default) -------------------------------------
 : "${DEPLOY_SOURCE:=git}"                            # git | local
 : "${AGENTBOX_GIT_URL:=https://github.com/UMB-Advisors/AgentBOX.git}"
-: "${AGENTBOX_GIT_REF:=main}"                        # until the installer PR merges, use feat/agentbox-installer
+: "${AGENTBOX_GIT_REF:=demo/agentbox}"               # demo/agentbox = the superset (OOBE + AP + relay); main has NONE of it. Change to main only after the OOBE stack merges.
 : "${GIT_TOKEN:=}"                                   # for a private repo (PAT); never logged
 : "${AGENTBOX_REPO:=}"                               # only used when DEPLOY_SOURCE=local
 : "${BOX_CHECKOUT:=~/agentbox}"                      # where the repo lands on the box
@@ -132,6 +132,15 @@ st_hostprep(){
   log "STAGE hostprep — make the box installer-ready (docker nvidia default-runtime, disk, git, internet)"
   if [ "$DRY" = 1 ]; then echo "DRY: ssh host-prep on $BOX_IP"; return 0; fi
   BSSH "set -e
+    # Grant the box user NOPASSWD sudo for the provisioning run: sshpass ssh has NO
+    # tty, so every 'sudo' below (and in the installer + onboarding-test-setup) would
+    # otherwise fail with 'a terminal is required'. Unlock the one-time write with
+    # BOX_PASS via 'sudo -S' (reads the pw as stdin line 1, tee writes line 2).
+    # NOTE: drop /etc/sudoers.d/90-agentbox-provisioning post-demo for a hardened box.
+    if [ ! -f /etc/sudoers.d/90-agentbox-provisioning ]; then
+      printf '%s\n%s\n' '$BOX_PASS' '$BOX_USER ALL=(ALL) NOPASSWD:ALL' | sudo -S -p '' tee /etc/sudoers.d/90-agentbox-provisioning >/dev/null
+      sudo chmod 440 /etc/sudoers.d/90-agentbox-provisioning
+    fi
     sudo apt-get update -qq
     command -v git >/dev/null || sudo apt-get install -y -qq git
     command -v docker >/dev/null || { echo 'FATAL: docker missing on box (JetPack should ship it)'; exit 1; }
@@ -183,6 +192,15 @@ st_deploy(){
   BSSH "cd $BOX_CHECKOUT && touch .env && grep -q '^GITHUB_PACKAGES_TOKEN=' .env || echo 'GITHUB_PACKAGES_TOKEN=$GITHUB_PACKAGES_TOKEN' >> .env"
   log "  running installer on box (streaming)..."
   BSSH "cd $BOX_CHECKOUT && sg docker -c 'MAILBOX_GIT_URL=$MAILBOX_GIT_URL MAILBOX_GIT_REF=$MAILBOX_GIT_REF ./install/agentbox-install.sh $INSTALL_MODE'"
+  # The base installer does NOT bring up the sidecar (:9200) — the phone-facing OOBE
+  # front door. Chain the sidecar + onboarding + AP install, passing the same git
+  # token so the PRIVATE sidecar repo clones. Then HARD-GATE on :9200 so a
+  # sidecar-less box fails loudly instead of the installer's non-fatal WARN.
+  log "  installing sidecar + onboarding (OOBE) on box (streaming)..."
+  BSSH "cd $BOX_CHECKOUT && AB_GH_TOKEN='$GIT_TOKEN' ./install/onboarding-test-setup.sh"
+  log "  gate: sidecar :9200 must answer (phone-facing front door)"
+  BSSH "for i in \$(seq 1 20); do curl -fsS -m 5 http://127.0.0.1:9200/healthz >/dev/null 2>&1 && { echo 'sidecar :9200 OK'; exit 0; }; sleep 3; done; echo 'sidecar :9200 never came up'; exit 1" \
+    || die "sidecar (:9200) did not come up after onboarding-test-setup — OOBE + reach-me absent. Inspect: BSSH 'systemctl --user status agentbox-sidecar; journalctl --user -u agentbox-sidecar -n 40'"
 }
 
 # ── STAGE report ────────────────────────────────────────────────────────────
