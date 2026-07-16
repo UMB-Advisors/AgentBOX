@@ -97,10 +97,14 @@ The lesson ("one deployer, always from main") carries over to the sidecar repo.
 
 ## Conventions
 
-- agentbox2 runs **upstream hermes v0.16.0** (`88dbf9510`, branch `agentbox2-v3` in
-  `UMB-Advisors/agentbox-hermes-patches` = upstream + one `/dashboard` proxy patch).
-  Pin management lives in that repo. (Historical: the repo pinned v0.15.1
-  `HERMES_REF=927fa7a98` because 0.16's ≥64K context floor was thought to break the
-  local Qwen3-4B — verify on box how that was resolved before relying on the local model.)
+- agentbox2 runs **upstream hermes v0.18.2** (`v2026.7.7.2`, upgraded 2026-07-15 from
+  v0.16.0/`88dbf9510`; branch `agentbox2-v3` in `UMB-Advisors/agentbox-hermes-patches` =
+  upstream + one `/dashboard` proxy patch, now at local commit `7f3b31bb9`). Pin
+  management lives in that repo — **update this line every time that pin moves.**
+  Upgrade procedure + verification checklist: `docs/hermes-upgrade-runbook.v0.1.0.md`.
+  (Resolved: the historical v0.15.1/`927fa7a98` context-floor concern doesn't apply to
+  agentbox2's default profile, which runs `gpt-5.5` over `openai-codex`, not local
+  Qwen3-4B — one dormant profile (`ops`) still targets `qwen3:4b-instruct` and would hit
+  the ≥64K floor if ever started.)
 - `web_dist` is a gitignored build artifact — never committed; built during install/deploy.
 - File issues in the **staqs / AgentBOX** project via `linear-staqs`.
