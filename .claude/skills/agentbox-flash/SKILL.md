@@ -17,8 +17,11 @@ argument-hint: "[--prototype] [--prod] [--resume <stage>]"
 > the `GIT_TOKEN` requirement — are still only on `demo/agentbox`. Until those merge, the
 > default stays `AGENTBOX_GIT_REF=demo/agentbox` so the flash script and the box's cloned
 > `onboarding-test-setup.sh` stay in lockstep (a `main` clone would reboot mid-flash).
-> Flip the default to `main` once these land there. The relay reach-me link is a separate,
-> operator-run step (`infra/relay-poc/provision-box.sh`), not part of this flash.
+> Flip the default to `main` once these land there. Off-LAN "reach from anywhere" is the
+> opt-in `relay` stage (`WITH_RELAY=1`, BILLABLE); it's skipped by default and the flash
+> reports how to run it later. **Precondition:** the box must have working internet
+> (LAN/WiFi/Ethernet with DHCP) BEFORE `hostprep` — USB device-mode gives SSH but no
+> route, and no stage sets up `usb0` NAT, so `hostprep`'s internet gate will die otherwise.
 
 You provision a bare NVIDIA Jetson Orin Nano Super 8 GB into a working AgentBOX,
 driving everything that can be automated and gating cleanly on the three steps a
@@ -53,10 +56,12 @@ operator. Load-bearing values:
 | `BSP_DIR` | Path to an extracted `Linux_for_Tegra/` (Jetson Linux BSP + sample rootfs, `apply_binaries.sh` already run). |
 | `BOARD_CONFIG` | `jetson-orin-nano-devkit-super` for JetPack 6.1+; `jetson-orin-nano-devkit` otherwise. Wrong value = failed flash. |
 | `TARGET_DEVICE` | `nvme0n1p1` (NVMe, strongly preferred — installer needs ≥16 GB free) or `internal` for eMMC/SD. |
-| `BOX_USER` / `BOX_PASS` / `BOX_HOST` | Baked into the rootfs so first boot skips interactive `oem-config` and you can SSH in headless. |
-| `AGENTBOX_GIT_URL` / `AGENTBOX_GIT_REF` | Repo the box clones. Defaults to `UMB-Advisors/AgentBOX` (installer is on `main`). `GIT_TOKEN` for a private repo. |
+| `BOX_USER` / `BOX_PASS` / `BOX_HOST` | Baked into the rootfs so first boot skips interactive `oem-config` and you can SSH in headless. `BOX_HOST` doubles as the relay/box id — make it UNIQUE per box when using `WITH_RELAY`. |
+| `AGENTBOX_GIT_URL` / `AGENTBOX_GIT_REF` | Repo the box clones. Defaults to `UMB-Advisors/AgentBOX` @ `demo/agentbox` (the OOBE superset; see the caveat above). |
+| `GIT_TOKEN` | **Mandatory** (scope: `repo`) — clones the PRIVATE `agentbox-sidecar` for the OOBE `:9200` UI. One PAT with `repo` + `read:packages` can serve as both this and `GITHUB_PACKAGES_TOKEN`. |
 | `INSTALL_MODE` | `--prototype` (throwaway secrets, gate bypass, no Caddy) or production (1Password + live gate ON). |
-| `GITHUB_PACKAGES_TOKEN` | **Mandatory** — the installer dies without it (dashboard image builds against GHCR). |
+| `GITHUB_PACKAGES_TOKEN` | **Mandatory** (scope: `read:packages`) — the dashboard build pulls private `@umb-advisors/*` from npm.pkg.github.com. A `repo`-only token 401/403s; the installer preflights this and fails fast. |
+| `WITH_RELAY` | `0` (default) or `1`. `1` runs the opt-in `relay` stage after the `:9200` gate to provision off-LAN "reach from anywhere" — **BILLABLE** (a per-box Railway service) and needs `railway login` on the flashing host. |
 
 If `provision.env` is missing, copy the example, fill what you can infer, and ask
 the operator only for the genuinely unknown values (token, board variant, NVMe).

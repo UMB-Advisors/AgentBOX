@@ -60,13 +60,18 @@ run(){ if [ "$DRY" = 1 ]; then echo "DRY: $*"; else eval "$*"; fi; }
 # The installer clones the MailBOX stack itself; pin it here if needed.
 : "${MAILBOX_GIT_URL:=https://github.com/UMB-Advisors/mailbox.git}"
 : "${MAILBOX_GIT_REF:=main}"
+# Off-LAN reach-me (the 'relay' stage). OFF by default: it stands up a REAL,
+# BILLABLE per-box Railway service and needs an interactive `railway login` on THIS
+# host. Set WITH_RELAY=1 to provision it after the :9200 gate. BOX_HOST is the
+# relay/box id — make it UNIQUE per box for a fleet (else services collide).
+: "${WITH_RELAY:=0}"
 
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8"
 BSSH(){ sshpass -p "$BOX_PASS" ssh $SSH_OPTS "$BOX_USER@$BOX_IP" "$@"; }
 BRSYNC(){ sshpass -p "$BOX_PASS" rsync -az -e "ssh $SSH_OPTS" "$@"; }
 
 # stage gating for --resume
-ORDER="preflight mkuser flash reach hostprep deploy report"
+ORDER="preflight mkuser flash reach hostprep deploy relay report"
 should_run(){
   local s="$1"
   [ "$STAGE" = "all" ] || { [ "$STAGE" = "$s" ] && return 0 || return 1; }
@@ -230,6 +235,37 @@ st_deploy(){
 }
 
 # ── STAGE report ────────────────────────────────────────────────────────────
+# ── STAGE relay (opt-in, BILLABLE) ───────────────────────────────────────────
+# Off-LAN "reach from anywhere": stand up the per-box Railway relay + box-client so
+# the wizard's reach-me link works from any network. OPT-IN (WITH_RELAY=1) only —
+# it creates a REAL, billable Railway service and needs `railway login` on THIS
+# host. Runs AFTER the :9200 gate (the relay proxies the box sidecar). Drives the
+# in-repo infra/relay-poc/provision-box.sh with the flash's OWN ssh creds (sshpass)
+# so a freshly-flashed box with no key trust still works.
+st_relay(){
+  if [ "$WITH_RELAY" != 1 ]; then
+    log "STAGE relay — SKIPPED (WITH_RELAY!=1); off-LAN reach-me not provisioned (see report for how)"
+    return 0
+  fi
+  log "STAGE relay — provisioning per-box Railway relay for '$BOX_HOST' (WITH_RELAY=1) — BILLABLE"
+  if [ "$DRY" = 1 ]; then echo "DRY: RELAY_SSH=sshpass infra/relay-poc/provision-box.sh $BOX_HOST $BOX_USER@$BOX_IP"; return 0; fi
+  local skill_dir repo_root pbx
+  skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  repo_root="$(cd "$skill_dir/../../.." && pwd)"
+  pbx="$repo_root/infra/relay-poc/provision-box.sh"
+  [ -x "$pbx" ] || die "relay provisioner not found/executable at $pbx — run the flash from a full monorepo checkout, or provision reach-me later (see report)"
+  command -v railway >/dev/null || die "railway CLI missing on THIS host — 'npm i -g @railway/cli && railway login', then re-run: WITH_RELAY=1 $0 --stage relay"
+  # provision-box.sh sshes to the box; feed it the flash's password auth via sshpass
+  # -e (password in SSHPASS env, never on a command line) + the same lax host-key opts.
+  SSHPASS="$BOX_PASS" \
+  RELAY_SSH="sshpass -e ssh $SSH_OPTS" \
+  RELAY_SCP="sshpass -e scp $SSH_OPTS" \
+    "$pbx" "$BOX_HOST" "$BOX_USER@$BOX_IP" \
+      || die "relay provisioning failed (see output). The box may be partially registered — re-run: WITH_RELAY=1 $0 --stage relay"
+  log "  reach-me provisioned — the wizard's complete step will now show the link + QR"
+}
+
+# ── STAGE report ──────────────────────────────────────────────────────────────
 st_report(){
   log "STAGE report — box state + remaining human gates"
   if [ "$DRY" = 1 ]; then echo "DRY: docker compose ps on box"; return 0; fi
@@ -245,6 +281,11 @@ REMAINING MANUAL STEPS (installer + skill document these):
 
 Smoke: inject inbound -> draft appears; `hermes -z` replies.
 EOF
+  if [ "$WITH_RELAY" = 1 ]; then
+    log "off-LAN reach-me: PROVISIONED this run — link+QR show in the wizard's complete step; box env at ~/.config/relay-poc/env"
+  else
+    log "off-LAN reach-me: NOT provisioned (LAN/phone-onboarding works without it). To enable 'reach from anywhere' (BILLABLE, needs 'railway login' on this host):  WITH_RELAY=1 $0 --stage relay   — until then the wizard shows 'remote access not set up yet'."
+  fi
 }
 
 # ---- run -------------------------------------------------------------------

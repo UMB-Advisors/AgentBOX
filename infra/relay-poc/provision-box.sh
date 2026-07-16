@@ -23,6 +23,12 @@ SSH_HOST="${2:?usage: ./provision-box.sh <boxid> <ssh-host>}"
 RELAY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"       # infra/relay-poc
 PROJECT_ID="${RELAY_PROJECT_ID:-b9747503-a991-419a-bf2c-36a055b59541}"  # mbox-498-relay-poc
 SVC="relay-${BOXID}"
+# ssh/scp to the box. Default to key-based BatchMode (standalone operator use). The
+# flash engine drives this with password auth by exporting RELAY_SSH/RELAY_SCP
+# (e.g. "sshpass -e ssh -o StrictHostKeyChecking=no ...") so a freshly-flashed box
+# with no key trust still works. Word-split intentionally (multiple -o flags).
+RELAY_SSH="${RELAY_SSH:-ssh -o BatchMode=yes}"
+RELAY_SCP="${RELAY_SCP:-scp -o BatchMode=yes}"
 log(){ printf '\n\033[1;36m[provision]\033[0m %s\n' "$*"; }
 die(){ printf 'provision-box: %s\n' "$*" >&2; exit 1; }
 
@@ -57,25 +63,28 @@ log "  relay host: $HOST"
 
 # 3. Configure the box: env (600), client, systemd user unit. Token via SSH stdin.
 log "box: staging client + env on $SSH_HOST"
-ssh -o BatchMode=yes "$SSH_HOST" 'umask 077; mkdir -p ~/.config/relay-poc ~/relay-poc ~/.config/systemd/user'
-scp -o BatchMode=yes "$RELAY_DIR/box-client.js" "$RELAY_DIR/package.json" "$SSH_HOST:~/relay-poc/" >/dev/null
+$RELAY_SSH "$SSH_HOST" 'umask 077; mkdir -p ~/.config/relay-poc ~/relay-poc ~/.config/systemd/user'
+$RELAY_SCP "$RELAY_DIR/box-client.js" "$RELAY_DIR/package.json" "$SSH_HOST:~/relay-poc/" >/dev/null
 # Install the client's 'ws' dep — NOT silent, NOT '|| true': a missing node or a
 # failed install leaves box-client.js (which imports 'ws') crash-looping forever.
-ssh -o BatchMode=yes "$SSH_HOST" 'command -v node >/dev/null || { echo "node missing on box — run install/onboarding-test-setup.sh first (installs Node 22)"; exit 1; }
+$RELAY_SSH "$SSH_HOST" 'command -v node >/dev/null || { echo "node missing on box — run install/onboarding-test-setup.sh first (installs Node 22)"; exit 1; }
   cd ~/relay-poc && npm install --omit=dev --no-audit --no-fund' \
   || die "box-client dependency install failed on $SSH_HOST (needs node + the ws package); the relay client would crash-loop"
 # env file — token travels over stdin, never on a command line / in output.
-ssh -o BatchMode=yes "$SSH_HOST" 'umask 077; cat > ~/.config/relay-poc/env' <<EOF
+$RELAY_SSH "$SSH_HOST" 'umask 077; cat > ~/.config/relay-poc/env' <<EOF
 RELAY_URL=wss://${HOST}
 BOX_ID=${BOXID}
 BOX_TOKEN=${TOKEN}
 ORIGIN=http://127.0.0.1:9200
 EOF
-ssh -o BatchMode=yes "$SSH_HOST" 'cat > ~/.config/systemd/user/relay-poc.service <<UNIT
+$RELAY_SSH "$SSH_HOST" 'cat > ~/.config/systemd/user/relay-poc.service <<UNIT
 [Unit]
 Description=AgentBOX relay client (dials the per-box relay)
-After=network-online.target
-Wants=network-online.target
+# network-online.target is INERT in the --user instance (nothing pulls it in), so
+# a user unit that Wants/After it would start immediately at user-manager boot
+# anyway. Order on the plain network.target and rely on box-client.js reconnect
+# backoff to ride out an early start rather than pretend to wait for the network.
+After=network.target
 [Service]
 ExecStart=/usr/bin/node %h/relay-poc/box-client.js
 EnvironmentFile=%h/.config/relay-poc/env
@@ -92,11 +101,13 @@ systemctl --user enable --now relay-poc'
 # 4. Verify the box registered on the relay.
 log "verify: relay sees the box"
 ok=""
-for _ in $(seq 1 10); do
+# `railway up --ci` returns at BUILD submit, not deploy-live, so the relay may take
+# tens of seconds to start serving. Poll for up to ~90s before giving up.
+for _ in $(seq 1 30); do
   if curl -s --max-time 6 "https://${HOST}/__relay/health" | grep -q "\"${BOXID}\""; then ok=1; break; fi
-  sleep 2
+  sleep 3
 done
-[ -n "$ok" ] || die "box did not register on https://${HOST} within ~20s — check 'ssh $SSH_HOST journalctl --user -u relay-poc -n 30'"
+[ -n "$ok" ] || die "box did not register on https://${HOST} within ~90s — the Railway deploy may still be building (check 'railway logs --service $SVC') or the box client is down (check '$RELAY_SSH $SSH_HOST journalctl --user -u relay-poc -n 30')"
 
 # Registered != proxying. Confirm the tunnel actually REACHES the box sidecar (:9200)
 # so a registered-but-not-proxying box fails loudly instead of false-greening.
