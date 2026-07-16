@@ -21,6 +21,12 @@ bottom once, then use as a reference. Last updated 2026-07-06.*
 - **The OOBE work is on feature branches, NOT `main`:** monorepo `feat/onboarding-wifi-ap`,
   sidecar `feat/onboarding-oobe`. Nothing is deployed to production; it's been tested on one
   bench box (`agentboxhonduras`).
+  > **⚠️ SUPERSEDED (2026-07-15):** the monorepo integration branch is now **`demo/agentbox`**
+  > (the superset carrying `infra/relay-poc/` + the flash fixes). PR #117 already merged the base
+  > OOBE stack to `main`; PR #118 carries the newest flash fixes. **Do NOT reset the monorepo to
+  > `feat/onboarding-wifi-ap`** — that branch predates and **wipes `infra/relay-poc/`** (the
+  > reach-me code). Treat monorepo branch references below as `demo/agentbox`. The sidecar branch
+  > (`feat/onboarding-oobe`) is unchanged.
 - **Architecture that landed:** *deferred-join* — the box hosts a WiFi setup AP the whole
   wizard; WiFi + mailbox are **saved** while offline; on "Finish" the box joins WiFi and connects
   the mailbox itself. No reconnect, no mDNS dependency, phone-only.

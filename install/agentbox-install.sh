@@ -294,6 +294,20 @@ if [ -n "$DASHBOARD_IMAGE" ]; then
 elif docker image inspect mailbox-dashboard:local >/dev/null 2>&1; then
   BUILD_FLAG=""; log "  using preloaded mailbox-dashboard:local (skipping --build)"
 fi
+# Preflight the GH Packages token SCOPE before the long build. The dashboard pulls
+# private @umb-advisors/llm from npm.pkg.github.com, which needs a PAT with
+# 'read:packages' — NOT just 'repo'. A repo-only token 401/403s here and would
+# otherwise abort the build opaquely under set -e. Only meaningful when we build.
+if [ -n "$BUILD_FLAG" ]; then
+  pkgtok="$(grep -m1 '^GITHUB_PACKAGES_TOKEN=' .env | cut -d= -f2-)"
+  code="$(curl -s -o /dev/null -w '%{http_code}' -m 15 -H "Authorization: Bearer $pkgtok" https://npm.pkg.github.com/@umb-advisors/llm || echo 000)"
+  case "$code" in
+    200|404) log "  GH Packages auth OK — token carries read:packages [HTTP $code]" ;;
+    401|403) die "GITHUB_PACKAGES_TOKEN lacks 'read:packages' scope (npm.pkg.github.com -> HTTP $code). The dashboard build pulls private @umb-advisors/* packages. Regenerate the PAT with BOTH 'repo' and 'read:packages' and retry." ;;
+    000) log "  WARN: could not reach npm.pkg.github.com to preflight the token (network?) — proceeding" ;;
+    *) log "  WARN: unexpected npm.pkg.github.com response [HTTP $code] — proceeding, build may fail" ;;
+  esac
+fi
 docker compose up -d $BUILD_FLAG mailbox-dashboard n8n $CADDY
 docker compose --profile qdrant-bootstrap run --rm mailbox-qdrant-bootstrap || log "  (qdrant bootstrap non-fatal)"
 
