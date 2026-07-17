@@ -25,8 +25,11 @@
 # — exactly what an end user sees on first boot.
 #
 # Usage:
-#   install/demo-reset.sh [--dry-run] [--wipe-mail-data] [--reboot] [--yes]
+#   install/demo-reset.sh [--dry-run] [--seed-demo] [--wipe-mail-data] [--reboot] [--yes]
 #     --dry-run         Print the blast radius and touch nothing.
+#     --seed-demo       Seed a canned demo inbox (sample inbox_messages + drafts) so
+#                       the product's triage->draft->approve value shows in the queue
+#                       immediately — no live Gmail/OAuth/5-min poll. Opt-in, demo data only.
 #     --wipe-mail-data  Also wipe the MailBOX email/drafts/RAG data plane.
 #     --reboot          `sudo reboot` at the end (into the setup AP).
 #     --yes             Skip the interactive "type RESET" confirmation.
@@ -40,14 +43,15 @@
 # reset host identity — a shipped box needs all of that; a dev box needs none of it.
 set -uo pipefail
 
-DRY=0; WIPE_DATA=0; REBOOT=0; YES=0
+DRY=0; WIPE_DATA=0; REBOOT=0; YES=0; SEED_DEMO=0
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
+    --seed-demo) SEED_DEMO=1 ;;
     --wipe-mail-data) WIPE_DATA=1 ;;
     --reboot) REBOOT=1 ;;
     --yes|-y) YES=1 ;;
-    -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,52p' "$0"; exit 0 ;;
     *) echo "demo-reset: unknown arg '$a' (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -63,6 +67,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 STATE_DIR="${AGENTBOX_STATE_DIR:-/var/lib/agentbox}"
 STACK_DIR="${STACK_DIR:-$HOME/mailbox}"
+SIDE_DIR="${SIDE:-$HOME/agentbox-sidecar}"
+# Seeding the demo queue (docker exec into the running Postgres, local-socket trust —
+# same pattern as agentbox-install.sh; no password needed).
+POSTGRES_USER="${POSTGRES_USER:-mailbox}"
+POSTGRES_DB="${POSTGRES_DB:-mailbox}"
+PG_CONTAINER="${PG_CONTAINER:-mailbox-postgres-1}"
+SEED_SQL="${SEED_SQL:-$STACK_DIR/scripts/seed-dev-data.sql}"
 
 # --- safety: refuse on a known production/customer host --------------------------
 # A dev demo box is the intended target; this guard stops an accidental run against
@@ -96,6 +107,8 @@ WILL CLEAR:
     - $HERMES_HOME/google_accounts/   $HERMES_HOME/google_token.json   $HERMES_HOME/mail_accounts/
 $( [ "$WIPE_DATA" = 1 ] && echo "  MailBOX data plane (--wipe-mail-data)
     - Postgres email/drafts/classification + Qdrant RAG (via $STACK_DIR/scripts/factory-reset.sh)" )
+$( [ "$SEED_DEMO" = 1 ] && echo "WILL SEED (--seed-demo):
+  - sample inbox_messages + drafts into Postgres so the approval queue is populated ($SEED_SQL)" )
 
 WILL KEEP (developer access + installed stack):
   SSH access, BOX_PASS, sudoers (provisioning + nmcli), Tailscale, git remote,
@@ -107,6 +120,7 @@ EOF
 if [ "$DRY" = 1 ]; then
   log "dry run complete — no changes made."
   [ -x "$STACK_DIR/scripts/factory-reset.sh" ] || [ "$WIPE_DATA" != 1 ] || warn "--wipe-mail-data requested but $STACK_DIR/scripts/factory-reset.sh not found on this box"
+  [ -f "$SEED_SQL" ] || [ "$SEED_DEMO" != 1 ] || warn "--seed-demo requested but seed SQL not found at $SEED_SQL"
   exit 0
 fi
 
@@ -150,12 +164,47 @@ if [ "$WIPE_DATA" = 1 ]; then
   fi
 fi
 
+# --- 4.5 (optional) seed a demo inbox so the queue shows product value -----------
+# Turns "you're onboarded" (empty queue) into "here are pending drafts — edit + approve"
+# in seconds, with no live Gmail/OAuth/5-min-poll. The seed inserts into
+# mailbox.inbox_messages + mailbox.drafts; account_id is filled by the migration-033
+# DEFAULT (non-breaking), so the pre-033 seed applies clean. Non-fatal on failure.
+if [ "$SEED_DEMO" = 1 ]; then
+  if [ ! -f "$SEED_SQL" ]; then
+    warn "--seed-demo: seed SQL not found at $SEED_SQL — skipping"
+  elif ! docker exec "$PG_CONTAINER" pg_isready -U "$POSTGRES_USER" >/dev/null 2>&1; then
+    warn "--seed-demo: Postgres ($PG_CONTAINER) not ready — is the stack up? (docker compose ps) — skipping"
+  else
+    # A --wipe-mail-data run drops the DB and --no-bootstrap skips migrations, so the
+    # schema may be absent. Re-migrate before seeding if mailbox.drafts is missing.
+    if [ -z "$(docker exec "$PG_CONTAINER" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT to_regclass('mailbox.drafts')" 2>/dev/null)" ]; then
+      log "seed: schema missing — running migrations first"
+      ( cd "$STACK_DIR" && docker compose --profile migrate run --rm mailbox-migrate ) \
+        || warn "  migrate failed — the seed likely won't apply"
+    fi
+    log "seeding demo inbox from $SEED_SQL"
+    if docker exec -i "$PG_CONTAINER" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 < "$SEED_SQL"; then
+      log "  demo queue seeded — after onboarding, open the dashboard to show triage + drafts"
+    else
+      warn "  seed failed to apply (schema drift?) — inspect: docker exec -i $PG_CONTAINER psql -U $POSTGRES_USER -d $POSTGRES_DB"
+    fi
+  fi
+fi
+
 # --- 5. make the running sidecar reflect the cleared state ------------------------
 # (A reboot would do this too; restart now so a no-reboot run is already fresh.)
 if [ "$REBOOT" != 1 ]; then
   log "restarting the sidecar so the wizard reflects the reset"
   systemctl --user restart agentbox-sidecar 2>/dev/null \
     || warn "could not restart agentbox-sidecar (systemctl --user status agentbox-sidecar)"
+  # Confirm the phone front door actually RENDERS — not just that /healthz is 200.
+  # A 503 here means web/dist is missing ('UI not built'); the wizard would be blank.
+  sleep 2
+  code="$(curl -s -o /dev/null -w '%{http_code}' -m 5 http://127.0.0.1:9200/ 2>/dev/null || echo 000)"
+  case "$code" in
+    200) log "  :9200 renders OK (GET / -> 200)" ;;
+    *) warn ":9200 GET / returned $code (expected 200) — the wizard may show a blank/503 'UI not built' page. Rebuild: (cd $SIDE_DIR/web && pnpm build) then restart agentbox-sidecar." ;;
+  esac
 fi
 
 # --- 6. done ---------------------------------------------------------------------

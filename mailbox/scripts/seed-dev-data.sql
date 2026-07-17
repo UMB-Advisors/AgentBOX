@@ -1,9 +1,10 @@
 -- scripts/seed-dev-data.sql — STAQPRO-155
 --
--- Sample data for the dev compose stack. Inserts 6 inbox messages + drafts
--- spanning the active states (pending, awaiting_cloud, edited, approved,
--- failed, sent) so the dashboard's queue UI has something to render
--- without going through the full Gmail → classify → draft pipeline.
+-- Sample data for the dev/demo stack. Inserts 6 inbox messages + drafts spanning
+-- the queue states so the dashboard has something to render without the full
+-- Gmail → classify → draft pipeline. Valid statuses per drafts_status_check:
+-- pending, awaiting_cloud, approved, rejected, edited, sent ('failed' was dropped
+-- by migration 016 — a failed send stays 'approved' + surfaces via StuckApproved).
 --
 -- Idempotent: ON CONFLICT DO NOTHING for the inbox rows; drafts cascade
 -- via FK if the inbox rows already exist.
@@ -104,7 +105,9 @@ FROM mailbox.inbox_messages m
 WHERE m.message_id = 'seed-dev-004'
   AND NOT EXISTS (SELECT 1 FROM mailbox.drafts WHERE inbox_message_id = m.id);
 
--- 5. failed — Gmail send failed, surfaces in the Failed Sends panel for retry
+-- 5. approved w/ error_message — a send that FAILED after approval. Migration 016
+--    dropped the 'failed' status; per CLAUDE.md a Gmail send error leaves the row at
+--    'approved' and the StuckApproved UI surfaces it (error_message carries the cause).
 INSERT INTO mailbox.inbox_messages
   (message_id, from_addr, to_addr, subject, body, received_at, classification, confidence, classified_at, model)
 VALUES
@@ -121,7 +124,7 @@ INSERT INTO mailbox.drafts
    from_addr, to_addr, subject, body_text, received_at)
 SELECT m.id, 'Re: Q2 pricing update',
        E'Hi Lee,\n\nAcknowledged — will review and confirm by Friday.\n\nBest,\nOps',
-       'qwen3:4b-ctx4k', 'failed',
+       'qwen3:4b-ctx4k', 'approved',
        'Webhook returned 502: gmail token refresh failed (test-mode error)',
        'local', 'follow_up', 0.82,
        m.from_addr, m.to_addr, m.subject, m.body, m.received_at
