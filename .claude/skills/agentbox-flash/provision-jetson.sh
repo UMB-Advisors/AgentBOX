@@ -229,9 +229,20 @@ st_deploy(){
   # offline / reboot into AP mode — that would sever this ssh session and defeat
   # the :9200 gate below. The AP flip is a separate, deliberate phone-handoff step.
   BSSH "cd $BOX_CHECKOUT && AB_GH_TOKEN='$GIT_TOKEN' AB_SKIP_AP_REBOOT=1 ./install/onboarding-test-setup.sh"
-  log "  gate: sidecar :9200 must answer (phone-facing front door)"
-  BSSH "for i in \$(seq 1 20); do curl -fsS -m 5 http://127.0.0.1:9200/healthz >/dev/null 2>&1 && { echo 'sidecar :9200 OK'; exit 0; }; sleep 3; done; echo 'sidecar :9200 never came up'; exit 1" \
-    || die "sidecar (:9200) did not come up after onboarding-test-setup — OOBE + reach-me absent. Inspect: BSSH 'systemctl --user status agentbox-sidecar; journalctl --user -u agentbox-sidecar -n 40'"
+  log "  gate: sidecar :9200 must answer AND render the wizard (phone-facing front door)"
+  # Gate on BOTH /healthz (liveness) AND GET / == 200 (the SPA actually renders).
+  # /healthz returns 200 without touching web/dist, and render_index serves a 503
+  # 'UI not built' page when web/dist is missing — so a healthz-only gate goes green
+  # while the phone loads a blank page. Require the rendered index to close that false-green.
+  BSSH "for i in \$(seq 1 20); do
+      if curl -fsS -m 5 http://127.0.0.1:9200/healthz >/dev/null 2>&1; then
+        code=\$(curl -s -o /dev/null -w '%{http_code}' -m 5 http://127.0.0.1:9200/ || echo 000)
+        [ \"\$code\" = 200 ] && { echo 'sidecar :9200 OK (healthz + UI renders)'; exit 0; }
+        echo \"  :9200 live but UI not rendering yet (GET / -> \$code)\"
+      fi
+      sleep 3
+    done; echo 'sidecar :9200 never served a rendered UI'; exit 1" \
+    || die "sidecar (:9200) did not serve a rendered wizard — /healthz may be green but GET / returned non-200 (web/dist missing => 503 'UI not built'). Rebuild the UI (pnpm build in agentbox-sidecar/web) or re-run onboarding-test-setup.sh. Inspect: BSSH 'curl -s -o /dev/null -w %{http_code} http://127.0.0.1:9200/; systemctl --user status agentbox-sidecar; journalctl --user -u agentbox-sidecar -n 40'"
 }
 
 # ── STAGE report ────────────────────────────────────────────────────────────
