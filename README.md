@@ -81,7 +81,7 @@ flowchart TB
 
 | Component | Path | Stack | Role |
 |-----------|------|-------|------|
-| **Hermes agent** | upstream, installed on-box | Python | Upstream NousResearch hermes-agent **v0.16.0** at `~/.hermes/hermes-agent-v2`; patch branch `agentbox2-v3` in [`UMB-Advisors/agentbox-hermes-patches`](https://github.com/UMB-Advisors/agentbox-hermes-patches). Served at `/hermes/` behind the sidecar. |
+| **Hermes agent** | upstream, installed on-box | Python | Upstream NousResearch hermes-agent **v0.18.2** (`v2026.7.7.2`) at `~/.hermes/hermes-agent-v2`; patch branch `agentbox2-v3` in [`UMB-Advisors/agentbox-hermes-patches`](https://github.com/UMB-Advisors/agentbox-hermes-patches) (= upstream + one `/dashboard` proxy patch). Served at `/hermes/` behind the sidecar. |
 | **Custom UI + features** | [`UMB-Advisors/agentbox-sidecar`](https://github.com/UMB-Advisors/agentbox-sidecar) | Python / TypeScript | ALL custom AgentBOX features + the operator dashboard (FastAPI `:9200`, serves the dashboard at `/`, stock hermes at `/hermes/`). |
 | **gBrain** | [`gbrain-master/`](./gbrain-master) | Python | Persistent memory and knowledge store the agent reads from and writes to. |
 | **Desktop** | [`hermes-desktop-main/`](./hermes-desktop-main) | TypeScript | Native control surface for interacting with and supervising the agent. |
