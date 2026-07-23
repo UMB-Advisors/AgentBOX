@@ -126,9 +126,20 @@ see step 2 above for the pre-sidecar caveat).
 
 Provisioning assumes a flashed JetPack base (**JetPack 7.2** — Jetson Linux r39.2, Ubuntu 24.04, CUDA 13).
 
-**From scratch (recommended):** NVIDIA's ISO installer — write the JetPack installer to a USB stick with Etcher, boot the Jetson from it, install to NVMe, complete first-boot setup. No host PC, no recovery-mode jumper, no BSP:
+**From scratch (recommended):** NVIDIA's ISO installer — no host PC, no recovery-mode jumper, no BSP. You need the kit + its 19 V supply, a laptop, a **USB stick (16 GB+)**, and an **NVMe SSD** (recommended over microSD — the install pulls models + Docker images). Follow NVIDIA's [Orin Nano quick start](https://docs.nvidia.com/jetson/orin-nano-devkit/user-guide/latest/quick_start.html); the short version:
 
-➡️ **[`docs/flash-jetson.md`](./docs/flash-jetson.md)** — the from-scratch flashing guide (summarizes the [NVIDIA quick start](https://docs.nvidia.com/jetson/orin-nano-devkit/user-guide/latest/quick_start.html) + AgentBOX specifics + what to run next).
+1. Confirm the board's UEFI/QSPI firmware is **36.0+** (power on with a monitor, press **Esc** at the splash to read the version; if older, do NVIDIA's JetPack-6 firmware update first).
+2. Download the **Jetson installer ISO** (JetPack 7.2 / r39.2) from the [JetPack download page](https://developer.nvidia.com/embedded/jetpack).
+3. Write the ISO to the USB stick with **[Balena Etcher](https://etcher.balena.io/)** (you can't just copy the file — it must be bootable media).
+4. Install the NVMe SSD, connect a monitor + keyboard, insert the USB, and plug in the **19 V** supply (it powers on automatically).
+5. Boot from USB: press **Esc** at the splash → **Boot Manager** → the USB disk.
+6. **⚠️ Confirm the QSPI capsule update — press `Y`** (the prompt times out in ~30 s; miss it and the install fails later). It runs two passes and may reboot between them — let it finish.
+7. At GRUB choose **Install Jetson ISO r39.2**, select the **NVMe** as the target, confirm (this **erases** it), let it finish, and reboot.
+8. Remove the USB, boot from NVMe, and complete first-boot `oem-config` (EULA, language, network, **create your user + hostname**).
+
+Then, before provisioning: set **MAXN SUPER** (power-mode indicator → the box defaults to 25 W), **enable SSH** (`sudo apt update && sudo apt install -y openssh-server`), and get the box on your network. Provisioning reaches it over SSH as the user you created.
+
+➡️ Full guide (AgentBOX specifics + what to run next): **[`docs/flash-jetson.md`](./docs/flash-jetson.md)**.
 
 **Advanced / headless re-image (host-driven):** Force Recovery + `sdkmanager --cli` from a host — useful for scripted or remote re-imaging of an existing box:
 
