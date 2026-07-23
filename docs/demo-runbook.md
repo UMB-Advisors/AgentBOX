@@ -26,12 +26,12 @@ first-boot AP/OOBE state. It's a required step even on a brand-new box.
 
 | # | Where | Do this | Result |
 |---|-------|---------|--------|
-| 1 | Operator host | Extract the Jetson Linux BSP (set `BSP_DIR`), `apt install sshpass`, put the Jetson in **recovery mode** (jumper). Copy `.claude/skills/agentbox-flash/provision.env.example` → `provision.env` and fill it (see **Config** below). The box must reach the **internet** after first boot (LAN / Ethernet with DHCP). | config ready |
-| 2 | Operator host | Run the flash: the **`/agentbox-flash`** skill, or `bash .claude/skills/agentbox-flash/provision-jetson.sh`. *Optional:* prefix `WITH_RELAY=1` for off-LAN "reach from anywhere" (**billable** — stands up a Railway service; needs `railway login` on this host). | flash → install → sidecar; **green `:9200`, box online on your LAN** (not yet in AP mode) |
-| 3 | On the box | `~/agentbox/install/demo-reset.sh --seed-demo --reboot` (run once with `--dry-run` first to preview) | clears onboarding + connected accounts, **seeds a demo inbox**, takes Wi-Fi offline, reboots → ~90 s later broadcasts **`AgentBOX-Setup-XXXX`** |
-| 4 | Phone | Join `AgentBOX-Setup-XXXX` (open, no password). Open **`http://10.42.0.1:9200/onboarding`**. Walk the wizard → **Finish**. | deferred-join drops the AP, the box joins home Wi-Fi and comes online (the reach-me QR/link shows on the complete step **if** the relay was provisioned in step 2) |
+| 1 | Flash + first boot | Flash JetPack 7.2 per **[`flash-jetson.md`](./flash-jetson.md)** (NVIDIA ISO installer: write installer to USB with Etcher → boot the Jetson → **confirm the QSPI capsule update, press `Y`** → install to **NVMe** → first-boot `oem-config`). Then **enable SSH** (`sudo apt install -y openssh-server`) and connect it to your network (Wi-Fi/Ethernet, DHCP). | booted box, SSH-reachable on your LAN |
+| 2 | On the box (SSH) | Clone the repo and run the OOBE install, staying online (don't flip to AP yet). Needs a GitHub token — `GIT_TOKEN` (`repo`) for the private sidecar clone + `GITHUB_PACKAGES_TOKEN` (`read:packages`) for the dashboard build (one PAT with both scopes works). <br>`git clone https://github.com/UMB-Advisors/AgentBOX.git ~/AgentBOX`<br>`AB_GH_TOKEN=<token> AB_SKIP_AP_REBOOT=1 ~/AgentBOX/install/onboarding-test-setup.sh` | installs sidecar + OOBE wizard + Wi-Fi-AP, builds the UI, gates `:9200` → **green `:9200`, box online on your LAN** (not yet in AP mode) |
+| 3 | On the box | `~/AgentBOX/install/demo-reset.sh --seed-demo --reboot` (run once with `--dry-run` first to preview) | clears onboarding + connected accounts, **seeds a demo inbox**, takes Wi-Fi offline, reboots → ~90 s later broadcasts **`AgentBOX-Setup-XXXX`** |
+| 4 | Phone | Join `AgentBOX-Setup-XXXX` (open, no password). Open **`http://10.42.0.1:9200/onboarding`**. Walk the wizard → **Finish**. | deferred-join drops the AP, the box joins home Wi-Fi and comes online (the reach-me QR/link shows on the complete step **if** the off-LAN relay was provisioned — a separate, billable `infra/relay-poc/provision-box.sh` step) |
 | 4b | Phone / laptop | **Show the product:** open the dashboard (`:9200`) — the approval queue is **already populated** (seeded in step 3). Open a pending draft, edit it, approve it. | demonstrates real triage → draft → approve without waiting on live Gmail |
-| 5 | Re-demo | `~/agentbox/install/demo-reset.sh --seed-demo --reboot` → back to step 4 | fresh wizard + fresh seeded queue |
+| 5 | Re-demo | `~/AgentBOX/install/demo-reset.sh --seed-demo --reboot` → back to step 4 | fresh wizard + fresh seeded queue |
 
 `--seed-demo` is optional: drop it to show a genuinely empty first-run (no demo data). It only inserts sample rows; it never touches live Gmail.
 
@@ -39,24 +39,29 @@ first-boot AP/OOBE state. It's a required step even on a brand-new box.
 
 Skip steps 1–2.
 
-1. **On the box:** `~/agentbox/install/demo-reset.sh --seed-demo --reboot`
+1. **On the box:** `~/AgentBOX/install/demo-reset.sh --seed-demo --reboot`
    *(add `--wipe-mail-data` for a truly clean slate that also clears prior emails/drafts/RAG)*
 2. **Phone:** same as Scenario A, steps 4 + 4b.
 
 ---
 
-## Config — `provision.env` (the fields that matter)
+## Config — the GitHub token step 2 needs
 
-| Field | Value | Notes |
-|-------|-------|-------|
-| `BOARD_CONFIG` | `jetson-orin-nano-devkit-super` | `...-devkit` on older JetPack. Wrong value = failed flash. |
-| `BOX_USER` / `BOX_PASS` | your headless account | baked into the rootfs |
-| `GIT_TOKEN` | PAT, scope **`repo`** | clones the PRIVATE `agentbox-sidecar` (the `:9200` UI) |
-| `GITHUB_PACKAGES_TOKEN` | PAT, scope **`read:packages`** | the dashboard build pulls private `@umb-advisors/*`; a `repo`-only token 401/403s (the installer preflights this and fails fast) |
-| `AGENTBOX_GIT_REF` | `demo/agentbox` | the OOBE superset (until it merges to `main`) |
-| `INSTALL_MODE` | `--prototype` | throwaway secrets, no Caddy (bench); production uses 1Password |
+The on-box install (`onboarding-test-setup.sh`) clones a **private** repo and builds against
+private packages, so it needs a GitHub PAT with two scopes (one PAT carrying **both** works —
+pass it as `AB_GH_TOKEN`):
 
-One PAT carrying **both** `repo` and `read:packages` can serve as both tokens.
+| Scope | Why |
+|-------|-----|
+| **`repo`** | clones the PRIVATE `agentbox-sidecar` (the `:9200` UI) |
+| **`read:packages`** | the dashboard build pulls private `@umb-advisors/*` from npm.pkg.github.com; a `repo`-only token 401/403s (the installer preflights this and fails fast) |
+
+Branch: clone `main` for the merged base, or a feature branch (e.g. `demo/agentbox`) for the
+newest OOBE work. `install/agentbox-install.sh` (base appliance) also takes `--prototype`
+(throwaway secrets, no Caddy) vs production (1Password).
+
+> The old host-driven flash's `provision.env` (`BOARD_CONFIG`, `BOX_USER`, `BSP_DIR`, …) is
+> **not used** in this flow — those only apply to the advanced `/agentbox-flash` path.
 
 ---
 
@@ -75,8 +80,9 @@ sanitizer — it preserves SSH, `BOX_PASS`, sudoers, Tailscale, and the git remo
 
 ## Notes
 
-- On the box the monorepo is cloned at lowercase **`~/agentbox`** (the flash's
-  `BOX_CHECKOUT` default), so the scripts live under `~/agentbox/install/`.
-- The box clones from `origin/demo/agentbox`; make sure that branch carries these
-  scripts (this doc + `demo-reset.sh` ride PR #119). If you provisioned before they
-  landed, `git -C ~/agentbox pull` on the box.
+- These instructions clone the monorepo to **`~/AgentBOX`** (step 2), so the scripts live
+  under `~/AgentBOX/install/`. `onboarding-test-setup.sh` self-locates the repo, so a
+  different clone path works too — just adjust the `~/AgentBOX/...` paths above to match.
+- The sidecar serves the **compiled** `web/dist`, so a `git pull` alone never updates the
+  UI on the box — rebuild after pulling: `~/agentbox-sidecar/bin/update-ui.sh` (pull → build
+  → restart), or `pnpm build` in `agentbox-sidecar/web` + restart `agentbox-sidecar`.

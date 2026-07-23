@@ -52,7 +52,7 @@ It is built as a monorepo of four cooperating parts — the **Hermes agent**, th
 > [!IMPORTANT]
 > **AgentBOX is the source of truth for the unified appliance** = the **MailBOX** email pipeline (triage → draft → approve → send) **plus** the Hermes agent + gBrain, co-resident on one Jetson. As of UMB-105 the MailBOX app stack is **vendored in this monorepo** under [`mailbox/`](./mailbox) (no external clone); `install/agentbox-install.sh` syncs it into place. This repo owns everything: the vendored stack, the installer, the Hermes/gBrain wiring (`config/hermes/`), the compose override (`config/`), the boot units (`systemd/`), and the JetPack flow.
 >
-> **New box:** flashed Jetson → `install/agentbox-install.sh --prototype`; bare hardware → the **`/agentbox-flash`** skill. See [`docs/agentbox-jp72-reproduction.v0.1.0.md`](./docs/agentbox-jp72-reproduction.v0.1.0.md).
+> **New box:** bare hardware → flash JetPack per **[`docs/flash-jetson.md`](./docs/flash-jetson.md)** (NVIDIA ISO installer); already-flashed Jetson → `install/onboarding-test-setup.sh` (OOBE) or `install/agentbox-install.sh --prototype` (base). See also [`docs/agentbox-jp72-reproduction.v0.1.0.md`](./docs/agentbox-jp72-reproduction.v0.1.0.md).
 
 ## Architecture
 
@@ -105,7 +105,7 @@ cd AgentBOX
 
 The real bring-up flow:
 
-1. **Flash** the Jetson (bare hardware → the `/agentbox-flash` skill; reflash runbook below).
+1. **Flash** the Jetson — from scratch, use NVIDIA's ISO installer per **[`docs/flash-jetson.md`](./docs/flash-jetson.md)** (write the JetPack 7.2 installer to USB with Etcher → boot → install to NVMe → first-boot setup). Host-driven flashing (`/agentbox-flash` skill, or the SDK-Manager reflash runbook below) is an advanced alternative.
 2. **Install** on the box: `install/agentbox-install.sh --prototype` — ⚠️ STAGES 7/7.5/7.6
    currently provision the **pre-sidecar** architecture; the installer rework is tracked
    under MBOX-428. See the warning header in the script.
@@ -122,9 +122,15 @@ see step 2 above for the pre-sidecar caveat).
 > [!TIP]
 > Provisioning wires up the agent, gBrain, the ACL layer, and the boot units into a single managed appliance. Review `infra/acl/` before exposing the box on a shared network.
 
-## Reflashing the OS (JetPack)
+## Flashing / reflashing the OS (JetPack)
 
-Provisioning assumes a flashed JetPack base. To re‑image a box from scratch — e.g. moving the Orin Nano Super from JetPack 6.2 to **JetPack 7.2** (Jetson Linux r39.2, Ubuntu 24.04, CUDA 13), headless — follow the dedicated runbook:
+Provisioning assumes a flashed JetPack base (**JetPack 7.2** — Jetson Linux r39.2, Ubuntu 24.04, CUDA 13).
+
+**From scratch (recommended):** NVIDIA's ISO installer — write the JetPack installer to a USB stick with Etcher, boot the Jetson from it, install to NVMe, complete first-boot setup. No host PC, no recovery-mode jumper, no BSP:
+
+➡️ **[`docs/flash-jetson.md`](./docs/flash-jetson.md)** — the from-scratch flashing guide (summarizes the [NVIDIA quick start](https://docs.nvidia.com/jetson/orin-nano-devkit/user-guide/latest/quick_start.html) + AgentBOX specifics + what to run next).
+
+**Advanced / headless re-image (host-driven):** Force Recovery + `sdkmanager --cli` from a host — useful for scripted or remote re-imaging of an existing box:
 
 ➡️ **[`docs/reflash-jetpack-7.2.v0.1.0.md`](./docs/reflash-jetpack-7.2.v0.1.0.md)** — backup → Force Recovery → `sdkmanager --cli` flash → headless (no desktop) → restore.
 
