@@ -7,6 +7,14 @@ argument-hint: "[--prototype] [--prod] [--resume <stage>]"
 
 # /agentbox-flash — Blank Jetson → fully set-up AgentBOX
 
+> **📌 From-scratch flashing is the NVIDIA ISO installer, NOT this skill.** For a bare board,
+> flash JetPack per **[`docs/flash-jetson.md`](../../../docs/flash-jetson.md)** (write the
+> installer to USB with Etcher → boot the Jetson → install to NVMe → first-boot setup), then
+> SSH in and run `install/onboarding-test-setup.sh`. This skill automates the **advanced,
+> host-driven** path (detect USB recovery mode → `l4t_initrd_flash`); use it only when you
+> explicitly want a fully host-driven flash. Its `preflight`/`mkuser`/`flash` stages do **not**
+> apply to an ISO-installed box — on one of those, start at the on-box install.
+
 > **⚠️ CAVEAT (updated 2026-07-15):** `install/agentbox-install.sh` provisions the base
 > appliance (v0.15.1 hermes, no sidecar) and does NOT bring up the phone-facing sidecar
 > (`:9200`). The flash's **deploy** stage now chains `install/onboarding-test-setup.sh`
