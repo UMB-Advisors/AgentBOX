@@ -69,16 +69,17 @@ if [ "${node_major:-0}" -lt 20 ]; then
   sudo apt-get install -y nodejs
 fi
 
-# 2. pnpm — prefer 9 (no build-script gate). Forcefully clear every existing
-#    pnpm/corepack shim first (npm won't overwrite a corepack symlink, which is
-#    why a plain `npm i -g pnpm@9` left v11 in place). If 9 still can't win, the
-#    web/pnpm-workspace.yaml allowlist lets a *clean* install build esbuild on
-#    pnpm 11 too — so we proceed regardless of the resolved version.
-log "installing pnpm 9 (clearing existing pnpm shims first)"
+# 2. pnpm 9 — PINNED to match web/package.json's `packageManager` (pnpm@9.15.9). The box
+#    runs pnpm 9; the UI's build-script allowlist lives in web/package.json
+#    (pnpm.onlyBuiltDependencies: esbuild, unicode-animations), NOT a pnpm-workspace.yaml —
+#    pnpm 9 rejects a settings-only workspace.yaml ("packages field missing or empty"). That
+#    file regressed the build 3x; do NOT reintroduce it. Clear stray corepack/npm shims first
+#    so a stray pnpm 11 can't win the PATH.
+log "installing pnpm 9.15.9 (clearing existing pnpm shims first)"
 sudo corepack disable >/dev/null 2>&1 || true
 sudo npm rm -g pnpm pnpx >/dev/null 2>&1 || true
 for d in /usr/local/bin /usr/bin /bin; do sudo rm -f "$d/pnpm" "$d/pnpx" 2>/dev/null || true; done
-sudo npm install -g pnpm@9
+sudo npm install -g pnpm@9.15.9
 hash -r 2>/dev/null || true
 log "pnpm $(pnpm --version 2>/dev/null || echo '?') at $(command -v pnpm 2>/dev/null || echo '?')"
 
@@ -88,10 +89,45 @@ if ! command -v uv >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/uv" ]; then
 fi
 export PATH="$HOME/.local/bin:$PATH"
 
-# 4. build the wizard UI (clean install so build scripts actually run)
-log "building wizard UI (this is the slow step)"
-( cd "$SIDE/web" && rm -rf node_modules && pnpm install && pnpm build )
-[ -d "$SIDE/web/dist" ] || die "build did not produce $SIDE/web/dist"
+# 4. wizard UI — prefer a PRE-BUILT bundle (no on-box compile) when provisioning a
+#    release, else build. CI (agentbox-sidecar .github/workflows/build-web-dist.yml)
+#    attaches web-dist.tar.gz to each Release; we fetch it when the sidecar checkout is
+#    exactly that release tag. Branch/dev checkouts (and no-asset / offline) build locally.
+#    Overrides: AB_UI_PREBUILT=0 forces a build; AB_UI_DIST_URL=<url> fetches a specific tarball.
+fetch_prebuilt_dist() {  # 0 = populated $SIDE/web/dist from a prebuilt bundle; 1 = fall back to build
+  if [ "${AB_UI_PREBUILT:-auto}" = "0" ]; then return 1; fi
+  local tmp tag
+  tmp="$(mktemp -d)" || return 1
+  if [ -n "${AB_UI_DIST_URL:-}" ]; then
+    log "fetching prebuilt UI from AB_UI_DIST_URL"
+    local -a auth=()
+    if [ -n "${AB_GH_TOKEN:-}" ]; then auth=(-H "Authorization: Bearer $AB_GH_TOKEN"); fi
+    if ! curl -fsSL "${auth[@]}" -o "$tmp/web-dist.tar.gz" "$AB_UI_DIST_URL"; then rm -rf "$tmp"; return 1; fi
+  else
+    # Only auto-fetch on an exact release tag — that's what CI attaches the asset to.
+    tag="$(git -C "$SIDE" describe --tags --exact-match HEAD 2>/dev/null || true)"
+    if [ -z "$tag" ] || ! command -v gh >/dev/null 2>&1; then rm -rf "$tmp"; return 1; fi
+    log "fetching prebuilt UI from release $tag"
+    if ! GH_TOKEN="${AB_GH_TOKEN:-${GH_TOKEN:-}}" gh release download "$tag" \
+         --repo UMB-Advisors/agentbox-sidecar -p 'web-dist.tar.gz' --dir "$tmp" 2>/dev/null; then
+      rm -rf "$tmp"; return 1
+    fi
+  fi
+  rm -rf "$SIDE/web/dist"; mkdir -p "$SIDE/web/dist"
+  if ! tar -xzf "$tmp/web-dist.tar.gz" -C "$SIDE/web/dist" 2>/dev/null; then rm -rf "$tmp"; return 1; fi
+  rm -rf "$tmp"
+  if [ ! -f "$SIDE/web/dist/index.html" ]; then return 1; fi
+  log "  prebuilt UI installed — skipped the on-box build"
+  return 0
+}
+
+if fetch_prebuilt_dist; then
+  :   # dist came from the prebuilt bundle
+else
+  log "building wizard UI on-box (clean install; this is the slow step)"
+  ( cd "$SIDE/web" && rm -rf node_modules && pnpm install && pnpm build )
+  [ -d "$SIDE/web/dist" ] || die "build did not produce $SIDE/web/dist"
+fi
 
 # 5. sidecar Python deps
 log "syncing sidecar deps (uv sync)"
